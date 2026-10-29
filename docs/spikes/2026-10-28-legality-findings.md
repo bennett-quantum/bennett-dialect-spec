@@ -61,6 +61,10 @@ openmp-opt on OpenMP modules).
    cannot be bounded (pointer from host input, `inttoptr` of a non-handle
    integer, unknown external).
 
+4. **Handle comparison (D8 of draft 0.1) is supported** (2026-10-29, by the maintainer's standing
+   no-narrowing rule): `icmp eq/ne` of handles with each other or with null (`if (!q)`, Rust's
+   `Option<Handle>` niche) compares handle identity in device code; no ISA change.
+
 ## 4. Defaults the spec will state (not maintainer decisions; open to the council)
 
 - **Unwinding.** Markers never unwind. A marker reached by `invoke` is treated
