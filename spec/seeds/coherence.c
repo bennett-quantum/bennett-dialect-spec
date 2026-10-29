@@ -9,6 +9,19 @@ struct bennett_seed_object {
     size_t size;
     unsigned k; /* Cl=0, M=1, Co=2 */
 };
+unsigned bennett_seed_cc_store(struct bennett_seed_object *o,size_t off,unsigned char value) {
+    if(off>=o->size)return 7;
+    if(o->k==2) {
+        if(!o->covered[off])return 4;
+        o->arena[off]=value;o->shadow[off]=value;
+        return 0; /* the covering write is this known classical store */
+    }
+    if(o->k==1) {
+        for(size_t i=0;i<o->size;i++)o->arena[i]^=o->shadow[i];
+        o->k=0;
+    }
+    o->shadow[off]=value;o->covered[off]=1;return 0;
+}
 void bennett_seed_materialise(struct bennett_seed_object *o) {
     if (o->k==0) {
         for(size_t i=0;i<o->size;i++)o->arena[i]^=o->shadow[i];

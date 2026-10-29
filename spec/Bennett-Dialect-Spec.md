@@ -3140,7 +3140,9 @@ content (TDL-3) and is never rejected for containing classical code.
   Cl → Co when an event is applied (§18.2) that writes X's cells with a non-empty control set or
   with a Co value; Co → Cl by `__bennett_observe` of all of X's bytes (TDL-11); partial observe leaves
   K=Co and the observed cells in their measured basis state. Coverage is tracked since each
-  byte's last write; writes invalidate coverage. Release never changes Co to Cl by fiat:
+  byte's last write; writes invalidate coverage except a permitted TDL-11 CC store to
+  already-covered bytes. That store writes a known classical value to both arena and
+  shadow, so the bytes remain covered with that store as their covering write. Release never changes Co to Cl by fiat:
   first restore the cells to the basis value equal to the shadow with the invocation's
   own events, then dematerialise to Cl and release. Otherwise release traps
   T-TAINT-HOST (code 4), inside or outside generation, before reuse.
@@ -3393,7 +3395,8 @@ record, each field completed from the budget table (§9); each slice gets the fu
   `measure` it. Sequential basis measurements preserve the joint distribution. No whole
   arena register or slice view is measured. Write the outcome into the shadow. For partial
   observation of X leave its observed cells in |m⟩ and K(X)=Co: the arena stays authoritative.
-  When every byte of X is covered since its last write, XOR the whole measured X out of the
+  When every byte of X is covered since its last write other than such a permitted CC
+  covering store, XOR the whole measured X out of the
   arena and set K(X)=Cl. Cl bytes are read from the shadow; M objects are dematerialised
   first. len=0 changes nothing.
 
@@ -7864,7 +7867,8 @@ only for Cl, both copies for M, arena only for Co. `xchg` with a Co register fir
 materialises and makes X Co; with a classical basis operand it exchanges with shadow for
 Cl, both copies consistently for M (returning one old value), arena only for Co.
 Unconditional Cl-valued xmask/xstore/perm leave K unchanged. Event application does not
-also reapply its speculative generation-view update. Writes invalidate observation coverage.
+also reapply its speculative generation-view update. Event-application writes invalidate observation coverage; permitted TDL-11 CC stores
+retain it as covering writes.
 The plugin realises applied events as CC-level region calls in event order (ISA §4.7), whose
 temporaries are released by `qreg.free` with the dynamic cleanliness check of ISA §3.3; it MAY
 compile an event list into one ISA action when that action satisfies ISA §6.
@@ -8029,6 +8033,16 @@ vectors distinguish the previously allowed schedules.
 
 ```text state=deferred-channel-adj-place at=0
 {"zero_then_H":[0.5,0.5],"plus_joint_zero":1,"record_retained":true,"trap":0}
+```
+
+**Partial observe, covering store, completion.** X has two Co bytes 1,2.
+Observe byte 0, CC-store 9 to it, then observe byte 1. Byte 0 stays covered
+because its known covering write updates arena and shadow together. Full coverage
+dematerialises X to Cl, so the final CC load returns 9/code 0. A store before
+observation instead traps 4 without mutation; an applied event invalidates coverage.
+
+```text state=co-observe-write-observe at=0
+{"after_first":[2,1],"after_store":[2,1,9,9],"after_second":[0,9,2,0,0],"load":[9,0],"event_invalidates":true,"unobserved_store":4}
 ```
 
 **Round-2 action lifecycle witnesses.** In generation-cancel the source is qalloc(0,1),
@@ -9531,6 +9545,7 @@ with the ISA-0.9 obligation recorded and explicitly not executed on ISA 0.8.
 
 | `entry-allocation-only`, `arena-logical-bounds` | §8.5, TDL-4, §16.2–§16.4 | state | native seed; Rust lifted helper |
 
+| `co-observe-write-observe` | TDL-2, TDL-11, §18.2 | state | native coherence seed, clang 18/23 |
 | `deferred-channel-adj-place` | §7.5(a), §18.2 | state | Rust run-action with deterministic record scheduler |
 | `co-loop-identity`, `co-loop-adj-overwritten` | TDL-7, TDL-10, §18.2 | state | Rust run-action; native inverse-domain check |
 | `generation-cancel`, `nested-cl-view`, `fault-output-lifetime`, `co-loop-adjoint`, `deferred-channel-adj`, `co-store-release` | TDL-2, TDL-7–TDL-11, §18.2–§18.4 | state | native lifecycle; Rust run-action |

@@ -543,3 +543,7 @@ Full freeze pending the remaining themes; no green full-gate claim yet.
 Theme B resolved R3-CODEX-02 / BD3-R3-2: deterministic latest-before-consumer
 channel instrument. Red-green scheduler/state test passes on both council inputs.
 Theme A commit 8e56d56; response 2412c4c.
+
+Theme C resolved BD3-R3-3: CC covering stores preserve observation coverage;
+applied events invalidate it. Native byte-level witness and mutation test added.
+Theme B commit 5e13596; response df75746.

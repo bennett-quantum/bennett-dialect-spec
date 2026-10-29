@@ -6,7 +6,7 @@ from dialect_check_v02 import equal
 from dialect_state import run_native
 from dialect_tdl import Session, assert_view, add_constant
 
-STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place'}
+STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place', 'co-observe-write-observe'}
 
 
 def adjoint_records(events):
@@ -98,4 +98,15 @@ for(unsigned x=0;x<4;x++)for(unsigned z=0;z<4;z++){
                 equal(name,'zero input then H',v['zero_then_H'],[round(x,12) for x in probs])
             equal(name,'channel retained',v['record_retained'],'w' in q.widths)
         equal(name,'trap',0,v['trap'])
+    elif name == 'co-observe-write-observe':
+        src='#include "'+str(d.ROOT/'spec/seeds/coherence.c')+'"\n'+'''int main(void){
+struct bennett_seed_object o={.size=2,.k=2,.arena={1,2}};unsigned char out[2];unsigned widths[1];
+unsigned bad=bennett_seed_cc_store(&o,0,9);
+bennett_seed_observe(&o,0,1,out,widths);printf("[%u,%u]\\n",o.k,o.covered[0]);
+if(bennett_seed_cc_store(&o,0,9))return 9;
+printf("[%u,%u,%u,%u]\\n",o.k,o.covered[0],o.arena[0],o.shadow[0]);
+bennett_seed_observe(&o,1,1,out,widths);printf("[%u,%u,%u,%u,%u]\\n",o.k,o.shadow[0],o.shadow[1],o.arena[0],o.arena[1]);
+printf("[%u,%u]\\n",o.k==0?o.shadow[0]:0,o.k==0?0:4);
+o.k=2;bennett_seed_mask(&o,0,1,1);printf("[%u,%u]\\n",!o.covered[0],bad);return 0;}'''
+        run_native(runner,name,'',src,[v['after_first'],v['after_store'],v['after_second'],v['load'],[int(v['event_invalidates']),v['unobserved_store']]])
     else:raise d.Fail('unimplemented round-3 state '+name)

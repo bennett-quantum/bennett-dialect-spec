@@ -45,6 +45,17 @@ class ContractTests(unittest.TestCase):
             check_state(runner,b)
             with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body'].replace('[0.5, 0.5]','[1, 0]')))
 
+    def test_round3_observe_store(self):
+        from dialect_round3 import check_state
+        import json
+        value={'after_first':[2,1], 'after_store':[2,1,9,9], 'after_second':[0,9,2,0,0], 'load':[9,0], 'event_invalidates':True, 'unobserved_store':4}
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            b={'attrs':{'state':'co-observe-write-observe','at':'0'},'body':json.dumps(value)}
+            check_state(runner,b)
+            value['load']=[0,4]
+            with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(value)))
+
     def test_round2_r_entry_classification(self):
         for name in ('region-reversible-marker','region-reversible-qalloc-static','effect-console-r'):
             with self.subTest(example=name):self.assertEqual(v.recognise(d.with_decls(self.block('example',name)['body']),rmode=self.block('example',name)['attrs'].get('rmode'))[0],'blocked:BD-B-ISA7')
