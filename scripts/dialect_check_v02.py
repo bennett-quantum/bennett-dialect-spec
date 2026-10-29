@@ -284,7 +284,20 @@ def recognise(text, **options):
         return 'reject:' + e.code, e
 
 
-def validate(text):
+# Explicit link facts for the standalone normalisation microvectors. These are
+# published runtime/arith entry points (and the n-eh seed), not a name-prefix
+# exemption for arbitrary unresolved functions. Full L/R validation defaults to
+# an empty link environment.
+NORMALISATION_LINK={
+    '__bennett_rt_ss_push','__bennett_rt_ss_pop','__bennett_rt_memmove',
+    '__bennett_rt_memset','__bennett_rt_ctpop_i32','__bennett_rt_eh_match',
+    '__bennett_rt_syscall','__bennett_rt_poll','may_throw','exp','sinf',
+    '__bennett_sf_cmp_f64','__bennett_sf_add_f64','__bennett_sf_mul_f64',
+    '__bennett_sf_add_f80','__bennett_sf_fpext_f64_f80','__bennett_sf_fpext_f32_f64',
+} | {'__bennett_rt_mmio_'+op+'_i'+str(w) for op in ('load','store') for w in (8,16,32,64,128)}
+
+
+def validate(text,*,linked=()):
     m = d.Module(expanded_types(text))
     def bad(rule, where):
         raise d.Reject('BD-E-RESIDUAL', rule + ': ' + where)
@@ -314,6 +327,11 @@ def validate(text):
                 for attr in c['ret_attrs'] + c['fn_attrs'] + [x for a in c['args'] for x in a[1]]:
                     if d.attr_name(attr) in d.N4_PARAM | d.N4_FN: bad('V3',ins.text)
                 cal=c['callee']
+                if re.match(r'@llvm\.(abs|ctlz|cttz)\.',cal) and c['args'][-1][2] in ('true','1'):bad('V4',ins.text)
+                if cal.startswith('@') and not cal.startswith('@llvm.'):
+                    target=m.resolve_alias(cal[1:])
+                    if not m.defined(target) and target not in {'__bennett_nz_fault','__bennett_nz_alloc','__bennett_nz_free'} and target not in linked:
+                        bad('V12',ins.text)
                 if re.match(r'@llvm\.(assume|lifetime|invariant|is\.constant|objectsize|trap|debugtrap|ubsantrap|memcpy|memmove|memset|fmuladd|vector\.|ctpop|[su](?:min|max)|[su]add\.with\.overflow|va_|exp\.|sin\.)',cal):bad('V4',ins.text)
                 if re.match(r'@llvm\.(?:x86|aarch64|riscv|arm|amdgcn|nvvm)\.',cal):bad('V16',ins.text)
             if ins.op in ('shl','lshr','ashr'):
@@ -444,7 +462,7 @@ class Runner:
             if d.collapse(want)!=d.collapse(got):
                 diff='\n'.join(difflib.unified_diff(d.collapse(want),d.collapse(got),'expected','actual',lineterm=''))
                 raise Mismatch(f'{ident}/llvm{major} [§12] expected normalise-out; actual diff:\n{diff}')
-            equal(ident,'§12.4 validator','accept',validate(got))
+            equal(ident,'§12.4 validator','accept',validate(got,linked=NORMALISATION_LINK))
             generated={'body':got,'line':'generated-'+ident}
             self.verify(generated,major)
 

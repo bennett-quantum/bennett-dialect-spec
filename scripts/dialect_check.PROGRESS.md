@@ -338,3 +338,14 @@ source-mutation failures pass. Selected map/check/run-oracle gate: 14/14,
 Concurrent uncommitted protected spec edits now reconcile V10 and add a carrier
 witness; implementation has not touched them. User's explicit V10-red instruction
 remains in force pending their clarification.
+
+## Freeze repair item 4 — V4/V12 residual boundaries
+
+V4 rejects abs/ctlz/cttz true flags; V12 rejects undefined nonprimitive callees,
+including unresolved names that merely look like runtime entries. Standalone
+normalisation witnesses supply explicit published runtime/arith link facts;
+ordinary materialised validation defaults to no linked definitions. New clean,
+negative and fake-runtime-name regressions ran red and now pass. All 24
+normalisation pairs still pass. Tests now read committed spec text through git,
+so the concurrent editor's uncommitted V10 changes are not normative inputs.
+V10 remains untouched until the editor commits, per the user's clarification.

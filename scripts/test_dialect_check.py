@@ -9,7 +9,8 @@ import dialect_check_v02 as v
 class ContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.blocks = d.extract_blocks(d.SPEC.read_text())
+        cls.spec = v.command(['git','-C',d.ROOT,'show','HEAD:spec/Bennett-Dialect-Spec.md'])
+        cls.blocks = d.extract_blocks(cls.spec)
         v.initialise(cls.blocks)
 
     def block(self, tag, name):
@@ -49,6 +50,16 @@ class ContractTests(unittest.TestCase):
             with self.subTest(rule=rule), self.assertRaisesRegex(d.Reject, rule):
                 v.validate('define i32 @test(i32 %x) {\n  ' + body + '\n}\n')
 
+    def test_v4_v12_residues_and_clean(self):
+        for rule in ('v4','v12'):
+            with self.subTest(rule=rule):
+                self.assertEqual(v.validate(self.block('example','validator-'+rule+'-clean')['body']),'accept')
+                with self.assertRaisesRegex(d.Reject,rule.upper()):
+                    v.validate(self.block('example','validator-'+rule+'-residue')['body'])
+        # Runtime-like spelling alone cannot exempt an undefined callee.
+        with self.assertRaisesRegex(d.Reject,'V12'):
+            v.validate('declare i8 @__bennett_rt_missing()\ndefine i8 @f() {\n %v = call i8 @__bennett_rt_missing()\n ret i8 %v\n}\n')
+
     def test_blockers_are_distinct_from_rejections(self):
         body = self.block('example', 'operand-width-host')['body']
         self.assertEqual(v.recognise(d.with_decls(body))[0], 'blocked:BD-B-ISA4')
@@ -71,7 +82,7 @@ class ContractTests(unittest.TestCase):
                 want = self.block('normalise-out', name)['body']
                 got = v.normalise(b['body'],rmode=b['attrs'].get('rmode'),platform=b['attrs'].get('platform'))
                 self.assertEqual(d.collapse(want), d.collapse(got))
-                self.assertEqual(v.validate(got), 'accept')
+                self.assertEqual(v.validate(got,linked=v.NORMALISATION_LINK), 'accept')
 
     def test_trace_abi02(self):
         b = self.block('semantics', 'sem2-adj')
@@ -109,7 +120,7 @@ class ContractTests(unittest.TestCase):
     def test_binding_and_indirectbr_maps(self):
         from dialect_map import map_object
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'map'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'map'})
             for name in ('binding-out-byte','binding-block-byte','binding-clock-read','binding-console-byte','indirectbr-two-blocks'):
                 with self.subTest(example=name):
                     got=map_object(runner,self.block('lift',name))
@@ -120,7 +131,7 @@ class ContractTests(unittest.TestCase):
     def test_fp_aggregate_map(self):
         from dialect_map import map_object
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'map'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'map'})
             got=map_object(runner,self.block('lift','fp-aggregate'))
             self.assertEqual(got,self.block('object','fp-aggregate')['body'])
 
@@ -133,14 +144,14 @@ class ContractTests(unittest.TestCase):
         for body in cases:
             with self.subTest(body=body):
                 got=v.normalise(body)
-                self.assertEqual(v.validate(got),'accept')
+                self.assertEqual(v.validate(got,linked=v.NORMALISATION_LINK),'accept')
                 self.assertNotIn('load i1,',got)
                 self.assertNotIn('call i64 @llvm.experimental.gc.',got)
 
     def test_boundary_state_execution(self):
         from dialect_state import check_native_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'state'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             for name in ('normalisation-boundaries','fcmp-abi','fp-sign-carrier','inplace-bound','r-fault-code'):
                 with self.subTest(example=name):
                     b=self.block('state',name)
@@ -152,7 +163,7 @@ class ContractTests(unittest.TestCase):
     def test_cc_fixtures_validate(self):
         from dialect_cc import fixture
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'cc-run'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'cc-run'})
             for b in self.blocks:
                 if 'cc-run' in b['attrs']:
                     with self.subTest(example=b['attrs']['cc-run']):
@@ -162,7 +173,7 @@ class ContractTests(unittest.TestCase):
     def test_tdl_state_prefixes(self):
         from dialect_tdl import ORIGINAL,compare_original
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'state'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             for b in self.blocks:
                 if b['attrs'].get('state') in ORIGINAL:
                     with self.subTest(example=b['attrs']):compare_original(runner,b)
@@ -171,7 +182,7 @@ class ContractTests(unittest.TestCase):
         from dialect_tdl import check_boundary, BOUNDARIES, check_wrapper
         from dialect_state import check_native_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'state'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             for name in sorted(BOUNDARIES):
                 with self.subTest(example=name):check_boundary(runner,self.block('state',name))
             for name in ('wide-delivery','entry-backing','region-two-measure-candidates','clean-predicate','generation-budget'):
@@ -182,7 +193,7 @@ class ContractTests(unittest.TestCase):
     def test_tdl_artifacts_and_mutations(self):
         from dialect_tdl import check_tdl
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'tdl'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'tdl'})
             for b in self.blocks:
                 if 'tdl' not in b['attrs']:continue
                 with self.subTest(example=b['attrs']):check_tdl(runner,b)
@@ -193,7 +204,7 @@ class ContractTests(unittest.TestCase):
     def test_arena_hidden_base_map(self):
         from dialect_map import map_arena
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'map'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'map'})
             got=map_arena(runner)
             self.assertEqual(got,self.block('object','arena-o1')['body'])
 
@@ -206,7 +217,7 @@ class ContractTests(unittest.TestCase):
     def test_one_shot_program_adapter(self):
         from dialect_cc import check
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'run-program'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'run-program'})
             for b in self.blocks:
                 if 'cc-run' in b['attrs']:
                     with self.subTest(example=b['attrs']):check(runner,b,'run-program')
@@ -215,7 +226,7 @@ class ContractTests(unittest.TestCase):
         from dialect_driver import SCENARIOS, check_scenario
         from dialect_meta import coverage
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'state','coverage'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state','coverage'})
             for name in SCENARIOS.values():
                 with self.subTest(example=name):
                     b=self.block('state',name)
@@ -231,7 +242,7 @@ class ContractTests(unittest.TestCase):
         from pathlib import Path
         from dialect_cc import r_budget_prefix
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'state'})
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             with self.assertRaisesRegex(v.Unavailable,'N34/ISA-7'):
                 r_budget_prefix(runner,self.block('state','r-budget-prefix'))
             diagnostic=(Path(tmp)/'r-budget-prefix.diagnostic').read_text()

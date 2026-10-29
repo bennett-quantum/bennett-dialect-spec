@@ -109,7 +109,8 @@ define void @frame() {
  ret void
 }
 '''
-        got=normalise(ir);validate(got)
+        from dialect_check_v02 import NORMALISATION_LINK
+        got=normalise(ir);validate(got,linked=NORMALISATION_LINK)
         expected_frame=int(re.search(r'N24:.*?S=.*?=(\d+);',text)[1])
         equal(name,'N24 rounded frame',expected_frame,int(re.search(r'ss_push\(i64 (\d+)',got)[1]))
         # The textual form has no alignment premise allowing an overread.
