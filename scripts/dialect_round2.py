@@ -107,6 +107,19 @@ int main(void){unsigned char x=1;int a=valid(0,1,0,1,0);int b=valid(2,1,0,1,1);i
             if code:release.xmask('f',code);release.xmask('Phi',code)
             release.free('f');release.free('Phi')
             equal(name,'program end remaining',v['remaining_after_end'],len(release.widths))
+        # Execute the actual CC observe/correct/free sequence too: measure
+        # consumes a fresh copy, never the original declared output.
+        from dialect_cc import emit, signature
+        for code in (0,v['fault']):
+            asig={'abi':'0.8','args':[],'bounds':[],'in':[],'kind':'action','mem':[],'mut':[4,4],'tier':'q'}
+            clear=dict(asig,mut=[4])
+            prep='action @prepare (f:wire[4] mut, m:wire[4] mut) () () () ()\n^entry():\n'+('x f[0]\n' if code else '')+'qxor f m'
+            main='fn cc @main () (r:i4) () () ()\n^entry():\nf = qreg.new any 4\nm = qreg.new any 4\naction_call @prepare (f, m) () () ()\nr = measure m\nz = const.i4 0\np = icmp.ne r z\nbr p ^correct() ^done()\n^correct():\naction_call @clear (f) () () ()\nbr ^done()\n^done():\nqreg.free f\nret r'
+            path=runner.tmp/(name+'-cc-release'+str(code)+'.bisa')
+            emit(runner,path,[main,prep,'action @clear (f:wire[4] mut) () () () ()\n^entry():\nx f[0]'],{'main':signature([],['i4'],'cc'),'prepare':asig,'clear':clear})
+            got=runner.isa.call('run-cc',path,'main')
+            equal(name,'CC release completed','COMPLETED',got['status'])
+            equal(name,'CC release faults',[],got['faults'])
         equal(name,'trap',0,v['trap'])
     elif name=='co-loop-adjoint':
         # Source B increments once per active flag; n is a preserved input.
