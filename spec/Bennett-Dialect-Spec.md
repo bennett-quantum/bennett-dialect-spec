@@ -2440,6 +2440,11 @@ R includes a caller alloca/frame, include its live shadow-stack backing storage 
 bytes and addresses. If reachability is uncertain, include all live caller heap/stack backing
 allocations. Whenever the L closure uses the shadow stack, add its state globals to G and
 its block to Hb with current base, size and stack pointer, even without a source heap object.
+Include the logical frame/allocation table of §17.3, dynamic extents, liveness and
+save/restore state in G whenever stack access or stack operations can execute. Replay
+these bytes before private allocations/accesses and let ss_init adopt them; a live
+backing entry alone does not recreate live program frames. All such metadata mutations
+invalidate snapshot reuse independently of the byte read set.
 Allocator metadata is an independent entry-state dependency: allocation, deallocation,
 allocation-validity checks and observation of allocation-derived addresses read it even
 without an LLVM load. Replay the complete caller allocation history (sizes and live bits)
@@ -6025,6 +6030,13 @@ address can be in coh, before the physical ISA boundscheck. Loads and stores, in
 slice/event producers, use the same helper and fault gating. Proved containment in a
 static arena global (as in arena-o1's one-byte @cnt load) discharges this check without
 extra rows; a physical coh entry alone is never such a proof.
+For an address that can lie in shadow-stack backing storage, also perform §17.3's
+logical-frame check before every program load, store or memory-function access,
+including non-coh addresses. The materialised __bennett_rt_ss_check(p,n,table)
+helper's comparisons, calls and fault rows count normally. Gate mutations and dependent
+events on its success. Physical boundscheck/load/store rows remain required; they
+do not substitute for the logical check. Explicit runtime-internal bookkeeping uses
+the internal path of §17.3, not the program-access helper.
 
 Rows of an instruction are emitted in instruction order within its block. Before the rows of an
 instruction, each of its **constant operands** that is a value operand (in operand order; not an
@@ -7745,6 +7757,27 @@ these contracts:
 | `ptr __bennett_rt_ss_alloca(i64 n, i64 align)` | a zero-filled dynamic allocation in the current frame, released by its pop |
 | `ptr __bennett_rt_ss_save()`, `void __bennett_rt_ss_restore(ptr)` | `llvm.stacksave`/`llvm.stackrestore` |
 
+Shadow-stack backing storage is physical storage, not a program allocation.
+Maintain logical frame base, extent and liveness, including dynamic allocations,
+extensions and saved restore points. A program access requires its entire nonwrapping
+byte range inside one live logical frame/allocation under §17.1; otherwise fault 7
+before any access or mutation. Containment in the backing ISA allocation is insufficient.
+Push registers a live frame; pop invalidates it and every younger frame; restore
+invalidates released ranges, truncating a surviving dynamic extent at the saved limit.
+Separate dynamic allocations in a frame keep their individual extents; an access may
+not span distinct live frames/allocations or unused capacity. The address model permits
+a reused address once a new live logical allocation contains the complete range.
+
+The default validation is the ordinary materialised runtime helper
+__bennett_rt_ss_check(p,n,table): reject wrapping ranges, visit logical entries in
+creation order, OR the live-and-contained predicates, and fault 7 if false. Its rows
+and metadata updates are charged in §16's reference object, and both builds implement
+the same checks and stack layout. Proven containment may eliminate the helper.
+Runtime bookkeeping, zero-fill and entry replay use an explicit internal path
+restricted to backing storage and metadata, never exposed to source program accesses;
+it is not a blanket exemption for ordinary calls into runtime-named functions.
+Replay the logical metadata as well as backing bytes under §8.5.
+
 N24 rewrites each function with allocas: `%nz.fp.<f> = call ptr @__bennett_rt_ss_push(i64 S,
 i64 A)` at entry, where the static allocas of the entry block are laid out in instruction order,
 each at the next offset aligned to its alignment, S is the total rounded up to A, the largest
@@ -8147,6 +8180,19 @@ x z ctrl c1 c2
 {"co_values":[0,5],"store_value":0,"store_code":4,"observe_first_results":[0,0],"release_code":4,"reuse_permitted":false}
 ```
 
+
+**Shadow-stack logical liveness.** The materialised f pushes one byte, stores 7,
+pops it and returns its address. With no new frame covering it, caller load returns
+payload 0/code 7, even though the physical 16-byte backing block remains live. While
+the frame is live the load returns 7/code 0. The microvector also checks spanning
+two frames, unused capacity, restore-released bytes, wrapping ranges and fault-gated
+stores. Replaying the live frame table and backing bytes reproduces 7/code 0. Native
+execution exercises push/pop/restore/replay; Rust executes the charged two-entry
+materialised logical helper with run-time metadata before physical boundscheck/load.
+
+```text state=shadow-stack-liveness at=0
+{"live":[7,0],"popped":[0,7],"spanning":[0,7],"padding":[0,7],"restored":[0,7],"wrap":[0,7],"replay":[7,0],"store_unchanged":true}
+```
 
 **Round-2 memory witnesses.** With caller heap_base=4096 and a live 16-byte
 allocation, the next address is 4112; another caller allocation invalidates the cache
@@ -9599,6 +9645,7 @@ with the ISA-0.9 obligation recorded and explicitly not executed on ISA 0.8.
 | `n-bitcast-lanes`, `n-bitcast-scalar`, `n-vp-merge`, `n-vp-select`, `n-vp-product` | N21 | parse, normalise, native | LLVM; clang |
 | `validator-v4-false-residue`, `n-defined-zero` | V4, N12, N27 | parse, recognise, normalise | LLVM; validator |
 
+| `shadow-stack-liveness` | §8.5, §16.4, §17.1/17.3 | state | native stack runtime; Rust run-oracle logical helper |
 | `entry-allocation-only`, `arena-logical-bounds` | §8.5, TDL-4, §16.2–§16.4 | state | native seed; Rust lifted helper |
 
 | `co-observe-write-observe` | TDL-2, TDL-11, §18.2 | state | native coherence seed, clang 18/23 |

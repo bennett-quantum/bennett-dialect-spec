@@ -538,3 +538,7 @@ Theme B commit 5e13596; response df75746.
 Theme D resolved BD3-R3-4: augmented interprocedural N29 continuation rule,
 E(c) defined; actual recogniser red accept -> green BLK-1. Native fallback
 witness uses two distinct live slots. Theme C 3303a5b / response c7523ab.
+
+Theme E resolved SOL-R3-02: logical stack frame checks precede physical accesses,
+charged materialised helper and replay metadata. Red-green state regression passes
+on native push/pop/restore/replay and Rust helper. Theme D 1a511c5 / dd22119.

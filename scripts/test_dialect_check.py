@@ -100,6 +100,17 @@ entry:
         self.assertEqual(v.recognise(d.with_decls(ir.replace('%r = call i32 @setjmp(ptr @jb)','%r = add i32 0, 0')))[0],'accept')
 
 
+    def test_round3_stack_liveness(self):
+        from dialect_round3 import check_state
+        import json
+        value={'live':[7,0], 'popped':[0,7], 'spanning':[0,7], 'padding':[0,7], 'restored':[0,7], 'wrap':[0,7], 'replay':[7,0], 'store_unchanged':True}
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            b={'attrs':{'state':'shadow-stack-liveness','at':'0'},'body':json.dumps(value)}
+            check_state(runner,b)
+            value['popped']=[7,0]
+            with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(value)))
+
     def test_round2_r_entry_classification(self):
         for name in ('region-reversible-marker','region-reversible-qalloc-static','effect-console-r'):
             with self.subTest(example=name):self.assertEqual(v.recognise(d.with_decls(self.block('example',name)['body']),rmode=self.block('example',name)['attrs'].get('rmode'))[0],'blocked:BD-B-ISA7')

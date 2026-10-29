@@ -4,9 +4,32 @@ import math
 import dialect_check as d
 from dialect_check_v02 import equal
 from dialect_state import run_native
-from dialect_tdl import Session, assert_view, add_constant
+from dialect_tdl import Session, assert_view, add_constant, object_text
 
-STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place', 'co-observe-write-observe', 'handle-setjmp-interproc'}
+STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place', 'co-observe-write-observe', 'handle-setjmp-interproc', 'shadow-stack-liveness'}
+
+
+def stack_probe(runner, name, width):
+    """Materialised two-entry logical frame helper; metadata is run-time input.
+
+    Offsets address one physically live pinned block. ISA boundscheck alone
+    cannot distinguish any of the logical failures this helper must detect.
+    """
+    params=['off','size','b0','e0','live0','b1','e1','live1']
+    regs=['end:reg[64]','wrap:reg[1]','valid:reg[1]','bad:reg[1]','one:reg[1]']
+    rows=['end = lift.add off size','wrap = lift.icmp.ult end off','valid = lift.const.i1 0']
+    for k in range(2):
+        regs += [f'{s}{k}:reg[1]' for s in ('lo','hi','both','alive','ok')]
+        regs += [f'zero{k}:reg[64]']
+        rows += [f'lo{k} = lift.icmp.ule b{k} off',f'hi{k} = lift.icmp.ule end e{k}',f'both{k} = lift.and lo{k} hi{k}',f'zero{k} = lift.const.i64 0',f'alive{k} = lift.icmp.ne live{k} zero{k}',f'ok{k} = lift.and both{k} alive{k}',f'valid = lift.or valid ok{k}']
+    rows += ['one = lift.const.i1 1','bad = lift.xor valid one','bad = lift.or bad wrap','lift.faultif bad 7','lift.ret valid']
+    helper='lproc @validate ('+', '.join(p+':reg[64]' for p in params)+') (r:reg[1]) () () ()\nregs { '+', '.join(regs)+' }\n^entry():\n'+'\n'.join(rows)
+    rows=[f'w{k} = lift.mov a{k}' for k in range(8)]
+    rows+=['ok = lift.call @validate ('+', '.join('w'+str(k) for k in range(8))+')','base = lift.addr @physical','p = lift.add base w0',f'lift.boundscheck p {width}',f'raw = lift.load.i{width*8} p','r = lift.zext.i16 raw' if width==1 else 'r = lift.mov raw','lift.retval r']
+    fn='oracle @ref () (tgt:wire[16]) (fault:wire[4]) (physical:region[4,8] in) ('+', '.join(f'a{k}:i64' for k in range(8))+')\nregs { '+', '.join([f'w{k}:reg[64]' for k in range(8)]+['ok:reg[1]','base:reg[64]','p:reg[64]',f'raw:reg[{width*8}]','r:reg[16]'])+' }\n^entry():\n'+'\n'.join(rows)
+    sig={'abi':'0.8','args':['i64']*8,'fault':4,'in':[],'kind':'oracle','mem':[{'A':4,'W':8,'role':'in'}],'tgt':16,'tier':'q'}
+    layout={'A_tab':1,'H':13,'S_cells':8,'globals':{},'heap_base':4096,'heap_limit_max':0,'interface_regions':{'ref':{'physical':{'base':4096}}},'null_size':4096,'ptr_width':64}
+    return object_text(runner.isa,runner.tmp/(name+str(width)+'.bisa'),[fn,helper],{'ref':sig,'validate':{'abi':'0.8','kind':'lproc','params':[64]*8,'result':1,'tier':'q'}},layout)
 
 
 def adjoint_records(events):
@@ -123,4 +146,23 @@ int main(void){unsigned r=setjmp(jb);G(r);unsigned distinct=slots[0]!=slots[1];
 live[slots[0]]=live[slots[1]]=0;unsigned total=0;for(unsigned j=0;j<64;j++)total+=live[j];
 printf("[%u,%u,%u,%u,%u]\\n",next,distinct,total,0,maxlive);return 0;}'''
         run_native(runner,name,'',src,[[v['instances'],int(v['distinct']),v['live_after'],v['trap'],v['max_live']]])
+    elif name == 'shadow-stack-liveness':
+        src='#include "'+str(d.ROOT/'scripts/round3_runtime.c')+'"\n'+'''static void show(struct stack*s,uint64_t p){unsigned c;unsigned v=ss_load(s,p,&c);printf("[%u,%u]\\n",v,c);}
+static uint64_t f(struct stack*s){uint64_t p=ss_push(s,1);if(ss_store(s,p,7))abort();ss_pop(s,p);return p;}
+int main(void){struct stack s={0};uint64_t p=ss_push(&s,1);ss_store(&s,p,7);show(&s,p);
+struct stack replay=s;ss_pop(&s,p);show(&s,p);unsigned old=s.bytes[0];ss_store(&s,0,9);
+printf("%u\\n",s.bytes[0]==old);show(&replay,p);
+struct stack t={0};p=f(&t);show(&t,p);
+ss_push(&replay,1);printf("[%u,%u]\\n",0,ss_check(&replay,0,2));
+printf("[%u,%u]\\n",0,ss_check(&replay,2,1));
+ss_restore(&replay,1);show(&replay,1);
+printf("[%u,%u]\\n",0,ss_check(&replay,UINT64_MAX,2));return 0;}'''
+        run_native(runner,name,'',src,[v['live'],v['popped'],int(v['store_unchanged']),v['replay'],v['popped'],v['spanning'],v['padding'],v['restored'],v['wrap']])
+        paths={w:stack_probe(runner,name,w) for w in (1,2)}
+        cases=[('live',[0,1,0,1,1,1,2,0]),('popped',[0,1,0,1,0,1,2,0]),('spanning',[0,2,0,1,1,1,2,1]),('padding',[2,1,0,1,1,1,2,0]),('restored',[1,1,0,1,1,1,2,0]),('wrap',[(1<<64)-1,2,0,1,1,1,2,1]),('replay',[0,1,0,1,1,1,2,0])]
+        for key,args in cases:
+            argv=[]
+            for x in args:argv+=['--arg',str(x)]
+            got=runner.isa.call('run-oracle',paths[args[1]],'ref','--input','',*argv,'--mem','physical=07'+'00'*15,'--budget','1000,0,256,8')
+            equal(name,key+' payload/code',v[key],[int(got['payload']),int(got['code'])])
     else:raise d.Fail('unimplemented round-3 state '+name)
