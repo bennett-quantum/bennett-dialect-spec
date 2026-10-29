@@ -365,7 +365,8 @@ class Runner:
             return
         row = {'family': family, 'example': str(ident), 'rule': rule, 'status': 'passed', 'blocked_on': ''}
         try:
-            fn()
+            observation=fn()
+            if isinstance(observation,dict):row['evidence']=observation
         except Unavailable as e:
             row.update(status='blocked', detail=str(e), blocked_on=e.command + ' / ' + e.bead)
         except (d.Fail, d.Reject, OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
@@ -391,6 +392,13 @@ class Runner:
         path.write_text(d.with_decls(b['body']))
         command([self.tc[major] / 'opt', '-passes=verify', '-disable-output', path])
 
+    def materialised(self,block):
+        if block['attrs'].get('mode') in ('materialised','validate'):return True
+        # BLK-5 witnesses describe normaliser-emitted typed faults, rather than
+        # producer inputs. Use their role/report, never a hard-coded example id.
+        report=self.by_tag['blocker'].get(block['attrs'].get('example'))
+        return bool(report and 'BLK-5' in report['body'] and re.search(r'call void @__bennett_nz_fault\(i64 \d+\)',block['body']))
+
     def recognition(self, b):
         a = b['attrs']; text = d.with_decls(b['body'])
         if a.get('mode') == 'validate':
@@ -399,7 +407,7 @@ class Runner:
             except d.Reject as e:
                 got, info = 'reject:' + e.code, e
         else:
-            got, info = recognise(text, rmode=a.get('rmode'), materialised=a['example']=='r-fault-code')
+            got, info = recognise(text, rmode=a.get('rmode'), materialised=self.materialised(b))
         equal(a['example'], '§1.6 verdict', a['verdict'], got)
         if 'candidates' in a:
             equal(a['example'], '§7.2 candidates', set(a['candidates'].split(',')), info.first_candidates())
@@ -446,7 +454,7 @@ class Runner:
 
     def blocker(self,b):
         ident=b['attrs']['blocker'];source=self.block('example',ident)
-        got,info=recognise(d.with_decls(source['body']), materialised=ident=='r-fault-code')
+        got,info=recognise(d.with_decls(source['body']), materialised=self.materialised(source))
         equal(ident,'§25.1 verdict',source['attrs']['verdict'],got)
         expected_code=b['body'].split()[0]
         equal(ident,'§25.1 report code',expected_code,got.split(':',1)[1])
@@ -532,7 +540,8 @@ class Runner:
             if 'events' in a:
                 self.check('events',ident,'§18.4',lambda b=b:events_check(self,b))
             if 'state' in a and a['state'] not in SCENARIOS.values():
-                self.check('state',ident,'§18.4',lambda b=b:state_check(self,b))
+                family='blocker' if a.get('verdict','').startswith('blocked:') else 'state'
+                self.check(family,ident,'§18.4',lambda b=b:state_check(self,b))
             if 'tdl' in a:
                 from dialect_tdl import check_tdl
                 self.check('tdl', ident, '§10/§18', lambda b=b:check_tdl(self,b))

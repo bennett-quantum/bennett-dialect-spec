@@ -349,3 +349,16 @@ negative and fake-runtime-name regressions ran red and now pass. All 24
 normalisation pairs still pass. Tests now read committed spec text through git,
 so the concurrent editor's uncommitted V10 changes are not normative inputs.
 V10 remains untouched until the editor commits, per the user's clarification.
+
+## Freeze repair item 5 — BLK-5 materialisation and verdict routing
+
+Materialised recognition is derived from the BLK-5 witness/report role, replacing
+the r-fault-code name special case. The r-budget state check is now a blocker
+family verdict, preserving its full ISA-0.9 expected contract in the JSON report
+and a separate obligation receipt, explicitly executed=false. No ISA-0.8 host-fuel
+probe or generic trap is claimed to verify typed fault 1. Regression ran red at
+recognition and now passes, including a mock proving no ISA execution and a
+wrong-code mutation. Selected gate: blocker 7/7, coverage 125/125, recognise
+125/125, state 35/35. All 29 unit tests pass against committed spec text.
+Dependency bz6 remains recorded, not asserted implemented. Next: check whether
+editor's V10 commit landed, then validate its committed witnesses and full gate.

@@ -238,16 +238,25 @@ class ContractTests(unittest.TestCase):
             runner.scenario_evidence.clear()
             self.assertTrue(all(not coverage(runner)[0][section] for section in SCENARIOS))
 
-    def test_r_budget_dependency_is_probed(self):
+    def test_r_budget_blocker_routing_preserves_09_obligation(self):
         from pathlib import Path
+        from unittest.mock import patch
         from dialect_cc import r_budget_prefix
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
-            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
-            with self.assertRaisesRegex(v.Unavailable,'N34/ISA-7'):
-                r_budget_prefix(runner,self.block('state','r-budget-prefix'))
-            diagnostic=(Path(tmp)/'r-budget-prefix.diagnostic').read_text()
-            self.assertIn('CC/R has no ISA step budget',diagnostic)
-            self.assertTrue((Path(tmp)/'r-budget-prefix.bisa').is_file())
+            runner=v.Runner(self.blocks,self.spec,tmp,{'recognise','blocker','state'})
+            runner.recognition(self.block('example','r-budget-prefix'))
+            runner.blocker(self.block('blocker','r-budget-prefix'))
+            with patch.object(runner.isa,'call',side_effect=AssertionError('ISA 0.8 must not execute ISA 0.9 result')):
+                receipt=r_budget_prefix(runner,self.block('state','r-budget-prefix'))
+            self.assertEqual(receipt['verdict'],'blocked:BD-B-ISA7')
+            self.assertEqual(receipt['bead'],'b-dialect-spec-bz6')
+            self.assertFalse(receipt['executed'])
+            self.assertEqual(receipt['required_isa09']['fault'],1)
+            self.assertEqual(len(receipt['required_isa09']['terminal_records']),1)
+            self.assertEqual(receipt['required_isa09']['tape'],[])
+            self.assertTrue((Path(tmp)/'r-budget-prefix-isa09-obligation.json').is_file())
+            b=self.block('state','r-budget-prefix')
+            with self.assertRaises(d.Fail):r_budget_prefix(runner,dict(b,body=b['body'].replace('code=1','code=2')))
 
     def test_view_pass_guard_does_not_reject_filenames(self):
         self.assertEqual(v.command(['/bin/true','compute-view-event-1.bisa']),'')

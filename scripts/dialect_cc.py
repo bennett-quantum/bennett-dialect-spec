@@ -199,24 +199,29 @@ def check(runner,block,verb):
 
 
 def r_budget_prefix(runner,block):
-    """Probe the concrete executor boundary, never substitute generic trap 4."""
-    from dialect_check_v02 import Unavailable, command
-    path=runner.tmp/'r-budget-prefix.bisa'
-    emit(runner,path,['fn r @main () () () () ()\n^entry():\naddress = const.i64 4096\np = inttoptr address\nn = const.i64 1\neffect console.write p n\nret'],
-         {'main':signature([],[])},{'msg':b'x'},{'models':{'console':{'version':'0.8'}},'services':{}})
-    runner.isa.build()
-    argv=[runner.isa.exe,'run-cc',path,'main','--budget','0']
-    try:
-        output=command(argv)
-    except d.Fail as error:
-        if 'CC/R has no ISA step budget' not in str(error):raise
-        # Published ISA CLI contract: --budget is host execution fuel, not an
-        # implementation of dialect N34. Preserve the diagnostic as evidence.
-        (runner.tmp/'r-budget-prefix.diagnostic').write_text(str(error)+'\n')
-        raise Unavailable('N34/ISA-7 typed R fault 1 before first counted instruction; CLI only supplies host fuel',
-                          ' '.join(map(str,argv)), 'b-dialect-spec-bz6') from error
-    got=json.loads(output)
-    equal('r-budget-prefix','§17.6 code',1,got.get('fault'))
-    equal('r-budget-prefix','§17.6 no later tape',[],got.get('tape'))
-    equal('r-budget-prefix','§17.6 no later console','',got.get('console'))
-
+    """BLK-5 verdict on ISA 0.8; retain, but never execute, the ISA 0.9 result."""
+    from dialect_check_v02 import recognise
+    ident=block['attrs']['state'];source=runner.block('example',ident)
+    verdict,info=recognise(d.with_decls(source['body']),materialised=runner.materialised(source))
+    equal(ident,'§25.1 state dependency',block['attrs']['verdict'],verdict)
+    equal(ident,'BLK-5 dependency','blocked:BD-B-ISA7',verdict)
+    if not any('BLK-5' in reason for _,reason in info.blockers):raise d.Fail('BLK-5 reason missing')
+    faults=re.findall(r'__bennett_nz_fault\(i64 (\d+)\)',source['body'])
+    equal(ident,'§17.6 materialised budget fault',['1'],faults)
+    # Validate the complete stated future contract, not a weaker host-fuel probe.
+    lines=d.collapse(block['body'])
+    expected=[
+        'source R body: console.write("x"); return; steps=0',
+        'ISA 0.8 status=blocked:BD-B-ISA7 (BLK-5); generic trap is not equivalent',
+        'required under ISA 0.9: fault code=1 before first counted instruction; console=empty; tape prefix=empty',
+        'required under ISA 0.9: run=FAILED; exactly one terminal record, code=1; no host request; reversible prefix history retained',
+    ]
+    equal(ident,'§17.6/ISA-0.9 recorded obligation',expected,lines)
+    receipt={'verdict':verdict,'bead':'b-dialect-spec-bz6','executed':False,
+             'execution_target':'ISA 0.8','requires':'ISA 0.9 fault C, 61550b4 §0.2 K5 / §4.1',
+             'required_isa09':{'status':'FAILED','fault':int(faults[0]),'console_hex':'',
+                               'tape':[],'terminal_records':[{'code':1}],
+                               'host_requests':[],'reversible_prefix_retained':True},
+             'source_obligation':block['body']}
+    (runner.tmp/'r-budget-prefix-isa09-obligation.json').write_text(json.dumps(receipt,indent=2)+'\n')
+    return receipt
