@@ -1,0 +1,414 @@
+{
+  "spec_commit": "c61de71",
+  "interpreter_commit": "8503d818b7cd96b95682e5970596790b364ea6a6",
+  "interpreter_source_sha256": "5178cabb4c3c2c6dcbf20a37da9b8679487deb54fe03f73b530c32572b6cc779",
+  "counts": {
+    "asm": {
+      "passed": 1,
+      "failed": 0,
+      "blocked": 0
+    },
+    "blocker": {
+      "passed": 5,
+      "failed": 0,
+      "blocked": 0
+    },
+    "cc-run": {
+      "passed": 8,
+      "failed": 0,
+      "blocked": 0
+    },
+    "check": {
+      "passed": 9,
+      "failed": 0,
+      "blocked": 0
+    },
+    "coverage": {
+      "passed": 90,
+      "failed": 35,
+      "blocked": 0
+    },
+    "driver": {
+      "passed": 1,
+      "failed": 0,
+      "blocked": 0
+    },
+    "events": {
+      "passed": 3,
+      "failed": 0,
+      "blocked": 0
+    },
+    "frontend": {
+      "passed": 15,
+      "failed": 0,
+      "blocked": 0
+    },
+    "hash": {
+      "passed": 5,
+      "failed": 0,
+      "blocked": 0
+    },
+    "header": {
+      "passed": 1,
+      "failed": 0,
+      "blocked": 0
+    },
+    "map": {
+      "passed": 8,
+      "failed": 0,
+      "blocked": 0
+    },
+    "native": {
+      "passed": 13,
+      "failed": 0,
+      "blocked": 0
+    },
+    "normalise": {
+      "passed": 18,
+      "failed": 0,
+      "blocked": 0
+    },
+    "parse": {
+      "passed": 393,
+      "failed": 0,
+      "blocked": 0
+    },
+    "recognise": {
+      "passed": 84,
+      "failed": 0,
+      "blocked": 0
+    },
+    "run-oracle": {
+      "passed": 9,
+      "failed": 0,
+      "blocked": 0
+    },
+    "run-program": {
+      "passed": 5,
+      "failed": 0,
+      "blocked": 0
+    },
+    "seeds": {
+      "passed": 1,
+      "failed": 0,
+      "blocked": 0
+    },
+    "state": {
+      "passed": 28,
+      "failed": 0,
+      "blocked": 1
+    },
+    "step-check": {
+      "passed": 6,
+      "failed": 0,
+      "blocked": 0
+    },
+    "tdl": {
+      "passed": 9,
+      "failed": 0,
+      "blocked": 0
+    },
+    "trace": {
+      "passed": 3,
+      "failed": 0,
+      "blocked": 0
+    },
+    "xrefs": {
+      "passed": 1285,
+      "failed": 0,
+      "blocked": 0
+    }
+  },
+  "total": 2036,
+  "passed": 2000,
+  "failures": [
+    {
+      "family": "coverage",
+      "example": "N0",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: N0 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "N12",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: N12 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "N15",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: N15 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "N25",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: N25 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "N34",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: N34 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "N35",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: N35 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "PT12",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: PT12 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V10",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V10 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V11",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V11 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V12",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V12 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V13",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V13 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V14",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V14 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V15",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V15 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V16",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V16 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V2",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V2 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V3",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V3 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V4",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V4 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V5",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V5 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V6",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V6 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V7",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V7 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V8",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V8 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "V9",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: V9 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "binding:OUT",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: binding:OUT [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "device:BLOCK",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: device:BLOCK [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "device:CLOCK",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: device:CLOCK [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "device:CONSOLE",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: device:CONSOLE [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "\u00a78.5 entry-state transfer",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: \u00a78.5 entry-state transfer [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "\u00a714.9 indirectbr",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: \u00a714.9 indirectbr [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "\u00a719.3",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: \u00a719.3 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "\u00a719.4",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: \u00a719.4 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "\u00a719.5",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: \u00a719.5 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "\u00a719.6",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: \u00a719.6 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "\u00a719.7",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: \u00a719.7 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "\u00a719.8",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: \u00a719.8 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "coverage",
+      "example": "\u00a720",
+      "rule": "P-1",
+      "status": "failed",
+      "blocked_on": "",
+      "detail": "expected contract satisfied; actual Mismatch: \u00a720 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+    },
+    {
+      "family": "state",
+      "example": "r-budget-prefix",
+      "rule": "\u00a718.4",
+      "status": "blocked",
+      "blocked_on": "/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.isa-ref/source-5178cabb4c3c2c6dcbf2/target/debug/bennett-isa-ref run-cc /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/run-20261029T170833-155494/r-budget-prefix.bisa main --budget 0 / b-dialect-spec-bz6",
+      "detail": "P-2 checker-unimplemented: N34/ISA-7 typed R fault 1 before first counted instruction; CLI only supplies host fuel; expected executable check; actual unavailable; needs /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.isa-ref/source-5178cabb4c3c2c6dcbf2/target/debug/bennett-isa-ref run-cc /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/run-20261029T170833-155494/r-budget-prefix.bisa main --budget 0; blocked-on b-dialect-spec-bz6"
+    }
+  ]
+}

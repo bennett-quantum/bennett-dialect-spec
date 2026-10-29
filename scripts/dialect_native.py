@@ -66,6 +66,7 @@ def cases(ident,text):
         decl='extern uint64_t packed(double);\n'
         m=re.fullmatch(r'p\(([^)]+)\)=\{(-?\d+),(-?\d+)\}; packed=(\d+)',text.strip())
         if not m:raise d.Fail('native aggregate vector syntax: '+text)
+        if int(m[4]) != (int(m[2])%256 | (int(m[3])%(1<<32)<<8)):raise d.Fail('native aggregate fields disagree with stated packed result')
         out=[f'printf("%llu\\n",(unsigned long long)packed({m[1]}));'];expected=[int(m[4])];variants=('lift',)
     elif ident=='entry-stack':
         # Contract microvector: exercise the independent seed allocator/adoption.

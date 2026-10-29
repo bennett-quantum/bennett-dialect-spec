@@ -241,7 +241,10 @@ def check_boundary(runner,block):
             s.apply(['qexch x t'])
             s.apply(['oracle_call @slice tk (x, y) t f () ()'],oracle=pair_oracle(operations[1]),token=True)
             s.free('t');s.free('f')
-            if superposed:want={(5,0):1/math.sqrt(2),(6,1):1/math.sqrt(2)}
+            if superposed:
+                pair=re.search(r'-> \(\|(\d+),(\d+)>\+\|(\d+),(\d+)>\)/sqrt\((\d+)\)',text)
+                if not pair:raise d.Fail('parameterised superposition vector syntax')
+                a,b,c,dv,den=map(int,pair.groups());want={(a,b):1/math.sqrt(den),(c,dv):1/math.sqrt(den)}
             else:
                 x,y=map(int,re.search(r'-> x=(\d+),y=(\d+)',text).groups());want={(x,y):1}
             assert_view(s,['x','y'],want)

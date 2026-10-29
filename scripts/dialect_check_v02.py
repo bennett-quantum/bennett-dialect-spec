@@ -694,7 +694,7 @@ def seed_check(runner):
                  ROOT/'scripts'/'test_seeds.c',seed/'softfloat.c',*sources,'-o',exe])
         equal('seeds/clang'+major,'§13 seed vectors',
               '100000 binary64 add/mul vectors and musl exp/log anchors passed',command([exe]).strip())
-        for name in ('runtime','contexts','devices'):
+        for name in ('runtime','contexts','devices','coherence'):
             command([runner.frontends[major]/'clang','-std=c11','-Wall','-Wextra','-Werror','-c',seed/(name+'.c'),'-o',runner.tmp/(name+'-'+major+'.o')])
 
 

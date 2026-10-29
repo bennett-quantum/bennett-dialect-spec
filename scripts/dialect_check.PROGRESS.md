@@ -197,3 +197,105 @@ regressions. The R-budget prefix is a real ISA-7 dependency, not missing CLI:
 R fixture and its diagnostic are retained; no generic trap is substituted.
 Coverage bug b-dialect-spec-1jb filed (also b-dialect-spec-gvr). Final verification
 and exact family table follow below after rerunning the final code.
+
+## Final resume verification — 2026-10-29
+
+Spec snapshot: c61de71, draft 0.2.1. Direct freeze gate:
+`env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER
+TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp
+python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py
+--json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/final-gate.json`.
+**Exit 1: 2000 passed / 35 failed / 1 blocked / 2036 total.**
+No skip, removed example or rewritten spec expectation. Six extra checks compared
+to the resumed runner: independent arena-O1 map plus five one-shot launch checks.
+The resumed reproduction was 2030 checks; the editor's earlier report was 2029.
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 5 | 0 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 9 | 0 | 0 |
+| coverage | 90 | 35 | 0 |
+| driver | 1 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 15 | 0 | 0 |
+| hash | 5 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 8 | 0 | 0 |
+| native | 13 | 0 | 0 |
+| normalise | 18 | 0 | 0 |
+| parse | 393 | 0 | 0 |
+| recognise | 84 | 0 | 0 |
+| run-oracle | 9 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 28 | 0 | 1 |
+| step-check | 6 | 0 | 0 |
+| tdl | 9 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1285 | 0 | 0 |
+
+Every remaining red coverage row fails P-1 because it lacks the required
+accepted example/index evidence (Appendix B explicitly preserves these failures;
+b-dialect-spec-gvr and newly filed bug **b-dialect-spec-1jb**, label dialect-precheck):
+
+- `N0`: no required checked accept example/index evidence.
+- `N12`: no required checked accept example/index evidence.
+- `N15`: no required checked accept example/index evidence.
+- `N25`: no required checked accept example/index evidence.
+- `N34`: no required checked accept example/index evidence.
+- `N35`: no required checked accept example/index evidence.
+- `PT12`: no required checked accept example/index evidence.
+- `V10`: no required checked accept example/index evidence.
+- `V11`: no required checked accept example/index evidence.
+- `V12`: no required checked accept example/index evidence.
+- `V13`: no required checked accept example/index evidence.
+- `V14`: no required checked accept example/index evidence.
+- `V15`: no required checked accept example/index evidence.
+- `V16`: no required checked accept example/index evidence.
+- `V2`: no required checked accept example/index evidence.
+- `V3`: no required checked accept example/index evidence.
+- `V4`: no required checked accept example/index evidence.
+- `V5`: no required checked accept example/index evidence.
+- `V6`: no required checked accept example/index evidence.
+- `V7`: no required checked accept example/index evidence.
+- `V8`: no required checked accept example/index evidence.
+- `V9`: no required checked accept example/index evidence.
+- `binding:OUT`: no required checked accept example/index evidence.
+- `device:BLOCK`: no required checked accept example/index evidence.
+- `device:CLOCK`: no required checked accept example/index evidence.
+- `device:CONSOLE`: no required checked accept example/index evidence.
+- `§8.5 entry-state transfer`: no required checked accept example/index evidence.
+- `§14.9 indirectbr`: no required checked accept example/index evidence.
+- `§19.3`: no required checked accept example/index evidence.
+- `§19.4`: no required checked accept example/index evidence.
+- `§19.5`: no required checked accept example/index evidence.
+- `§19.6`: no required checked accept example/index evidence.
+- `§19.7`: no required checked accept example/index evidence.
+- `§19.8`: no required checked accept example/index evidence.
+- `§20`: no required checked accept example/index evidence.
+
+The only blocked execution is **state/r-budget-prefix**: dialect §17.6 requires
+typed code 1 before the first counted instruction and no later console/tape effect.
+The concrete `r-budget-prefix.bisa` is parsed, hashed and checked, then run with
+`run-cc ... main --budget 0`. The published CLI diagnoses
+`§3.4: reference execution fuel exhausted; CC/R has no ISA step budget`.
+Host fuel does not implement N34; ISA 0.8 has no R `fault C`. Blocked on
+**b-dialect-spec-bz6 / ISA-7** (and the already tracked ISA change), not on a
+missing CLI. No generic trap is claimed equivalent. The exact command and stderr
+are in final-gate.json/log and the run directory's r-budget-prefix.diagnostic.
+
+All requested commands have landed: run-cc, reverse, run-action, run-program.
+There are **no checks waiting on an unlanded CLI command** from b-isa-spec-xam.
+The final source snapshot receipt records commit `8503d818b7cd96b95682e5970596790b364ea6a6`, SHA256 `5178cabb4c3c2c6dcbf20a37da9b8679487deb54fe03f73b530c32572b6cc779`.
+The immutable snapshot and concrete run files remain under ignored scripts/.isa-ref
+and scripts/.tmp. Machine report: scripts/.tmp/final-gate.json; log: final-gate.log.
+
+Validation: 26 checker unit regressions (including deliberately wrong expectations,
+new adapters, real ISA-7 probe, exact arena/aggregate maps and headless guard);
+4 legacy runtime tests; LLVM 18/20/23 and native clang 18/23 within the full gate.
+`--family driver --list` passes; `git diff --check` passes. The freeze gate remains
+red and gyl/ofu remain in progress for the editor-owned coverage and ISA-7 work.
+No push, protected file edits or ISA source edits. Generated Beads JSONL is outside
+the owned paths and is intentionally left uncommitted.

@@ -200,6 +200,23 @@ class ContractTests(unittest.TestCase):
                 if 'cc-run' in b['attrs']:
                     with self.subTest(example=b['attrs']):check(runner,b,'run-program')
 
+    def test_r_budget_dependency_is_probed(self):
+        from pathlib import Path
+        from dialect_cc import r_budget_prefix
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'state'})
+            with self.assertRaisesRegex(v.Unavailable,'N34/ISA-7'):
+                r_budget_prefix(runner,self.block('state','r-budget-prefix'))
+            diagnostic=(Path(tmp)/'r-budget-prefix.diagnostic').read_text()
+            self.assertIn('CC/R has no ISA step budget',diagnostic)
+            self.assertTrue((Path(tmp)/'r-budget-prefix.bisa').is_file())
+
+    def test_view_pass_guard_does_not_reject_filenames(self):
+        self.assertEqual(v.command(['/bin/true','compute-view-event-1.bisa']),'')
+        for flag in ('-passes=view-cfg','-view-cfg','-passes=function(view-dom)'):
+            with self.subTest(flag=flag),self.assertRaisesRegex(d.Fail,'rule 11'):
+                v.command(['/bin/true',flag])
+
     def test_handle_containment_at_external_call(self):
         text = '''declare void @external(ptr)
 define void @top() {
