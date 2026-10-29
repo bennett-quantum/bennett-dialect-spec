@@ -47,3 +47,16 @@ consumer predicates, clean workspace, deferred channel records, bounded G, inher
 virtual devices and per-K application. New §18.8 TDL/state witnesses and updated tdl-effect
 are normative; baseline run-action is unavailable. Full baseline: 1922/1982 passed,
 60 failed/blocked. Direct dialect_check_v02.py exits 0 without main; frontend runs it.
+
+## Q6 — Round-1 interface and native adapters (editor)
+
+New checked objects arena-o1, fp-aggregate and entry-stack require carrier, hidden arena
+base and snapshot support; entry-stack is explicitly a runtime contract microvector,
+not a byte-map of the general replay loop. All three were check/hash/run-oracle verified
+with the offline-built Rust interpreter. Add native adapters for fp-aggregate, entry-stack
+and n-fcmp. Update seed softfloat.c predicate enum (currently case 8 means ueq, 14 uno;
+correct is uno=8, ueq=9, une=14), plus varargs rounded frame size and 0.2.1 version fields.
+Implement common all-projection wide delivery, chunked snapshot release, stack backing
+replay/adoption, sampled universal budget obligation, and parameterised in-place CC
+expansion (inplace-param-quantum now accepts; BLK-3 retired). Candidate-pair witness
+accepts with two trap bodies. Never alter spec vectors to fit old checker behavior.

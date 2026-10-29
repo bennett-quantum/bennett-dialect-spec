@@ -1732,6 +1732,35 @@ Only the rules the north star requires:
 
 ### 7.7 Examples
 
+Two invalid measuring candidates are both trap bodies, not a module rejection (E14):
+
+```llvm example=region-two-measure-candidates verdict=accept
+define internal void @a(ptr %e) {
+  %q = load ptr, ptr %e
+  %m = call i1 @__bennett_measure(ptr %q, i64 0)
+  ret void
+}
+define internal void @b(ptr %e) {
+  %q = load ptr, ptr %e
+  %m = call i1 @__bennett_measure(ptr %q, i64 0)
+  ret void
+}
+define void @top(i1 %pick) {
+  %q = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %e = alloca ptr
+  store ptr %q, ptr %e
+  %f = select i1 %pick, ptr @a, ptr @b
+  call void @__bennett_ctrl(ptr %q, i64 0, ptr %f, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %q)
+  ret void
+}
+```
+
+```text state=region-two-measure-candidates at=1
+compile=accept; candidates={a,b}; both bodies=T-REGION-INVALID; dispatch either -> code=4
+```
+
+
 ```llvm example=region-select verdict=accept candidates=ra,rb
 define internal void @ra(ptr %e) {
   %h = load ptr, ptr %e
@@ -2184,15 +2213,22 @@ module's datalayout, where (C view in `bennett_markers.h`, §3.3):
 On x86-64, AArch64 and RISC-V64 (pw = 64) H is 32 bytes, Bind 32 bytes (`kind` at 0, `mode` 4,
 `q` 8, `value` 16, `size` 24) and DevBind 24 bytes, so `param[i]` is at 32 + 32i and `dev[j]` at
 32 + 32·nparam + 24j. The plugin reads the descriptor at the marker call, in the caller's tier,
-with ordinary loads. `nparam` MUST equal the number of IR parameters of the dispatched region
-function (after ABI lowering: the IR signature). A descriptor whose `version`, `flags`, `nparam`
+with ordinary loads. `nparam` MUST equal the number of flattened scalar fields of the dispatched region
+function after N21/N22 and ABI lowering, using §8.2 carriers (one field for a scalar). A descriptor whose `version`, `flags`, `nparam`
 or any kind, mode or model is not one this section defines, or whose binding does not fit the
 parameter's type (below), traps (`T-IFACE`, fault code 4) when the marker is called.
 
 ### 8.2 Parameter bindings
 
 Let the dispatched region function have IR parameters p_0 … p_{m−1} and return type R (`void`
-or a first-class type of at most 128 bits after N25, §12.2). `param[i]` binds p_i:
+or a first-class type of at most 128 payload bits after N25, §12.2). Before binding,
+represent each floating-point scalar by its §13.1 integer carrier (half/bfloat i16, float
+i32, double i64, x86_fp80 i80, fp128/ppc_fp128 i128). IN and ARG bind carrier bits.
+Flatten aggregate/vector parameters depth-first in field/lane order, one Bind per scalar
+field; apply N21/N22 first. `param[i]` binds flattened field i. Results concatenate fields
+in the same order, field 0 in the lowest bits, no padding; width is the sum of scalar
+carrier widths. N25 demotes results whose packed width exceeds 128 bits. Memory accesses
+retain datalayout padding; this padding is never part of the packed return payload:
 
 | Kind | Code | Parameter type | Register | Meaning | ISA lowering (§16.2) |
 |---|---|---|---|---|---|
@@ -2254,16 +2290,25 @@ equal their initialisers at every call.
 **Realisation on ISA 0.8.** Let R be the abstract objects the oracle closure may load (§5.4),
 minus constant globals, minus mutable globals written by no function outside the L closure. If
 R is empty, nothing is transferred: the oracle's globals start at their data images (ISA §3.7).
-This is rung 4 route A (SQLite §5.2(i)). Otherwise the plugin emits an **entry-state transfer**:
+This is rung 4 route A (SQLite §5.2(i)). Translate source read-set objects after
+normalisation to runtime backing allocations. If R includes a caller alloca/frame, snapshot
+its live shadow-stack backing storage and allocation metadata, bytes and addresses. When
+reachability is uncertain, copy all live caller heap and shadow-stack backing allocations.
+Whenever the L closure uses the shadow stack, include its state globals in G and its block
+in Hb with current base, size and stack pointer, even if the source R had no heap object.
+After replay heap_used, atop and these stack-state values equal the caller's call-entry values.
+Otherwise the plugin emits an **entry-state transfer**:
 
 1. **Snapshot.** At the call the caller's tier forms the byte string
    S = k ‖ (size_i ‖ live_i)_{i<k} ‖ G ‖ Hb, where k is the number of heap allocations in the
    caller's allocation table (in allocation order, ISA §7.1), `size_i` and `live_i` are 8-byte
    little-endian fields, G is the bytes of the mutable globals in R in `layout.globals` order,
    and Hb is the bytes of every live heap allocation in allocation order if R contains a heap
-   object (else empty). S is zero-padded to 2^A_s bytes, where A_s is the smallest exponent with
+   object or shadow-stack backing allocation (else empty). S is zero-padded to 2^A_s bytes, where A_s is the smallest exponent with
    2^A_s ≥ 8 + 16·N_alloc + Σ|G| + `heap_limit_max` (N_alloc the allocation-table capacity of
    the layout, §19.5); A_s is static.
+The snapshot bytes S are assembled in a plugin-added unnamed CC global of 2^A_s bytes,
+   zero-filled before every build; thus all 16-byte leaf loads, including padding, are valid.
 2. **Register.** The CC tier builds a register of 8·2^A_s wires holding S with a **concat
    tree** of A_s − 3 static-width CC functions `B_j` (j = 4, …, A_s): `B_4(p)` executes
    `qreg.new any 128`, loads the 16 bytes at p as two `i64` values and makes the `oracle_call`
@@ -2282,9 +2327,11 @@ This is rung 4 route A (SQLite §5.2(i)). Otherwise the plugin emits an **entry-
 4. **Release.** The snapshot register holds the basis state |S⟩ and is unentangled after every
    oracle call (an `in` region is unchanged on every basis configuration, ISA §5.2). The caller
    keeps it for later calls while no store to an object of R has executed since it was built,
-   and releases it by `measure` (its outcome is S with probability 1 and is discarded) before
-   the next build or at the end of the caller's run. *(non-normative)* A run that measures is not
-   reversible (ISA §10); a CC program that calls oracles is not a whole-run reversal candidate.
+   and releases it by unpreparation: retain the classical S for the register's lifetime,
+   take successive slice views of at most 128 bits, invoke the same @xor128 preparation
+   oracle with the original two i64 arguments on each 128-bit chunk (one view per call),
+   then qreg.free the now-clean whole register. A_s ≥ 4, so every leaf is exactly 128 bits.
+   No whole-register measurement, view measurement or un-concat operation is needed.
 
 The replay's rows, allocations and calls are part of the reference body and count against the
 budget (§9.4). Entry-state transfer from R-tier code needs registers allocated in R (BLK-4,
@@ -2298,8 +2345,11 @@ The **outputs** of a shape are, in order: `tgt` (if non-null), each `OUT` parame
 order, and the `CONSOLE` register (if bound). Each output register is split into **slices** of
 at most 128 bits from its low end (ISA §3.3: payloads are `iN` with N ≤ 128); the slices of all
 outputs are numbered 0, 1, …, k − 1 in that order. Every slice j has an oracle **variant** W_j:
-the same reference body (§16.2) whose `lift.retval` delivers slice j of the payload. All variants
-compute the same fault code, so code(F_B) is one function of the inputs.
+the same reference body (§16.2) whose `lift.retval` delivers slice j of the payload. Every W_j executes an identical ordered computation and validation of every projection,
+with identical row charges and fault conditions; only its last lift.retval operand differs.
+Thus all variants compute the same fault code, even when budget expires in delivery, and
+all copy-outs are zero on any common failure. For a single slice, retain its existing rows
+and return directly without an extra projection move.
 
 - **k = 1** (every output fits 128 bits in one register): the invocation is `oracle_call @W_0
   tk (ins..) tgt fault (mem..) (args..)`.
@@ -2348,9 +2398,15 @@ scratch (ISA §4.5).
   the library's permutation action with `IN`, `MEM_IN` and `ARG` bindings as its `in`, `mem` and
   `args` operands, which ISA 0.8 expresses directly (ISA §4.7 `action_call`). This is also the
   TDL-5(b) mechanism (§10).
-- **User pairs with `IN` or `MEM_IN` bindings, or `ARG`s with unbounded value sets**: ISA 0.8's
-  `qinplace` has no parameter lists. The verdict is `blocked:BD-B-ISA3` (BLK-3, §25.1): the full
-  mechanism is specified here and needs the ISA change of §25.1.
+- **User pairs with `IN`, `MEM_IN` or arbitrary `ARG`s**: allocate clean n(x)-wire t and
+  4-wire f at the CC boundary. Issue oracle_call @g tk (x, ins..) t f (mem..) (args..),
+  exchange x and t by a swap action, then oracle_call @ginv tk (x, ins..) t f (mem..) (args..),
+  and qreg.free t and f. Preserved parameter bindings are identical in both calls. Under
+  control, predicate every region call including the swap; allocation/free remain
+  unconditional. This is a CC-level expansion like §8.6, not an assertion that a static
+  action passes ISA §6's coarse provenance windows. Universal inverse and fault-free
+  budget obligations below guarantee clean scratch on every basis state, hence on
+  superpositions. Parameterised qinplace is efficiency only (§25.3); BLK-3 is retired.
 
 **Verification.** For every compiled pair and every argument tuple, when N ≤ the configured
 width (driver option `-bennett-inplace-exhaustive-bits`, default 24, §24), the plugin MUST run
@@ -2358,10 +2414,16 @@ the reference interpreter on both reference bodies with an unbounded budget and 
 every x ∈ [0, 2^N), F^g(x) = (y, 0) and F^ginv(y) = (x, 0); it records the **minimal budget**
 B_min, the componentwise maximum over all those runs of (rows, heap bytes, stack cells, depth).
 Above that width it MUST record a `sampled` evidence claim (ISA §12.1) of the same check and
-B_min over the sample, and the dynamic net applies: a wrong inverse leaves the scratch register
+B_sample over the sample as an observed lower bound only, and the dynamic net applies: a wrong inverse leaves the scratch register
 of the `qinplace` expansion non-clean, which `T-CLEAN` catches (NS §3.1). F_B is monotone in
 the budget (a run that completes within B completes identically within every B′ ≥ B), so the
-pair is valid for exactly the budgets B ≥ B_min. A pair that fails the check, or whose budget
+pair is valid for exactly B ≥ B_min only when the check is exhaustive over the full
+input/parameter domain. Sampling cannot establish B_min or universal invertibility. In all
+sampled cases validity assumes mutually inverse total functions and a sound bound B_bound
+covering every input and parameter value. A library or producer-supplied bound is permitted
+with an explicit correctness obligation recorded in the certificate; no mechanised proof
+format is required. B_sample never substitutes for B_bound, and T-CLEAN is not a universal
+budget guarantee. Use B_bound in the following budget checks for sampled pairs. A pair that fails the check, or whose budget
 is static and below B_min in some component, is `BD-E-INPLACE-NOT-INVERSE` (NS §3.1: "an
 in-place update with no inverse fails loud at compile time"; "a fallible or budget-limited
 computation cannot be in-place"); a run-time budget (§9.5) below B_min traps at the marker
@@ -2370,6 +2432,27 @@ bijection, so g∘ginv = id and ginv is fault-free on every input, as ISA `qinpl
 0.1's `BD-E-INPLACE-UNVERIFIED` is deleted.
 
 ### 8.8 Examples
+
+Round-1 wrapper boundary vectors. The common delivery prefix includes every projection
+before any selected return; a low budget therefore zeros *all* variants.
+
+```text state=wide-delivery at=1
+OUT[20]=11 repeated 20 times; targets initially 00 repeated 20 times
+insufficient common-delivery budget -> all W_j code=1 payload=0; all 20 target bytes unchanged
+sufficient budget -> all W_j code=0; target=1111111111111111111111111111111111111111
+```
+
+```text state=entry-backing at=1
+caller alloca byte=07 at shadow-stack base+offset; ARG points there
+snapshot backing block and stack metadata; replay -> oracle load payload=7; caller byte=07
+snapshot release 32 bytes -> two 128-bit slice xor128 calls, whole qreg clean free; no measure
+```
+
+```text state=inplace-bound at=0
+sample misses rare identity long path needing 1000 steps; B_sample=10 is lower bound only
+declared universal B_bound=1000 covers that path; budget=10 is never admitted from sample alone
+```
+
 
 `inc8` bound by a descriptor with one `IN`, called twice (the oracle is an involution, so every
 register is released clean). The descriptor and budget record are built by merged constant
@@ -2665,7 +2748,7 @@ define void @top(i1 %big) {
 }
 ```
 
-```llvm example=inplace-param-quantum verdict=blocked:BD-B-ISA3
+```llvm example=inplace-param-quantum verdict=accept
 define internal i8 @addk(i8 %x, i8 %k) {
   %r = add i8 %x, %k
   ret i8 %r
@@ -2706,8 +2789,15 @@ define void @top() {
 }
 ```
 
-```text blocker=inplace-param-quantum
-BD-B-ISA3 @top call @__bennett_inplace(@addk, @subk): parameter 1 is bound IN (register %y); ISA 0.8 qinplace has no (ins..) (mem..) (args..); BLK-3 (ISA-3) qinplace @g @ginv tk x (ins..) (mem..) (args..)
+```text tdl=inplace-param-quantum
+prepare clean t:8 f:4; oracle addk(x,y) -> t=x+y mod 256, f=0
+swap x t -> x=x_old+y, t=x_old; oracle subk(x,y) -> t=x_old xor (x-y)=0, f=0
+free t,f; y preserved; every region call controlled under ctrl
+```
+
+```text state=inplace-param-quantum at=3
+x=5,y=7 -> x=12,y=7,t=0,f=0
+x=5,y=(|0>+|1>)/sqrt(2) -> (|5,0>+|6,1>)/sqrt(2); scratch=0
 ```
 
 ## 9. Budgets
@@ -4863,7 +4953,9 @@ plugin-defined; they MUST be extensionally equal to the reference objects (ISA �
 ### 16.1 Liftable means materialised, always
 
 Every materialised function is liftable (outline B1): §12 legalises every construct into integer
-SSA values of at most 128 bits, memory, calls and branches, and §16.4 has a row for each. 0.1's
+SSA values of at most 128 bits, memory, calls and branches at the map boundary.
+Materialised LLVM may still contain bit-exact FP forms and aggregates; §16.4 maps these
+through integer carriers and field locations. Every such accepted form has a row. 0.1's
 `BD-E-LIFT-SUBSET` is deleted.
 
 ### 16.2 The reference object
@@ -4889,7 +4981,8 @@ For a shape with region function f, the reference object is the ISA text (ISA §
 
 - `<ins>`: `x<k>:wire[n] in` for the k-th `IN` binding in parameter order (n = n(q));
 - T: the width of the variant's slice (§8.6), or 1 when the shape has no output;
-- `<mems>`: `m<k>:region[A,8] in` for the k-th `MEM_IN` binding in parameter order, then `e0` for
+- `<mems>`: first `coh:region[A,8] in` when a slice or oracle reads an arena object,
+  then `m<k>:region[A,8] in` for the k-th `MEM_IN` binding in parameter order, then `e0` for
   an ENTROPY binding, `k0` for a BLOCK binding, `s0` for an entry-state snapshot (§8.5);
 - `<args>`: `a<k>:i<W>` for the k-th `ARG` binding in parameter order (W = pw for a `ptr`).
 
@@ -4912,12 +5005,18 @@ Its body is one block `^entry():` with, in order:
    `lift.faultif u 4`. A function **may unwind** iff it is not `nounwind` and calls (directly or
    through a candidate) a function that may unwind, an external function without `nounwind`, or
    one of the raise functions of §14.4 (least fixpoint).
-5. **Delivery** of slice j of the payload: for the `tgt` output with n(tgt) < R: `c = lift.const.iR
+5. **Common delivery**, identical in every W_j: compute and validate *every* payload
+   slice in output/slice order (§8.6), including all address offsets, bounds checks, loads,
+   casts, dropped-bit checks and console slices. Store each projection in `p<j>:reg[w_j]`.
+   Only after this identical sequence does `lift.retval p<j>` select this variant's result.
+   For k=1 retain the original direct result without a projection move.
+   Every variant has the same location list and row charges, including unused projections.
+   The per-slice computation is: for the `tgt` output with n(tgt) < R: `c = lift.const.iR
    <n(tgt)>`, `t = lift.lshr r c`, `z = lift.const.iR 0`, `u = lift.icmp.ne t z`, `lift.faultif
    u 4` (the dropped-bits check of §8.2, in every variant); then the slice value: from `r` by
    `lift.lshr` of its low bit position (when nonzero) and `lift.trunc`/`lift.zext` to T (when the
    widths differ); from an `OUT` buffer `w<i>` by `p = lift.add w<i> <offset>` (when nonzero),
-   `lift.boundscheck p <T/8>`, `v = lift.load.i<T> p`; then `lift.retval <value>`.
+   `lift.boundscheck p <T/8>`, `v = lift.load.i<T> p`; then `p<j> = lift.mov <value>`; after all slices, `lift.retval p<selected>`.
 
 Wrapper locations are `w<i>` (arguments), `r` (the call's result), `d<k>` (prologue), and `c<j>`,
 `t<j>` for its constants and temporaries in emission order.
@@ -4947,12 +5046,14 @@ it is omitted when empty. W: a value's width (`i1` → 1, `ptr` → pw); a const
 temporary's width (1 for a compare, else its operation's width).
 
 **Layout.** The reference object's `layout` is the device link layout (§19.5) restricted to the
-globals that the L closure names in `lift.addr` and, transitively, the globals their initialisers
+non-arena globals that the L closure names in `lift.addr` and, transitively, non-arena globals their initialisers
 point to (in link order, numbered G1, G2, …), with the link's `ptr_width`, `null_size`,
 `heap_base`, `heap_limit_max`, `H`, `A_tab` and `S_cells`, and `interface_regions` = { "ref": the
-shape's regions } with bases assigned in `<mems>` order: each base is the smallest multiple of
+shape's regions }. An arena-relocated global has no G<n> symbol or data image:
+its address is @coh plus its arena offset. `coh` is placed at A_coh (§19.5), disjoint
+from globals and heap. Bases of all other regions follow `<mems>` order: each base is the smallest multiple of
 the region's size that is ≥ the end of the previous range (the heap's end `heap_base +
-heap_limit_max` for the first). H is the smallest value with every range inside [0, 2^H); A_tab
+heap_limit_max` for the first when there is no arena; otherwise the arena's end). H is the smallest value with every range inside [0, 2^H); A_tab
 is the smallest value with 2^A_tab ≥ P + `heap_limit_max`, P the link's number of globals plus
 the largest number of interface regions of any oracle, so that allocation-table overflow never
 precedes heap exhaustion (both fault with code 2, ISA §4.2, and a reference object with fewer
@@ -4964,10 +5065,17 @@ with 2^S_cells ≥ the largest `stack` of the budget table.
 Rows of an instruction are emitted in instruction order within its block. Before the rows of an
 instruction, each of its **constant operands** that is a value operand (in operand order; not an
 immediate flag; for `getelementptr`, not a constant index) is materialised: an integer constant by
-`c<j> = lift.const.iW <unsigned decimal>`; `null` by `lift.const.i<pw> 0`; a global `@G` by
-`c<j> = lift.addr @G<n>`; a function `@F` by `c<j> = lift.const.i<pw> <A(F)>`; a constant
+`c<j> = lift.const.iW <unsigned decimal>`; `null` by `lift.const.i<pw> 0`; a non-arena global `@G` by
+`c<j> = lift.addr @G<n>`; an arena global by `c<j> = lift.addr @coh`, and if its
+arena offset δ is nonzero, `c<j+1> = lift.const.i<pw> δ`, `t<j> = lift.add c<j> c<j+1>`
+(the operand reads this temporary); in an lproc the base is its hidden arena-base
+parameter rather than lift.addr @coh. The wrapper materialises @coh once before the
+region call, appends this pw-bit argument after source parameters, and every transitive
+lproc call threads it unchanged. Only functions in the arena-reading closure receive it;
+materialising the base in a lproc uses lift.mov of that parameter. A function `@F` by `c<j> = lift.const.i<pw> <A(F)>`; a constant
 expression by the rows of its instructions, innermost first, into temporaries. The operand then
-reads `c<j>`. A non-constant operand reads the location of its value (`a<i>` for a parameter).
+reads `c<j>`. Aggregate constants materialise one scalar carrier constant per
+flattened field in field order before packing. A non-constant operand reads the location of its value (`a<i>` for a parameter).
 `A`, `B`, `C` below are the operands so read; `v` is the instruction's location.
 
 | LLVM | Rows |
@@ -4979,11 +5087,15 @@ reads `c<j>`. A non-constant operand reads the location of its value (`a<i>` for
 | `select c, a, b` | `v = lift.select C A B` |
 | `zext/sext/trunc a to iM` | `v = lift.<op>.iM A` |
 | `ptrtoint` to iM, `inttoptr` from iM | M = pw: `v = lift.mov A`; ptrtoint M < pw or inttoptr M > pw: `lift.trunc`; otherwise `lift.zext` (LangRef zero-extends) |
-| `bitcast` (integer to integer of equal width, pointer to pointer), `addrspacecast` | `v = lift.mov A` |
+| `bitcast` of equal-width integer/FP carriers or pointers, `addrspacecast` | `v = lift.mov A`; FP constants materialise their carrier bit pattern |
 | `getelementptr T, ptr p, idx…` | acc := P; for each non-constant index in order: `t = lift.sext.i<pw> I` (or `lift.trunc`, omitted when the index is pw wide); if its element size s ≠ 1, `c = lift.const.i<pw> s` and `t′ = lift.mul t c`; `acc′ = lift.add acc t′`; then, if the constant byte offset Δ of the constant indices (mod 2^pw) ≠ 0, `c = lift.const.i<pw> Δ` and `lift.add acc c`. The last row writes v; with no row at all, `v = lift.mov P` |
-| `load T, ptr p` (T = iN with N a multiple of 8, or `ptr`; N ≤ 128 after §12) | `lift.boundscheck P <N/8>`; `v = lift.load.iN P` |
+| `load T, ptr p` (T = iN with N a multiple of 8, or `ptr`; N ≤ 128 after §12; FP uses its carrier) | `lift.boundscheck P <N/8>`; `v = lift.load.iN P` |
 | `store v, ptr p` | `lift.boundscheck P <N/8>`; `lift.store.iN P V` |
-| `insertvalue`, `extractvalue` | `lift.mov` of the field locations |
+| `insertvalue`, `extractvalue` | `lift.mov` of the depth-first flattened field locations (one per scalar field); unchanged fields remain their input locations |
+| FP `load`, `store`, `select`, `phi` | the corresponding integer-carrier row, bit-exact |
+| `fneg`, `llvm.fabs`, `llvm.copysign` | for IEEE/x87 formats, xor sign mask / and complement sign mask / clear magnitude sign then or source sign, at carrier width (sign bit 15, 31, 63, 79 or 127). For ppc_fp128, fneg flips both component signs; fabs conditionally flips both using the high double's sign; copysign conditionally flips both according to differing high signs, preserving APFloat PPCDoubleDouble semantics |
+| aggregate `ret` of packed width ≤128 | zext each field to packed width (identity if equal), shift by cumulative prior field widths (omit zero shift), or in field order; `lift.ret` packed value |
+| aggregate call result | `lift.call` into a packed-width temporary, then for each field lshr by cumulative offset (omit zero shift), trunc to field width (identity if equal) |
 | `phi` | none at its position (edge moves) |
 | direct `call @g(args)` of a defined function | `v = lift.call @L(g) (A_1 … A_m)` (flattened arguments); a `void` callee writes a temporary `t<j>:reg[1]` |
 | `call @__bennett_nz_alloc(n)`, `call @__bennett_nz_free(p)` | `v = lift.alloc N`; `lift.free P` |
@@ -6031,6 +6143,211 @@ and `lift.retval` (1): 12 steps; x = 40 visits `^b0`, `^b0.s2`, `^b0.s4`, `^b0.s
 linear chain needed up to 5 compares; the tree needs at most 4 on this table (the `ult` at the
 root and up to 3 `eq`), and O(log k) for k cases.
 
+### 16.11 Round-1 interface contract vectors
+
+**Arena O1 (TDL-b).** @cnt and @other are coh offsets 0 and 1; neither has a G symbol.
+O1 returns old-other XOR (cnt+1). The wrapper passes @coh as a hidden base pointer:
+ISA interface-region names are local to the wrapper, not visible in its lprocs.
+
+```isa object=arena-o1
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"1b33043e49b067f85baffa2b7e1e4390a9ea7f82f0c73cafd5482be68219d22b","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":["i8"],"fault":4,"in":[],"kind":"oracle","mem":[{"A":1,"W":8,"role":"in"}],"tgt":8,"tier":"q"}},"1":{"interface_hash":"9967104ff6b4ca88c991146eec9bc479d47e9dd572e818105b322cdb38c2c845","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[8,64],"result":8,"tier":"q"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) (coh:region[1,8] in) (a0:i8)
+regs { d0:reg[64], r:reg[8] }
+^entry():
+d0 = lift.addr @coh
+r = lift.call @L1 (a0, d0)
+lift.retval r
+lproc @L1 (a0:reg[8], a1:reg[64]) (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[8], c1:reg[8], v1:reg[8], v2:reg[8] }
+^b0():
+c0 = lift.mov a1
+lift.boundscheck c0 1
+v0 = lift.load.i8 c0
+c1 = lift.const.i8 1
+v1 = lift.add v0 c1
+v2 = lift.xor a0 v1
+lift.ret v2
+
+section layout
+{"A_tab":1,"H":13,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{"coh":{"base":4096}}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=arena-o1
+ref 1b33043e49b067f85baffa2b7e1e4390a9ea7f82f0c73cafd5482be68219d22b
+L1 9967104ff6b4ca88c991146eec9bc479d47e9dd572e818105b322cdb38c2c845
+```
+
+```text run=arena-o1
+input= mem=coh:0000 arg=0 budget=100,0,32,1 -> code=0 payload=1 steps=10
+input= mem=coh:0500 arg=0 budget=100,0,32,1 -> code=0 payload=6 steps=10
+```
+
+**FP and aggregate ABI.** The source signature and constant return are:
+
+```llvm lift=fp-aggregate region=@p desc=IN(64,zext);tgt=40
+define internal {i8, i32} @p(double %x) {
+  ret {i8, i32} {i8 1, i32 -1}
+}
+```
+
+A region returning {i8 1,i32 -1} with double +1.0
+as its parameter binds i64 carrier bits. Packing is 1 | (0xffffffff << 8)
+= 0xffffffff01 = 1099511627521, with no padding. The L1 body below is that constant
+aggregate return, packed by the aggregate-ret row.
+
+```isa object=fp-aggregate
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"1139edfe71a34500be515f3ff61380020ab781c254339eafbad172a94e095d69","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[64],"kind":"oracle","mem":[],"tgt":40,"tier":"q"}},"1":{"interface_hash":"4b221ed922ead2aba9c13f022d52a8505f7d11d7d384e2ea2803d25aafa96291","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":40,"tier":"q"}}}
+
+section functions
+oracle @ref (x0:wire[64] in) (tgt:wire[40]) (fault:wire[4]) () ()
+regs { r:reg[40] }
+^entry():
+r = lift.call @L1 (x0)
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[40]) () () ()
+regs { c0:reg[8], c1:reg[32], t0:reg[40], t1:reg[40], c2:reg[40], t2:reg[40], t3:reg[40] }
+^b0():
+c0 = lift.const.i8 1
+c1 = lift.const.i32 4294967295
+t0 = lift.zext.i40 c0
+t1 = lift.zext.i40 c1
+c2 = lift.const.i40 8
+t2 = lift.shl t1 c2
+t3 = lift.or t0 t2
+lift.ret t3
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=fp-aggregate
+ref 1139edfe71a34500be515f3ff61380020ab781c254339eafbad172a94e095d69
+L1 4b221ed922ead2aba9c13f022d52a8505f7d11d7d384e2ea2803d25aafa96291
+```
+
+```text run=fp-aggregate
+input=0x3ff0000000000000 budget=100,0,32,1 -> code=0 payload=1099511627521 steps=10
+```
+
+
+```text state=fp-sign-carrier at=0
+fneg binary64 +1.0 -> 0x3ff0000000000000 xor 0x8000000000000000 = 0xbff0000000000000
+```
+
+```text native=fp-aggregate
+p(1.0)={1,-1}; packed=1099511627521
+```
+
+**Replayed stack adoption.** This one-entry runtime contract microvector has a
+caller stack block of 16 bytes and state {base=4096,size=16,sp=4097}, with byte 7
+at its base. s0 contains k, size/live, 24 state bytes, then all 16 backing bytes.
+L1 replays this fixed one-entry table; L2 adopts its nonzero base without allocation;
+L3 is malloc(16) then ptrtoint. The new address is 4096+16=4112, not 4128.
+The explicit null/data bases are comparison-layout options. This contract microvector
+is not a canonical map of the general replay loop: its table shape is fixed to one
+live allocation to expose the allocator-state and idempotent-init boundary.
+
+```isa object=entry-stack
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"50289e34598400f57c820d819d83993e14d12e08596ba55ce070109b5746ad1f","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[{"A":6,"W":8,"role":"in"}],"tgt":64,"tier":"q"}},"1":{"interface_hash":"86becbb1ddcc433a4123e808f6c64c666a9509bad89625771a31b7cff9ed5dce","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":1,"tier":"q"}},"2":{"interface_hash":"8288d26de1dea446a76b2f33016049afb721ef8575e8586289a81878ad33b44e","kind":"lproc","name":"L2","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":1,"tier":"q"}},"3":{"interface_hash":"3488e572ba0e53b3671b6313b8cbc4339e600b0cd51f6c6c6338e4492b5aefd2","kind":"lproc","name":"L3","signature":{"abi":"0.8","kind":"lproc","params":[],"result":64,"tier":"q"}},"4":{"interface_hash":"bbdd61d76d9382bb78e4ddea358cd37dc0bf5618c07a76ac93f0957c999a76e5","kind":"data","name":"G1","signature":{"abi":"0.8","kind":"data","size":24,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[64]) (fault:wire[4]) (s0:region[6,8] in) ()
+regs { s:reg[64], d0:reg[1], c0:reg[64], d1:reg[1], r:reg[64] }
+^entry():
+s = lift.addr @s0
+d0 = lift.call @L1 (s)
+c0 = lift.const.i64 16
+d1 = lift.call @L2 (c0)
+r = lift.call @L3 ()
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[1]) () () ()
+regs { c0:reg[64], t0:reg[64], n:reg[64], p:reg[64], c1:reg[64], t1:reg[64], v0:reg[128], g:reg[64], c2:reg[64], t2:reg[64], v1:reg[64], t3:reg[64], c3:reg[64], t4:reg[64], v2:reg[128] }
+^b0():
+c0 = lift.const.i64 8
+t0 = lift.add a0 c0
+lift.boundscheck t0 8
+n = lift.load.i64 t0
+p = lift.alloc n
+c1 = lift.const.i64 24
+t1 = lift.add a0 c1
+lift.boundscheck t1 16
+v0 = lift.load.i128 t1
+g = lift.addr @G1
+lift.boundscheck g 16
+lift.store.i128 g v0
+c2 = lift.const.i64 16
+t2 = lift.add t1 c2
+lift.boundscheck t2 8
+v1 = lift.load.i64 t2
+t3 = lift.add g c2
+lift.boundscheck t3 8
+lift.store.i64 t3 v1
+c3 = lift.const.i64 48
+t4 = lift.add a0 c3
+lift.boundscheck t4 16
+v2 = lift.load.i128 t4
+lift.boundscheck p 16
+lift.store.i128 p v2
+lift.ret r
+lproc @L2 (a0:reg[64]) (r:reg[1]) () () ()
+regs { g:reg[64], b:reg[64], z:reg[64], c:reg[1], p:reg[64] }
+^b0():
+g = lift.addr @G1
+lift.boundscheck g 8
+b = lift.load.i64 g
+z = lift.const.i64 0
+c = lift.icmp.eq b z
+qbranch c ^b1 ^b2
+^b1():
+p = lift.alloc a0
+lift.boundscheck g 8
+lift.store.i64 g p
+qjump ^b2
+^b2():
+lift.ret r
+lproc @L3 () (r:reg[64]) () () ()
+regs { c0:reg[64], v0:reg[64] }
+^b0():
+c0 = lift.const.i64 16
+v0 = lift.alloc c0
+lift.ret v0
+
+section data
+G1 000000000000000000000000000000000000000000000000
+
+section layout
+{"A_tab":7,"H":14,"S_cells":6,"globals":{"G1":{"base":256,"image":"G1","size":24}},"heap_base":4096,"heap_limit_max":64,"interface_regions":{"ref":{"s0":{"base":8192}}},"null_size":256,"ptr_width":64}
+```
+
+```text hash=entry-stack
+ref 50289e34598400f57c820d819d83993e14d12e08596ba55ce070109b5746ad1f
+L1 86becbb1ddcc433a4123e808f6c64c666a9509bad89625771a31b7cff9ed5dce
+L2 8288d26de1dea446a76b2f33016049afb721ef8575e8586289a81878ad33b44e
+L3 3488e572ba0e53b3671b6313b8cbc4339e600b0cd51f6c6c6338e4492b5aefd2
+G1 bbdd61d76d9382bb78e4ddea358cd37dc0bf5618c07a76ac93f0957c999a76e5
+```
+
+```text run=entry-stack
+input= mem=s0:01000000000000001000000000000000010000000000000000100000000000001000000000000000011000000000000007000000000000000000000000000000 budget=200,64,64,2 -> code=0 payload=4112 steps=42
+```
+
+```text native=entry-stack
+caller bump=4096; nz_alloc(16) -> base=4096,size=16,sp=4097
+ss_init(16) -> unchanged base,size,sp; malloc(16) ptrtoint=4112
+```
+
+
 ## 17. Device classical code: memory model, lowering, faults
 
 ### 17.1 Memory model
@@ -6068,7 +6385,7 @@ these contracts:
 
 | Entry point | Contract |
 |---|---|
-| `void __bennett_rt_ss_init(i64 size)` | allocates the shadow stack, a heap block of `size` bytes (`sstack`, §9.2), by `__bennett_nz_alloc`; called by the oracle wrapper prologue (§16.2), the R entry stub and the CC entry stub when their closure uses the shadow stack |
+| `void __bennett_rt_ss_init(i64 size)` | is idempotent: if stack state is already set (by entry replay in an oracle), allocates nothing and keeps base, size and stack pointer; otherwise allocates one heap block of `size` bytes (`sstack`, §9.2), by `__bennett_nz_alloc`; called by the oracle wrapper prologue (§16.2), the R entry stub and the CC entry stub when their closure uses the shadow stack |
 | `ptr __bennett_rt_ss_push(i64 size, i64 align)` | pushes a frame of `size` bytes aligned to `align` and returns its base; the frame is zero-filled; overflow of the block is `__bennett_nz_fault(2)` (`FAULT_BUDGET_HEAP`) |
 | `void __bennett_rt_ss_pop(ptr fp)` | pops the frame fp and every frame pushed after it |
 | `ptr __bennett_rt_ss_alloca(i64 n, i64 align)` | a zero-filled dynamic allocation in the current frame, released by its pop |
@@ -7058,7 +7375,7 @@ major (NS §3.2).
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
-pipeline, normaliser_version: "0.2"}` and `bindings.dialect_mapping_version = "0.2"`; the coverage
+pipeline, normaliser_version: "0.2.1"}` and `bindings.dialect_mapping_version = "0.2.1"`; the coverage
 report (ISA §13), whose `source` field is `dialect-0.2:<rule id>` (e.g. `dialect-0.2:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
@@ -7260,7 +7577,7 @@ rejection without one may not exist (standing rule).
 | `BD-E-HANDLE-ESCAPE` | §6.4 | NS §3.1 ("any handle use that survives into host native code is rejected") |
 | `BD-E-HANDLE-UNTRACKED` | §6.2 | NS §3.1 (handles are the results of `qalloc`; linearity is a fail-loud verifier obligation) |
 | `BD-E-REGION-TYPE` | §7.2 (the unique candidate) | decision 3 (candidates of the required type); the call is undefined on every execution |
-| `BD-E-REGION-MEASURE` | §7.5(a) (the unique candidate, or the closure of every candidate), unless deferred | NS §3.1 ("user measurement inside it is refused") |
+| `BD-E-REGION-MEASURE` | §7.5(a) (the unique candidate), unless deferred | NS §3.1 ("user measurement inside it is refused") |
 | `BD-E-REVERSIBLE-MEASURE` | §7.5(b) | NS §4.2 (reversible tier); ISA §10 (a run that measured is not reversible) |
 | `BD-E-RESIDUAL` | §12.4 | NS §3.2 (residual-poison validator) |
 | `BD-E-INPLACE-NOT-INVERSE` | §8.7 | NS §3.1 ("an in-place update with no inverse fails loud at compile time") |
@@ -7274,7 +7591,7 @@ rejection without one may not exist (standing rule).
 
 ### 22.2 Blocker reports
 
-`BD-B-ISA4` (BLK-1), `BD-B-ISA1` (BLK-2), `BD-B-ISA3` (BLK-3), `BD-B-ISA12` (BLK-4), in the
+`BD-B-ISA4` (BLK-1), `BD-B-ISA1` (BLK-2), `BD-B-ISA12` (BLK-4), in the
 format of §25.1. A blocker report is not a rejection (§1.6).
 
 ### 22.3 Run-time traps
@@ -7341,7 +7658,6 @@ ISA 0.8. No rung of NS §8 depends on any of them (outline part C). The maintain
 |---|---|---|---|---|---|
 | **BLK-1** = ISA-4 | `BD-B-ISA4` | NS §3.1 handle tables; §4.1, §4.2 dynamic allocation ("real allocation"); Bennett.jl vectors of qubits; adjoints of generations whose register set is known only at run time | allocation sites whose handles reach memory with no finite instance bound (§6.5); register widths with value set ⊤ (§3.4); a Co width with an unbounded value set (TDL-10) | direct `qreg` values for handles that stay out of memory; static register files with dispatch for bounded sites (§6.5) | (i) a dynamic-width type `qreg[*]`; `q = qreg.new cls n` with n an `i64` value yields `qreg[*]`; `w = qreg.width q`. (ii) Binding a `qreg[*]` to a `wire[n]` or `region[A,W]` slot checks the width at the call: CC trap, R fault `FAULT_UB_TRAP`, on a mismatch. (iii) `id = qreg.id q` (non-consuming; the §10 launch id) and `q = qreg.from_id id` (yields `qreg[*]`; a trap if the id is not live, is viewed or is consumed). History frames: `qreg.id` is pure; `qreg.from_id` records the handle reference |
 | **BLK-2** = ISA-1 | `BD-B-ISA1` | NS §4.2 "run-time budgets come from the host or from measurement results" | budget fields computed on the device (§9.5 case 3) | pre-minted finite sets; stub-minted copies of launch arguments (§9.5) | a CC instruction `tk = budget.mint @region s h st d` (`i64` operands) with the ISA §5.4 validation of `bennett_budget` as a CC trap; the token is scoped to the run; an impure history frame recording the token |
-| **BLK-3** = ISA-3 | `BD-B-ISA3` | NS §3.1, §4.2 parametrised in-place updates x ← g(x; y, a) from a user-declared (g, ginv) pair with quantum or unbounded classical parameters | `inplace` with `IN` or `MEM_IN` bindings, or `ARG`s with value set ⊤ (§8.7) | `qinplace` without parameters; per-value specialisation for finite `ARG` sets; library bijections as permutation actions (§8.7, TDL-5b) | `qinplace @g @ginv tk x (ins..) (mem..) (args..)`: the ISA §4.5 macro passes the lists to both `oracle_call`s; the ISA §6.1 transfer becomes `x: perm with S_x ∪ ins ∪ cells(mem) ∪ Π`; certificate obligation g∘ginv = id for every (ins, mem, args) class (exhaustive or library) |
 | **BLK-4** = new ISA-12 (audit B-38) | `BD-B-ISA12` | NS §4.2 quantum allocation inside reversible-tier code | `qalloc`/`qborrow`/`qfree` in an R closure with no finite instance bound (§7.5b); entry-state transfer from R code (§8.5) | hoisting to the CC caller with a static count (§7.5b) | permit `qreg.new`, `qreg.free`, `qreg.slice` and `qreg.concat` in R; the R history records them; the reversal of `qreg.new` is `qreg.free` with the cleanliness obligation (simulator check; hardware per ISA §17 item 14); the reversal of `qreg.free` is `qreg.new` (clean); `measure` stays CC-only |
 
 **Blocker report** (one line per blocker point, in processing order, in the outputs, §19.9):
@@ -7386,6 +7702,7 @@ Correct on ISA 0.8 by the stated construction; ISA 0.9 candidates on evidence on
 
 | Item | Construction on ISA 0.8 |
 |---|---|
+| ISA-3 parameterised qinplace | CC-level oracle/swap/inverse expansion (§8.7); BLK-3 retired |
 | ISA-5 (two simultaneous slices of one `qreg`) | per-wire registers, or a quantum-addressed gate |
 | ISA-9 (borrowing outside static Q regions) | clean allocation for CC-spanning borrows (§18.3) |
 | ISA-11 (host memory by reference) | promotion (§19.4) |
@@ -7407,7 +7724,7 @@ every departure keeps or widens the capability the outline gives.
 | # | Outline | This text | Reason |
 |---|---|---|---|
 | A1 | §8.6: k + 2 calls, cleaning each slice's fault bundle by `qxor` from a copy computed by a separate variant W_c | 2k − 1 calls: a copy-out pair per extra slice, issued as CC-level region calls (§8.6) | the outline's `qxor` cleanup is neither `reverse` nor `recompute` of the bundle's own computing sequence (ISA §6.2, §6.4), so as an action it would be ill-formed; the copy-out pair cleans its temporaries by the oracle's involution (ISA §5.2), checked by `qreg.free` (ISA §3.3) |
-| A2 | §8.5: the snapshot register's release unspecified | released by `measure` (an unentangled basis state), kept while unchanged (§8.5) | a `qreg.free` needs a clean register and no ISA 0.8 instruction un-concatenates; the measurement is deterministic and disturbs nothing |
+| A2 | §8.5 snapshot release | chunked unpreparation using retained classical bytes, then clean free | D02-10: whole qreg measurement exceeds ISA 0.8 width limits |
 | A3 | §6.5: every root in a static register file; unbounded instance counts are BLK-1 | a handle that never reaches memory is a direct CC `qreg` value with no bound; BLK-1 only for memory-reaching sites without a reference bound (§6.5) | ISA 0.8's dynamic SSA instances already name unboundedly many registers; the blocker's case shrinks to what ISA 0.8 truly lacks |
 | A4 | §6.5, §7.5(b): "statically bounded number of live instances", "static count" | an exact reference instance bound (self-disjoint sites, constant trip counts) (§6.5) | verdicts must not depend on a plugin's analysis precision |
 | A5 | TDL-2: states Cl, Co | Cl, M (materialised, both copies valid), Co (§10) | materialising an object before a slice reads it would otherwise make it Co, and later classical reads would trap (`T-TAINT-HOST`) on classical data |
