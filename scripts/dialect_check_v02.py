@@ -7,6 +7,7 @@ import argparse
 import collections
 import difflib
 import fnmatch
+import fcntl
 import hashlib
 import itertools
 import json
@@ -96,7 +97,7 @@ def headless_env():
 
 def command(argv, timeout=120, cwd=None):
     argv = list(map(str, argv))
-    if any(re.search(r'(^|[,(=-])(?:-?view-)', a) for a in argv):
+    if any(re.search(r'(^-|[,(=])(?:-?view-)', a) for a in argv[1:] if a.startswith('-')):
         raise d.Fail('rule 11: forbidden LLVM view pass: ' + shlex.join(argv))
     try:
         p = subprocess.run(argv, capture_output=True, text=True, env=headless_env(),
@@ -117,7 +118,7 @@ def frontend_bins():
 
 
 def read_commit(repo):
-    """Read the checkout identity without invoking git (runner owns git)."""
+    """Read the checkout identity without changing the checkout."""
     gd = repo / '.git'
     if gd.is_file():
         gd = (repo / gd.read_text().strip().split(': ', 1)[1]).resolve()
@@ -147,20 +148,25 @@ class Interpreter:
                        (p.suffix == '.rs' or p.name in ('Cargo.toml', 'Cargo.lock', 'README.md')))
         before = {str(p.relative_to(ISA_SOURCE)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
         fingerprint = hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest()
-        stamp = ISA_DIR / 'BUILD.json'
-        old = json.loads(stamp.read_text()) if stamp.exists() else {}
-        if old.get('source_sha256') != fingerprint or not self.exe.exists():
-            source = ISA_DIR / 'source'
-            if source.exists():
-                shutil.rmtree(source)
-            shutil.copytree(ISA_SOURCE, source, ignore=shutil.ignore_patterns('target', '.git', '.tmp', '.beads'))
-            copied = {k: hashlib.sha256((source / k).read_bytes()).hexdigest() for k in before}
-            after = {str(p.relative_to(ISA_SOURCE)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
-            if before != after or before != copied:
-                raise d.Fail('interpreter sources changed during snapshot; rerun to take a consistent copy')
-            command(['cargo', 'build', '--offline', '--manifest-path', source / 'Cargo.toml'], timeout=120)
-            stamp.write_text(json.dumps({'commit': read_commit(ISA_SOURCE.parent),
-                'source_sha256': fingerprint, 'files': before}, indent=2) + '\n')
+        ISA_DIR.mkdir(parents=True,exist_ok=True)
+        # Content-addressed immutable snapshots keep a later build from deleting
+        # the executable another checker process is still using.
+        source = ISA_DIR / ('source-'+fingerprint[:20])
+        self.exe = source / 'target' / 'debug' / 'bennett-isa-ref'
+        stamp = ISA_DIR / ('BUILD-'+fingerprint[:20]+'.json')
+        with (ISA_DIR/'build.lock').open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            if not stamp.exists() or not self.exe.exists():
+                if not source.exists():
+                    shutil.copytree(ISA_SOURCE, source, ignore=shutil.ignore_patterns('target', '.git', '.tmp', '.beads'))
+                copied = {k: hashlib.sha256((source / k).read_bytes()).hexdigest() for k in before}
+                after = {str(p.relative_to(ISA_SOURCE)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+                if before != after or before != copied:
+                    raise d.Fail('interpreter sources changed during snapshot; rerun to take a consistent copy')
+                command(['cargo', 'build', '--offline', '--manifest-path', source / 'Cargo.toml'], timeout=120)
+                stamp.write_text(json.dumps({'commit': read_commit(ISA_SOURCE.parent),
+                    'source_sha256': fingerprint, 'files': before}, indent=2) + '\n')
+            (ISA_DIR/'BUILD.json').write_text(stamp.read_text())
         self.ready = True
 
     def call(self, verb, *args):
@@ -481,6 +487,9 @@ class Runner:
             if 'lift' in a:
                 from dialect_map import map_object
                 self.check('map',ident,'§16',lambda b=b:map_object(self,b))
+            if a.get('object')=='arena-o1':
+                from dialect_map import map_arena
+                self.check('map',ident,'§16.4',lambda:map_arena(self))
             if 'object' in a:
                 self.check('check', ident, 'ISA §9.2', lambda i=ident:self.isa.call('check',self.object_file(i)))
             if 'hash' in a: self.check('hash',ident,'ISA §9.2',lambda b=b:self.hashes(b))
@@ -490,6 +499,8 @@ class Runner:
                 for verb in ('run-cc','reverse') if 'reverse:' in b['body'] else ('run-cc',):
                     from dialect_cc import check as check_cc
                     self.check('cc-run',f'{ident}/{verb}','§18.6',lambda v=verb,b=b:check_cc(self,b,v))
+                from dialect_cc import check as check_cc
+                self.check('run-program',ident,'§10 launch',lambda b=b:check_cc(self,b,'run-program'))
             if 'semantics' in a:
                 self.check('trace',ident,'§18.4 ABI 0.2',lambda b=b:trace_check(self,b))
             if 'events' in a:
@@ -497,8 +508,8 @@ class Runner:
             if 'state' in a:
                 self.check('state',ident,'§18.4',lambda b=b:state_check(self,b))
             if 'tdl' in a:
-                self.check(TAG_FAMILY[next(t for t in ('tdl','state') if t in a)], ident, '§10/§18',
-                    lambda i=ident:self.isa.call('run-action',f'<{i}.bisa>','<action>','--mut','<entry-state>'))
+                from dialect_tdl import check_tdl
+                self.check('tdl', ident, '§10/§18', lambda b=b:check_tdl(self,b))
         # Each family is registered before implementation; no tag can disappear silently.
         supported = {'markers-ir','markers-c','example','object','hash','run','step-check','cc-run','tdl','state','normalise-in','normalise-out','native','lift','linkmap','semantics','events','budget-table','blocker'}
         for b in self.blocks:
@@ -638,6 +649,15 @@ def state_check(runner,block):
     a=block['attrs'];ident=a['state'];at=int(a['at'])
     from dialect_state import NATIVE_STATES, check_native_state
     if ident in NATIVE_STATES:return check_native_state(runner,block)
+    from dialect_tdl import ORIGINAL, compare_original
+    if ident in ORIGINAL:return compare_original(runner,block)
+    from dialect_tdl import BOUNDARIES, check_boundary
+    if ident in BOUNDARIES:return check_boundary(runner,block)
+    from dialect_tdl import WRAPPERS, check_wrapper
+    if ident in WRAPPERS:return check_wrapper(runner,block)
+    if ident=='r-budget-prefix':
+        from dialect_cc import r_budget_prefix
+        return r_budget_prefix(runner,block)
     if 'input' not in a:
         raise Unavailable('TDL state execution',f'bennett-isa-ref run-action {runner.tmp / (ident+".bisa")} {ident} --mut <TDL-registers> --mem <coherent-arena>',CLI_BEAD)
     eb=runner.block('events',ident);lines=d.collapse(eb['body'])[:at];widths=[];rows=[]

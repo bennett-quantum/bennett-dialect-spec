@@ -93,11 +93,13 @@ class Flow:
                     elif et:
                         sz=d.tsize(et,self.pw)
                         if vals=='TOP':
-                            if i>0 and ty[0] in ('arr','vec') and isinstance(off,int):
-                                if ty[1]<=4096:
-                                    nxt.update((off+k*sz,et) for k in range(ty[1]))
-                                else: nxt.add(((sz,off%sz,off,off+ty[1]*sz),et))
-                            else: nxt.add(('*',et))
+                            extent=self.object_sizes.get(obj)
+                            if sz>1 and isinstance(off,int) and extent is not None:
+                                residue=off%sz
+                                if (extent+sz-1)//sz<=4096:
+                                    nxt.update((k,et) for k in range(residue,extent,sz))
+                                else:nxt.add(((sz,residue,0,extent),et))
+                            else:nxt.add(('*',et))
                         else:
                             nxt.update((self.shift(off,k*sz),et) for k in vals)
                 current=nxt
@@ -164,6 +166,14 @@ class Flow:
 
     def analyse(self):
         self.values={};self.memory={};self.indirect={};self.cands={}; self.blockers=[]
+        self.object_sizes={n:d.tsize(g['type']) for n,g in self.m.globals.items()}
+        for f in self.funcs():
+            for i in f.instrs():
+                if i.op=='alloca':
+                    ps=d.split_top(i.text.split('alloca ',1)[1]);ty=d.parse_type(ps[0])[0];count=1
+                    if len(ps)>1 and ps[1].startswith('i'):
+                        c=d.typed_val(ps[1]);count=int(c) if c.isdigit() else None
+                    if count is not None:self.object_sizes[f.name+i.res]=d.tsize(ty)*count
         self.pw=int(re.search(r'(?:^|-)p:(\d+)',self.m.text)[1]) if re.search(r'(?:^|-)p:(\d+)',self.m.text) else 64
         for name,g in self.m.globals.items():
             t=g['type']; init=g['init'] or 'undef'

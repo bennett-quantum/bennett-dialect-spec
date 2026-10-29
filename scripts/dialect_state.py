@@ -6,16 +6,16 @@ from dialect_check_v02 import command, equal, normalise, recognise, validate
 from dialect_native import PREFIX, SEEDS
 
 
-NATIVE_STATES={'normalisation-boundaries','fcmp-abi','fp-sign-carrier','inplace-bound','r-fault-code'}
+NATIVE_STATES={'normalisation-boundaries','fcmp-abi','fp-sign-carrier','inplace-bound','r-fault-code','partial-observe','classical-event-application','sv39-kernel-alias'}
 
 
-def run_native(runner, name, ir, driver, expected):
+def run_native(runner, name, ir, driver, expected, extra=()):
     directory=runner.tmp/('state-'+name);directory.mkdir(exist_ok=True)
     src=directory/'case.ll';src.write_text(d.with_decls(ir))
     main=directory/'driver.c';main.write_text(PREFIX+driver)
     for major in ('18','23'):
         exe=directory/('case-'+major)
-        command([runner.frontends[major]/'clang','-O2',src,main,SEEDS/'runtime.c',SEEDS/'softfloat.c','-o',exe])
+        command([runner.frontends[major]/'clang','-O2',src,main,SEEDS/'runtime.c',SEEDS/'softfloat.c',*extra,'-o',exe])
         got=[json.loads(line) for line in command([exe]).strip().splitlines()]
         equal(name+'/clang'+major,'boundary execution',expected,got)
 
@@ -54,6 +54,30 @@ def check_native_state(runner, block):
         sample=int(re.search(r'B_sample=(\d+)',text)[1]);bound=int(re.search(r'B_bound=(\d+)',text)[1]);budget=int(re.search(r'budget=(\d+)',text)[1])
         equal(name,'§8.7 sampled admission',False,budget_admissible((sample,),(bound,),(budget,)))
         equal(name,'§8.7 universal admission',True,budget_admissible((sample,),(bound,),(bound,)))
+    elif name in ('partial-observe','classical-event-application'):
+        decl='#include "'+str(SEEDS/'coherence.c')+'"\n'
+        if name=='partial-observe':
+            driver=decl+'''int main(void){struct bennett_seed_object o={.size=2,.k=2};o.arena[0]=1;o.arena[1]=2;unsigned char out[32];unsigned widths[2];
++bennett_seed_observe(&o,0,1,out,widths);printf("[%u,%u,%u,%u]\\n",out[0],o.arena[0],o.arena[1],o.k);
++bennett_seed_observe(&o,1,1,out,widths);printf("[%u,%u,%u,%u,%u]\\n",o.shadow[0],o.shadow[1],o.arena[0],o.arena[1],o.k);
++struct bennett_seed_object p={.size=17,.k=2};size_t chunks=bennett_seed_observe(&p,0,17,out,widths);printf("[%zu,%u,%u]\\n",chunks,widths[0],widths[1]);return 0;}'''.replace('\n+','\n')
+            widths=[int(x) for x in re.search(r'chunk widths=\[([^]]+)\]',text)[1].split(',')]
+            expected=[[1,1,2,2],[1,2,0,0,0],[len(widths),*widths]]
+        else:
+            driver=decl+'''int main(void){struct bennett_seed_object o={.size=1};o.shadow[0]=3;bennett_seed_mask(&o,0,3^5,0);
++printf("[%u,%u,%u]\\n",o.shadow[0],o.arena[0],o.k);bennett_seed_materialise(&o);o.arena[0]+=3;o.k=2;
++unsigned char out[1];unsigned widths[1];bennett_seed_observe(&o,0,1,out,widths);printf("[%u,%u,%u,%u]\\n",out[0],o.shadow[0],o.arena[0],o.k);return 0;}'''.replace('\n+','\n')
+            expected=[[int(re.search(r'apply -> shadow=([0-9a-f]+)',text)[1],16),0,0],[8,8,0,0]]
+        run_native(runner,name,'',driver,expected)
+    elif name=='sv39-kernel-alias':
+        v=int(re.search(r'V=(0x[0-9a-f]+)',text)[1],16);p=int(re.search(r'P=(0x[0-9a-f]+)',text)[1],16)
+        before=int(re.search(r'holds (0x[0-9a-f]+)',text)[1],16);after=int(re.search(r'store (0x[0-9a-f]+)',text)[1],16)
+        driver='#include "'+str(SEEDS/'coherence.c')+'"\n'+f'''int main(void){{uint64_t tables[3][512]={{0}},saved[3][512];uint64_t v={v}ULL,p={p}ULL;
++tables[0][(v>>30)&511]=(2ULL<<10)|1;tables[1][(v>>21)&511]=(3ULL<<10)|1;tables[2][(v>>12)&511]=((p>>12)<<10)|199;
++memcpy(saved,tables,sizeof tables);unsigned char ram={before},old=ram;uint64_t a=bennett_seed_sv39(v,(8ULL<<60)|1,tables,1);
++if(a!=p)abort();ram={after};uint64_t b=bennett_seed_sv39(v,(8ULL<<60)|1,tables,0);printf("[%llu,%u,%u]\\n",(unsigned long long)a,ram,b==p?ram:0);
++ram=old;memcpy(tables,saved,sizeof tables);printf("[%u,%u,%d]\\n",ram,bennett_seed_sv39(v,(8ULL<<60)|1,tables,0)==p?ram:0,memcmp(tables,saved,sizeof tables)==0);return 0;}}'''.replace('\n+','\n')
+        run_native(runner,name,'',driver,[[p,after,after],[before,before,1]])
     elif name=='normalisation-boundaries':
         # Execute the normaliser's actual generated IR, including one-byte packed
         # access, partial-limb carry/sign extension, GC provenance and frame size.

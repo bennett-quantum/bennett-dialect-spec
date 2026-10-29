@@ -19,8 +19,14 @@ def bits(t):
 
 
 class Mapper:
-    def __init__(self,text,region,desc,linkmap):
+    def __init__(self,text,region,desc,linkmap,arena=None):
         self.m=d.Module(text);self.entry=region.lstrip('@');self.desc=desc;self.linkmap=linkmap
+        self.arena=arena or {};self.arena_functions=set()
+        for name,f in self.m.funcs.items():
+            if f.is_def and any('@'+g in i.text for i in f.instrs() for g in self.arena):self.arena_functions.add(name)
+        for _ in self.m.funcs:
+            for name,f in self.m.funcs.items():
+                if f.is_def and any(re.search(r'@'+re.escape(g)+r'\(',i.text) for i in f.instrs() for g in self.arena_functions):self.arena_functions.add(name)
         self.globals={};self.addresses={};self.names={};self.bodies={};self.signatures={};self.images={}
         for name,g,base,size in re.findall(r'global @([-\w.$]+) -> (G\d+) base=(\d+) size=(\d+)',linkmap):
             self.globals[name]=(g,int(base),int(size))
@@ -75,6 +81,9 @@ class Mapper:
         def temp(w,row):
             nonlocal tn
             name='t'+str(tn);tn+=1;return dest(name,w,row)
+        if self.entry in self.arena_functions:
+            mem.append(('coh',max(1,(max(self.arena.values())+1-1).bit_length())))
+            dest('d0',64,'lift.addr @coh')
         # §16.2 device prologue precedes parameter preparation.
         dev=re.search(r'dev=ENTROPY\((\d+)\)',desc)
         if dev:
@@ -91,6 +100,7 @@ class Mapper:
             elif kind=='MEM_IN':
                 mn='m'+str(sum(n.startswith('m') for n,_ in mem));mem.append((mn,int(value)));actual.append(dest(name,w,'lift.addr @'+mn))
             else:raise d.Fail('checker-unimplemented: §16.2 OUT wrapper')
+        if self.entry in self.arena_functions:actual.append('d0')
         R=bits(f.ret);T=int(re.search(r'tgt=(\d+)',desc)[1]);dest('r',R,'lift.call @L1 ('+', '.join(actual)+')')
         result='r'
         if T<R:
@@ -120,6 +130,11 @@ class Mapper:
             w=bits(ty)
             if v.startswith('@'):
                 n=v[1:]
+                if n in self.arena:
+                    base=fresh('c',64,'lift.mov a'+str(len(f.params)),rows);offset=self.arena[n]
+                    if offset:
+                        delta=fresh('c',64,'lift.const.i64 '+str(offset),rows);base=fresh('t',64,'lift.add '+base+' '+delta,rows)
+                    return base
                 if n in self.globals:return fresh('c',64,'lift.addr @'+self.globals[n][0],rows)
                 if n in self.addresses:return fresh('c',64,'lift.const.i64 '+str(self.addresses[n]),rows)
                 raise d.Fail('§16.3 missing address '+n)
@@ -206,6 +221,7 @@ class Mapper:
                     elif cal.startswith('@'):
                         dest=v if v is not None else 't'+str(temps)
                         if v is None:temps+=1
+                        if cal[1:] in self.arena_functions:args.append('a'+str(len(f.params)))
                         assign(dest,bits(c['ret']),'lift.call @'+self.names[cal[1:]]+' ('+', '.join(args)+')',current)
                     else:
                         call_count+=1;cond=operand(cal,('ptr',),current);cs=sorted(self.analysis.indirect.get(id(inst),set()),key=lambda n:self.addresses[n]);keys=[]
@@ -264,7 +280,7 @@ class Mapper:
                 if ' = ' not in row:continue
                 for n in re.findall(r'[\w.]+',row.split(' = ',1)[0]):
                     if n in widths and n not in order:order.append(n)
-        pws=[bits(x[0]) for x in f.params];R=bits(f.ret)
+        pws=[bits(x[0]) for x in f.params]+([64] if name in self.arena_functions else []);R=bits(f.ret)
         sig={'abi':'0.8','kind':'lproc','params':pws,'result':R,'tier':'q'};self.signatures[label]=sig
         header='lproc @'+label+' ('+', '.join(f'a{k}:reg[{w}]' for k,w in enumerate(pws))+f') (r:reg[{R}]) () () ()'
         lines=[header]
@@ -282,6 +298,9 @@ class Mapper:
         end=max([end,self.null_size]+[g['base']+g['size'] for g in globs.values()])
         ceil_log=lambda n:(max(n,1)-1).bit_length()
         layout={'A_tab':ceil_log(len(globs)+len(regions)+self.heap),'H':ceil_log(end),'S_cells':ceil_log(self.stack),'globals':globs,'heap_base':self.heap_base,'heap_limit_max':self.heap,'interface_regions':{'ref':regions},'null_size':self.null_size,'ptr_width':64}
+        for key in ('H','A_tab','S_cells'):
+            explicit=re.search(r'\b'+key+r'=(\d+)',self.linkmap)
+            if explicit:layout[key]=int(explicit[1])
         symbols={str(i):{'interface_hash':'0'*64,'kind':sig['kind'],'name':name,'signature':sig} for i,(name,sig) in enumerate(self.signatures.items())}
         data=[]
         for name,(g,_,size) in self.globals.items():
@@ -308,3 +327,16 @@ def map_object(runner,block):
         raise d.Fail(f'{ident} [§16] expected object text; actual map differs:\n'+diff)
     runner.isa.call('check',path)
     return got
+
+
+def map_arena(runner):
+    # Outline O1 from @copy1's load/add and the Cl old-value argument (TDL-5a).
+    source=runner.block('example','tdl')['body'];m=d.Module(source)
+    load=next(i for i in m.funcs['copy1'].instrs() if i.op=='load')
+    add=next(i for i in m.funcs['copy1'].instrs() if i.op=='add')
+    k=int(re.search(r'add i8 %v, (\d+)',add.text)[1])
+    body='@cnt = internal global i8 0\n@other = internal global i8 0\ndefine i8 @O1(i8 %old) {\n '+load.text+'\n '+add.text+'\n %mask = xor i8 %old, '+add.res+'\n ret i8 %mask\n}\n'
+    mapper=Mapper(body,'@O1','ARG(8);tgt=8','null_size=4096 heap_base=4096 heap_limit_max=0 stack max 32 A_tab=1',arena={'cnt':0,'other':1})
+    path=runner.tmp/'mapped-arena-o1.bisa';got=mapper.run(runner.isa,path);path.write_text(got)
+    equal('arena-o1','§16.4 hidden arena base map',runner.block('object','arena-o1')['body'],got)
+    runner.isa.call('check',path);return got

@@ -148,6 +148,58 @@ class ContractTests(unittest.TestCase):
                         path,_=fixture(runner,b['attrs']['cc-run'])
                         runner.isa.call('check',path)
 
+    def test_tdl_state_prefixes(self):
+        from dialect_tdl import ORIGINAL,compare_original
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'state'})
+            for b in self.blocks:
+                if b['attrs'].get('state') in ORIGINAL:
+                    with self.subTest(example=b['attrs']):compare_original(runner,b)
+
+    def test_tdl_boundaries_and_wrapper_contracts(self):
+        from dialect_tdl import check_boundary, BOUNDARIES, check_wrapper
+        from dialect_state import check_native_state
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'state'})
+            for name in sorted(BOUNDARIES):
+                with self.subTest(example=name):check_boundary(runner,self.block('state',name))
+            for name in ('wide-delivery','entry-backing','region-two-measure-candidates','clean-predicate','generation-budget'):
+                with self.subTest(example=name):check_wrapper(runner,self.block('state',name))
+            for name in ('partial-observe','classical-event-application','sv39-kernel-alias'):
+                with self.subTest(example=name):check_native_state(runner,self.block('state',name))
+
+    def test_tdl_artifacts_and_mutations(self):
+        from dialect_tdl import check_tdl
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'tdl'})
+            for b in self.blocks:
+                if 'tdl' not in b['attrs']:continue
+                with self.subTest(example=b['attrs']):check_tdl(runner,b)
+            b=self.block('tdl','tdl-a')
+            bad=dict(b,body=b['body'].replace('0x05 ctrl','0x07 ctrl'))
+            with self.assertRaises(v.Mismatch):check_tdl(runner,bad)
+
+    def test_arena_hidden_base_map(self):
+        from dialect_map import map_arena
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'map'})
+            got=map_arena(runner)
+            self.assertEqual(got,self.block('object','arena-o1')['body'])
+
+    def test_gep_dimension_is_not_an_index_bound(self):
+        source='@tab = global [2 x ptr] [ptr @f, ptr @g]\ndefine void @f(ptr %e) {\n ret void\n}\ndefine void @g(ptr %e) {\n ret void\n}\ndefine void @top(i64 %i){\n %p = getelementptr [1 x ptr], ptr @tab, i64 0, i64 %i\n %f = load ptr, ptr %p\n call void @__bennett_adj(ptr %f, ptr null, ptr null)\n ret void\n}\n'
+        verdict,a=v.recognise(d.with_decls(source))
+        self.assertEqual(verdict,'accept')
+        self.assertEqual(a.first_candidates(),{'f','g'})
+
+    def test_one_shot_program_adapter(self):
+        from dialect_cc import check
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'run-program'})
+            for b in self.blocks:
+                if 'cc-run' in b['attrs']:
+                    with self.subTest(example=b['attrs']):check(runner,b,'run-program')
+
     def test_handle_containment_at_external_call(self):
         text = '''declare void @external(ptr)
 define void @top() {

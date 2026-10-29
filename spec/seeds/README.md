@@ -1,4 +1,4 @@
-# Independent pre-flight seeds
+# Independent pre-flight seeds (dialect 0.2.1)
 
 These fixtures are checker inputs, independent of bennett-runtimes and bennett-arith
 (CLAUDE.md rule 5). They implement the exercised contract rows, rather than importing
@@ -14,9 +14,12 @@ seeds,native` builds and tests them headlessly with clang 18 and 23.
 | runtime.c: EH state, catch-all personality subset, may_throw | N28/§14.4 | n-eh (input uses an independently compiled C++ throw) |
 | contexts.c: setjmp record, longjmp pseudo-exception | N29/§14.5 | sjlj-two-frames (native input uses system setjmp) |
 | contexts.c: fiber switch record | N30/§14.6 | fiber-pingpong (native input uses system ucontext) |
-| softfloat.c: binary64 add/mul/cmp, integer conversions, f32 extension | §13.1 | n-fmuladd; FP normalisation fixtures |
+| softfloat.c: binary64 add/mul/cmp, integer conversions, f32 extension | §13.1 | n-fcmp, fcmp-abi, n-fmuladd; FP normalisation fixtures |
 | musl/src/math/exp.c, log.c and tables/helpers | §13.4 | n-libm; rung-8 libm seed obligation of §21.4 |
 | devices.c: console/entropy/clock buffers | §11.3 | effect-console-*, rung8-mini, TDL effect |
+| runtime.c: replayed stack adoption and allocator offset | §8.5/§17.3 | entry-stack, entry-backing |
+| coherence.c: Cl/M/Co shadow and chunk observation | TDL-2/TDL-11 | partial-observe, classical-event-application |
+| coherence.c: three-level Sv39 walk | §20.6 | sv39-kernel-alias |
 | runtime.c: seven-argument syscall row | §15.5 | n-asm, asm-musl-syscall |
 
 The context seeds expose the memory transitions of materialised code; resume and

@@ -163,3 +163,37 @@ addr/gep.i8 pseudo-ops; replaced with ISA pointer conversion/add. **cc-run 8/8**
 now passes, including console tape, host transcript, native statuses and reversal.
 run-action/run-program remain absent from --help at this milestone. TDL/state
 adapters continue; no placeholder result is treated as an execution.
+
+## Resume milestone 8 — TDL and wrapper execution
+
+run-action (9d4c0dc), run-program (623a9bb) and the README Commands contract have
+landed. The independent snapshot now includes commit
+8503d818b7cd96b95682e5970596790b364ea6a6, fingerprint
+c3e15311b38c410de7af163f2825cb53f5b39c7dda9f28d1ee52359d153f2267.
+Added dialect_tdl.py: source-derived worked partitions/events, per-event Rust
+action execution, coherent arena read calls, retained compute history, clean
+slice/fault scratch, parameterised CC in-place expansion, branch views, all-zero
+success predicates and deferred-channel probabilities. Boundary adapters execute
+wide common projection budgets, caller-backing replay, 128-bit snapshot release,
+partial observation, native Cl/M/Co transitions and supervisor Sv39 aliases.
+Arena O1 now has an independent byte-exact map with hidden-base threading.
+Native seed fixtures are indexed in spec/seeds/README.md.
+
+New TDL/artefact/wrapper/arena/program/extent tests ran red before adapters or
+fixes. Fixed a real PT2 bug: a dynamic GEP used the declared array dimension as
+an index bound; now it uses the underlying allocation extent. One-shot launch
+checks wrap R entries in CC and use run-program. No specification example was
+removed. The command view-pass guard no longer mistakes compute-view filenames
+for LLVM passes; it still rejects actual view pass options.
+
+An overlapping verification exposed the inherited mutable snapshot race. Stopped
+those runs, then replaced snapshot deletion with immutable content-addressed
+sources and a build lock; receipts identify the exact source and commit. No ISA
+source edits. Direct full gate (before final A_tab link-fact correction) reached
+1994/2031: only 35 coverage rows, arena map layout and R-budget prefix red.
+The arena layout correction and all five run-program adapters now pass targeted
+regressions. The R-budget prefix is a real ISA-7 dependency, not missing CLI:
+--budget 0 is host fuel and diagnoses "CC/R has no ISA step budget". A concrete
+R fixture and its diagnostic are retained; no generic trap is substituted.
+Coverage bug b-dialect-spec-1jb filed (also b-dialect-spec-gvr). Final verification
+and exact family table follow below after rerunning the final code.

@@ -38,9 +38,9 @@ def signature(params,results,tier='r'):
     return {'abi':'0.8','kind':tier,'params':params,'results':results,'tier':tier}
 
 
-def fixture(runner,ident):
+def fixture(runner,ident,launch=False):
     source=runner.block('example',ident)['body'];functions=[];sigs={};data={};devices={};entry='main'
-    path=runner.tmp/(ident+'.bisa')
+    path=runner.tmp/(ident+('-program' if launch else '')+'.bisa')
     if ident.startswith('effect-console-'):
         msg=re.search(r'constant \[(\d+) x i8\] c"([^"]+)"',source)
         image=re.sub(r'\\([0-9A-Fa-f]{2})',lambda m:chr(int(m[1],16)),msg[2]).encode('latin1')
@@ -157,17 +157,27 @@ ret r''','''fn r @exit_seed (state:ptr, s:i32) () () () ()
 store.i32 state s
 ret'''];sigs={'main':signature([],['i32']),'exit_seed':signature(['ptr','i32'],[])}
     else:raise d.Fail('checker-unimplemented: CC/R fixture '+ident)
+    if launch and sigs[entry]['kind']=='r':
+        result=sigs[entry]['results'];params=sigs[entry]['params']
+        if params:raise d.Fail('one-shot wrapper needs explicit launch arguments')
+        groups=', '.join('v'+str(k)+':'+t for k,t in enumerate(result));names=['v'+str(k) for k in range(len(result))]
+        call=((', '.join(names)+' = ') if names else '')+'call @'+entry
+        functions.insert(0,'fn cc @launch () ('+groups+') () () ()\n^entry():\n'+call+'\nret'+(' '+ ' '.join(names) if names else ''))
+        sigs={'launch':signature([],result,'cc'),**sigs};entry='launch'
     emit(runner,path,functions,sigs,data,devices)
     return path,entry
 
 
 def check(runner,block,verb):
-    ident=block['attrs']['cc-run'];path,entry=fixture(runner,ident)
+    ident=block['attrs']['cc-run'];path,entry=fixture(runner,ident,launch=verb=='run-program')
     argv=[path,entry,'--args','']
     if 'hostcall:' in block['body']:
         replies=runner.tmp/(ident+'-replies.json');replies.write_text(json.dumps([{'service':'bennett.dev.console.write','payload':'6f6b0a','reply':''}])+'\n')
         argv+=['--replies',replies]
     got=runner.isa.call(verb,*argv)
+    if verb=='run-program':
+        equal(ident,'§10 run close','CLOSED',got.get('run_state'))
+        equal(ident,'§10 forward launch',False,got.get('reversed'))
     expected_line=next(line for line in block['body'].splitlines() if line.startswith('reverse:' if verb=='reverse' else 'run:'))
     status=re.search(r'status=([A-Z]+)',expected_line)[1];equal(ident,'§18.6 status',status,got.get('status'))
     if verb=='reverse':
@@ -186,4 +196,27 @@ def check(runner,block,verb):
         if 'tape:' in block['body']:
             tape=got.get('tape');want=re.search(r'bytes=([a-f0-9]+)',block['body'])[1]
             if not tape or tape[0].get('bytes')!=want:raise d.Fail(f'{ident} [§11.2 tape] expected bytes={want}; actual={tape!r}')
+
+
+def r_budget_prefix(runner,block):
+    """Probe the concrete executor boundary, never substitute generic trap 4."""
+    from dialect_check_v02 import Unavailable, command
+    path=runner.tmp/'r-budget-prefix.bisa'
+    emit(runner,path,['fn r @main () () () () ()\n^entry():\naddress = const.i64 4096\np = inttoptr address\nn = const.i64 1\neffect console.write p n\nret'],
+         {'main':signature([],[])},{'msg':b'x'},{'models':{'console':{'version':'0.8'}},'services':{}})
+    runner.isa.build()
+    argv=[runner.isa.exe,'run-cc',path,'main','--budget','0']
+    try:
+        output=command(argv)
+    except d.Fail as error:
+        if 'CC/R has no ISA step budget' not in str(error):raise
+        # Published ISA CLI contract: --budget is host execution fuel, not an
+        # implementation of dialect N34. Preserve the diagnostic as evidence.
+        (runner.tmp/'r-budget-prefix.diagnostic').write_text(str(error)+'\n')
+        raise Unavailable('N34/ISA-7 typed R fault 1 before first counted instruction; CLI only supplies host fuel',
+                          ' '.join(map(str,argv)), 'b-dialect-spec-bz6') from error
+    got=json.loads(output)
+    equal('r-budget-prefix','§17.6 code',1,got.get('fault'))
+    equal('r-budget-prefix','§17.6 no later tape',[],got.get('tape'))
+    equal('r-budget-prefix','§17.6 no later console','',got.get('console'))
 
