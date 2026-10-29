@@ -21,6 +21,7 @@ import sys
 import tempfile
 import time
 
+sys.modules.setdefault("dialect_check_v02", sys.modules[__name__])
 import dialect_check as d
 
 ROOT = d.ROOT
@@ -257,13 +258,13 @@ class Analysis02(Flow, d.Analysis):
 
 
 def recognise(text, **options):
-    a = Analysis02(d.Module(expanded_types(text)))
+    a = Analysis02(d.Module(expanded_types(text)), materialised=options.get("materialised", False))
     a.major=options.get('major')
     try:
         a.s1()
         for version in re.findall(r'!"bennett.dialect", !"([^"\n]+)"', text):
-            if version != "0.2":
-                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2; actual " + version)
+            if version != "0.2.1":
+                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.1; actual " + version)
         a.analyse()
         a.region_rules()
         a.handle_rules()
@@ -373,7 +374,7 @@ class Runner:
             except d.Reject as e:
                 got, info = 'reject:' + e.code, e
         else:
-            got, info = recognise(text, rmode=a.get('rmode'))
+            got, info = recognise(text, rmode=a.get('rmode'), materialised=a['example']=='r-fault-code')
         equal(a['example'], '§1.6 verdict', a['verdict'], got)
         if 'candidates' in a:
             equal(a['example'], '§7.2 candidates', set(a['candidates'].split(',')), info.first_candidates())
@@ -420,7 +421,7 @@ class Runner:
 
     def blocker(self,b):
         ident=b['attrs']['blocker'];source=self.block('example',ident)
-        got,info=recognise(d.with_decls(source['body']))
+        got,info=recognise(d.with_decls(source['body']), materialised=ident=='r-fault-code')
         equal(ident,'§25.1 verdict',source['attrs']['verdict'],got)
         expected_code=b['body'].split()[0]
         equal(ident,'§25.1 report code',expected_code,got.split(':',1)[1])
@@ -673,3 +674,7 @@ def seed_check(runner):
               '100000 binary64 add/mul vectors and musl exp/log anchors passed',command([exe]).strip())
         for name in ('runtime','contexts','devices'):
             command([runner.frontends[major]/'clang','-std=c11','-Wall','-Wextra','-Werror','-c',seed/(name+'.c'),'-o',runner.tmp/(name+'-'+major+'.o')])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

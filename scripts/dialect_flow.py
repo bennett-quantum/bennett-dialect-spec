@@ -402,7 +402,12 @@ class Flow:
                             if len(cs)==1:raise d.Reject('BD-E-REGION-TYPE','§7.1 '+name+': '+g.ftype())
                             continue
                         closure=self.closure(name)
-                        if kind=='reversible':self.reversible|=closure
+                        if kind=='reversible':
+                            self.reversible|=closure
+                            for n in closure:
+                                for i in self.m.funcs[n].instrs():
+                                    if i.op=='call' and '@__bennett_nz_fault(' in i.text:
+                                        self.blockers.append(('BD-B-ISA7','BLK-5 (ISA-7) §17.5 typed R fault: '+i.text))
                         for n in closure:
                             for _,_,marker in self.marker_calls(self.m.funcs[n]):
                                 if marker=='measure' and (kind=='reversible' or kind=='action' and not deferred) and len(cs)==1:
@@ -486,7 +491,7 @@ class Flow:
                     if mk=='inplace' and j>0 and (kinds!={2} or vals=='TOP'):quantum=True
                 if not self.shapes:self.shapes=count*len(self.cands[id(ins),0])
                 if mk=='inplace':
-                    if quantum:self.blockers.append(('BD-B-ISA3','BLK-3 §8.7 '+ins.text))
+                    if quantum:self.parameterised_pairs=getattr(self,'parameterised_pairs',[])+[(f,ins,c,args)]
                     else:self.inplace_pairs.append((f,ins,c,args))
 
     def tdl_rules(self):

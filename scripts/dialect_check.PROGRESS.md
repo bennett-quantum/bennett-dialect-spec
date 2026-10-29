@@ -2,7 +2,7 @@
 
 Tracking: `b-dialect-spec-qxd`; seeds `b-dialect-spec-d4k`; asm data
 `b-dialect-spec-rq0`; missing rule examples `b-dialect-spec-gvr`.
-Runner owns commits. Do not run git. Never edit the protected spec/header/version files
+Implementation sub-agent owns commits under the current user authorization. Never edit the protected spec/header/version files
 or `corpus/legality/cases/spec-*`.
 
 ## Current milestone: contract inventory
@@ -123,3 +123,25 @@ Q2/Q3 document reference-list and asm-pattern readings.
 Next: complete/validate seeds inventory, CLI fixture adapters for CC/R/TDL, replace
 instance-bound heuristic with ScalarEvolution, strengthen recogniser/validator
 precision and regression mutation tests. Full gate has not yet been run.
+
+## Resume milestone 6 — draft 0.2.1 core adapters
+
+Resumed from milestones 1–5, not the previous session. Q4–Q8 read in full.
+Added the direct runner entry point (previously a no-op), corrected fcmp enum and
+normalisation, rounded shadow frames, FP/aggregate carriers and aggregate return
+packing, native n-fcmp/fp-aggregate/entry-stack adapters and allocator adoption,
+version recognition 0.2.1, materialised primitive recognition and explicit ISA-7
+blocker reporting. Retired BLK-3 classification; parameterised pairs are tracked
+for their CC expansion rather than rejected.
+
+Red-green: existing normalisation tests failed for n-fcmp/n-varargs; new seed,
+native-driver, materialised/blocker and aggregate map regressions failed before
+implementation. Now 15 unit regressions pass. Selected direct gate
+normalise/native/recognise/blocker/map/driver: **128/128**. Headless, repo TMPDIR.
+Native 13/13, normalise 18/18, map 7/7, recognise 84/84, blocker 5/5.
+
+Baseline reproduced 1940/2030 (the current text has one additional xref/check
+relative to the editor's report); 35 coverage obligations remain explicitly
+missing in Appendix B. They cannot be removed or made green by weakening P-1.
+Next: independent boundary/state adapters; then inspect the published interpreter
+command contracts and wire TDL/CC/R. No spec, docs, worklog or ISA edits.

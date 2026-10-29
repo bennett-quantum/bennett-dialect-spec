@@ -13,7 +13,7 @@ class Normaliser:
         self.original=text
         expanded=expanded_types(text)
         self.m=d.Module(expanded)
-        originals={re.search(r'@([-\w.$]+)\(',ln)[1]:ln for ln in text.splitlines() if ln.startswith('define ')}
+        originals={re.search(r'@([-\w.$]+)\(',ln)[1]:ln.strip() for ln in text.splitlines() if ln.lstrip().startswith('define ')}
         for name,f in self.m.funcs.items():
             if f.is_def:f.header=originals[name]
         # Instructions may retain named types once their sizes have been resolved.
@@ -186,7 +186,7 @@ class Normaliser:
             for i in allocas:
                 ps=d.split_top(i.text.split('alloca ',1)[1]);ty=self.typ(ps[0]);sz=d.tsize(ty);al=next((int(p[6:]) for p in ps[1:] if p.startswith('align ')),d.talign(ty));align=max(align,al)
                 offset=(offset+al-1)//al*al;offsets[id(i)]=offset;offset+=sz
-            size=offset
+            size=(offset+align-1)//align*align
             fp=f'%nz.fp.{f.name}'
             entry=f.blocks[0][1];entry.insert(0,d.Instr(f'{fp} = call ptr @__bennett_rt_ss_push(i64 {size}, i64 {align})',fp,'call',f,f.blocks[0][0]))
             self.decl('__bennett_rt_ss_push','ptr',['i64','i64']);self.decl('__bennett_rt_ss_pop','void',['ptr'])
@@ -243,6 +243,13 @@ class Normaliser:
                 if m:
                     t=d.tstr(c['ret']);name=m[1]+('f' if t=='float' else 'l' if t not in ('float','double') else '')
                     self.decl(name,t,[d.tstr(x[0]) for x in c['args']]);i.text=i.text.replace(c['callee'],'@'+name);return
+            if op=='fcmp':
+                _,pred,rest=b.split(None,2);t,j=d.parse_type(rest);ts=d.tstr(t);sfx,bw=FP[ts];vals=d.split_top(rest[j:])
+                predicates='false oeq ogt oge olt ole one ord uno ueq ugt uge ult ule une true'.split()
+                name='__bennett_sf_cmp_'+sfx;self.decl(name,'i1',[f'i{bw}',f'i{bw}','i32'])
+                decl=f'declare i1 @{name}(i{bw}, i{bw}, i32)'
+                if decl in self.appended:self.appended.remove(decl);self.globals.append(decl)
+                return [f'%nz.{k}.{r} = bitcast {ts} {val} to i{bw}' for k,val in enumerate(vals)]+[f'{i.res} = call i1 @{name}(i{bw} %nz.0.{r}, i{bw} %nz.1.{r}, i32 {predicates.index(pred)})']
             if op not in d.FBINOPS|{'fpext','fptrunc'}:return
             if op in d.FBINOPS:
                 rest=b.split(None,1)[1];t,j=d.parse_type(rest);ts=d.tstr(t);sfx,bw=FP[ts];vals=d.split_top(rest[j:]);dt=ts;dbw=bw;name=f'__bennett_sf_{op[1:]}_{sfx}'

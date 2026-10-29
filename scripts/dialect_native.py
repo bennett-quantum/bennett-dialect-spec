@@ -55,6 +55,24 @@ def cases(ident,text):
         decl='extern double fm(double,double,double);\n'
         for j,(args,answer,bits) in enumerate(re.findall(r'fm\(([^)]+)\) = ([^ ]+) \(0x([a-fA-F0-9]+)\)',text)):
             out.append(f'double r{j}=fm({args});uint64_t b{j};memcpy(&b{j},&r{j},8);printf("%llu\\n",(unsigned long long)b{j});');expected.append(int(bits,16))
+    elif ident=='n-fcmp':
+        decl='extern _Bool p(double,double);\n'
+        for j,(a,b,want) in enumerate(re.findall(r'p\((0x[0-9a-f]+),(0x[0-9a-f]+)\)=(\d+)',text)):
+            out.append(f'uint64_t a{j}={a}ULL,b{j}={b}ULL; double x{j},y{j};memcpy(&x{j},&a{j},8);memcpy(&y{j},&b{j},8);printf("%d\\n",p(x{j},y{j}));')
+            expected.append(int(want))
+    elif ident=='fp-aggregate':
+        # LLVM aggregate returns use separate integer return registers; the C ABI
+        # packs this struct differently. A module-local wrapper exposes the bits.
+        decl='extern uint64_t packed(double);\n'
+        m=re.fullmatch(r'p\(([^)]+)\)=\{(-?\d+),(-?\d+)\}; packed=(\d+)',text.strip())
+        if not m:raise d.Fail('native aggregate vector syntax: '+text)
+        out=[f'printf("%llu\\n",(unsigned long long)packed({m[1]}));'];expected=[int(m[4])];variants=('lift',)
+    elif ident=='entry-stack':
+        # Contract microvector: exercise the independent seed allocator/adoption.
+        decl='extern uint64_t __bennett_seed_entry_stack(void);\n'
+        m=re.search(r'malloc\((\d+)\) ptrtoint=(\d+)',text)
+        if not m:raise d.Fail('native entry vector syntax: '+text)
+        out=['printf("%llu\\n",(unsigned long long)__bennett_seed_entry_stack());'];expected=[int(m[2])];variants=('seed',)
     elif ident=='rung4-mini':
         decl='extern uint8_t q(const uint8_t *,uint64_t,uint32_t);\n'
         image=bytes.fromhex('0007000a0165030704c8052a06630796')
@@ -75,14 +93,18 @@ def check(runner,block):
     for major in ('18','23'):
         clang=runner.frontends[major]/'clang'
         for variant in variants:
-            if variant=='source':
+            if variant=='seed':
+                src=SEEDS/'runtime.c'
+            elif variant=='source':
                 src=directory/'source.c';src.write_text(runner.block('example','rung4-minidb')['body'])
             else:
-                tag='lift' if variant=='materialised' else 'normalise-in' if variant=='input' else 'normalise-out'
+                tag='lift' if variant in ('materialised','lift') else 'normalise-in' if variant=='input' else 'normalise-out'
                 src=directory/(variant+'.ll')
                 text=runner.block(tag,ident)['body']
                 # Expose functions to the native driver; no body rewrite.
                 text=re.sub(r'\bdefine internal\b','define',text)
+                if ident=='fp-aggregate':
+                    text += '\ndefine i64 @packed(double %x) {\n %r = call {i8, i32} @p(double %x)\n %a = extractvalue {i8, i32} %r, 0\n %b = extractvalue {i8, i32} %r, 1\n %aa = zext i8 %a to i64\n %bb = zext i32 %b to i64\n %hi = shl i64 %bb, 8\n %v = or i64 %aa, %hi\n ret i64 %v\n}\n'
                 src.write_text(d.with_decls(text))
             objects=[src,directory/'driver.c']
             compiler=clang
@@ -92,7 +114,7 @@ def check(runner,block):
                 command([str(clang)+'++','-O2','-c',cpp,'-o',obj]);objects.append(obj)
                 compiler=Path(str(clang)+'++')
             else:
-                objects.extend([SEEDS/'runtime.c',SEEDS/'softfloat.c'])
+                objects.extend(x for x in [SEEDS/'runtime.c',SEEDS/'softfloat.c'] if x!=src)
             exe=directory/(variant+'-'+major)
             driver_obj=directory/('driver-'+major+'.o')
             command([clang,'-O2','-c',directory/'driver.c','-o',driver_obj])

@@ -59,3 +59,23 @@ uint64_t __bennett_rt_syscall(uint64_t nr,uint64_t a1,uint64_t a2,uint64_t a3,ui
 }
 /* Only the address is passed to the catch-all fixture; matching is above. */
 int __gxx_personality_v0(void) { return 0; }
+
+/* Replayed allocator state must be adopted, never allocated twice (§8.5/§17.3).
+ * The comparison pointer is heap_base plus the offset in this native backing. */
+static struct { unsigned char *base; uint64_t size, sp; } replayed_stack;
+void __bennett_rt_ss_init(uint64_t size) {
+    if (replayed_stack.base) return;
+    replayed_stack.base=__bennett_nz_alloc(size);
+    replayed_stack.size=size; replayed_stack.sp=0;
+}
+uint64_t __bennett_seed_entry_stack(void) {
+    unsigned char *base=__bennett_nz_alloc(16);
+    replayed_stack.base=base; replayed_stack.size=16; replayed_stack.sp=1;
+    base[0]=7;
+    size_t used=hp, count=allocation_count;
+    __bennett_rt_ss_init(16);
+    if (hp!=used || allocation_count!=count || replayed_stack.base!=base ||
+        replayed_stack.size!=16 || replayed_stack.sp!=1 || base[0]!=7)
+        __bennett_nz_fault(4);
+    return 4096+(uint64_t)((unsigned char *)__bennett_nz_alloc(16)-heap);
+}

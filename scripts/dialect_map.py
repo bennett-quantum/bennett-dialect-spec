@@ -8,7 +8,14 @@ from dialect_check_v02 import Analysis02, command, equal
 
 
 def jcs(value):return json.dumps(value,sort_keys=True,separators=(',',':'))
-def bits(t):return 64 if t[0]=='ptr' else 1 if t[0]=='void' else t[1]
+def bits(t):
+    if t[0]=='ptr':return 64
+    if t[0]=='void':return 1
+    if t[0]=='struct':return sum(bits(x) for x in t[1])
+    if t[0] in ('arr','vec'):return t[1]*bits(t[2])
+    if t[0] in ('half','bfloat','float','double','x86_fp80','fp128','ppc_fp128'):
+        return {'half':16,'bfloat':16,'float':32,'double':64,'x86_fp80':80,'fp128':128,'ppc_fp128':128}[t[0]]
+    return t[1]
 
 
 class Mapper:
@@ -210,7 +217,20 @@ class Mapper:
                 elif op=='ret':
                     if body=='ret void':current.append('lift.ret r')
                     else:
-                        ty,k=d.parse_type(body[4:]);A=operand(body[4+k:].strip(),ty,current);current.append('lift.ret '+A)
+                        ty,k=d.parse_type(body[4:]);val=body[4+k:].strip()
+                        if ty[0]=='struct':
+                            fields=d.split_top(val[1:-1]);scalars=[operand(d.typed_val(x),t,current) for t,x in zip(ty[1],fields)]
+                            packed=None;offset=0;w=bits(ty)
+                            for t,src in zip(ty[1],scalars):
+                                part=src if bits(t)==w else fresh('t',w,f'lift.zext.i{w} {src}',current)
+                                if offset:
+                                    shift=fresh('c',w,f'lift.const.i{w} {offset}',current)
+                                    part=fresh('t',w,f'lift.shl {part} {shift}',current)
+                                packed=part if packed is None else fresh('t',w,f'lift.or {packed} {part}',current)
+                                offset+=bits(t)
+                            A=packed
+                        else:A=operand(val,ty,current)
+                        current.append('lift.ret '+A)
                 elif op=='unreachable':current.append('fault 4')
                 elif op=='phi':pass
                 elif op=='br':

@@ -48,7 +48,7 @@ uint8_t __bennett_sf_cmp_f64(uint64_t a,uint64_t b,uint32_t p) {
     int eq=a==b || ((a<<1)==0 && (b<<1)==0);
     int lt=!eq && ((a>>63)!=(b>>63)?(a>>63):(a>>63)?a>b:a<b);
     int ord=!nan;int gt=!lt&&!eq;
-    switch(p){case 0:return 0;case 1:return ord&&eq;case 2:return ord&&gt;case 3:return ord&&(gt||eq);case 4:return ord&&lt;case 5:return ord&&(lt||eq);case 6:return ord&&!eq;case 7:return ord;case 8:return nan||eq;case 9:return nan||gt;case 10:return nan||gt||eq;case 11:return nan||lt;case 12:return nan||lt||eq;case 13:return nan||!eq;case 14:return nan;case 15:return 1;default:return 0;}
+    switch(p){case 0:return 0;case 1:return ord&&eq;case 2:return ord&&gt;case 3:return ord&&(gt||eq);case 4:return ord&&lt;case 5:return ord&&(lt||eq);case 6:return ord&&!eq;case 7:return ord;case 8:return nan;case 9:return nan||eq;case 10:return nan||gt;case 11:return nan||gt||eq;case 12:return nan||lt;case 13:return nan||lt||eq;case 14:return nan||!eq;case 15:return 1;default:return 0;}
 }
 uint64_t __bennett_sf_fpext_f32_f64(uint32_t a) {
     unsigned s=a>>31;int e=(a>>23)&255;uint64_t m=a&0x7fffff;

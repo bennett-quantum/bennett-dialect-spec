@@ -83,6 +83,36 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(v.Mismatch):
             v.equal('deliberately-wrong-events', '§18.4', expected + ['x H0.0'], events)
 
+    def test_materialised_isa7_and_parameterised_inplace(self):
+        b = self.block('example', 'r-fault-code')
+        self.assertEqual(v.recognise(d.with_decls(b['body']), materialised=True)[0], 'blocked:BD-B-ISA7')
+        b = self.block('example', 'inplace-param-quantum')
+        self.assertEqual(v.recognise(d.with_decls(b['body']))[0], 'accept')
+
+    def test_new_native_drivers(self):
+        from dialect_native import cases
+        for name in ('n-fcmp', 'fp-aggregate', 'entry-stack'):
+            with self.subTest(example=name):
+                driver, expected, variants = cases(name, self.block('native', name)['body'])
+                self.assertTrue(expected)
+                self.assertIn('int main', driver)
+
+    def test_fcmp_seed_predicates(self):
+        from pathlib import Path
+        from dialect_native import SEEDS
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            src=Path(tmp)/'test.c'; exe=Path(tmp)/'test'
+            src.write_text('#include <stdint.h>\nextern uint8_t __bennett_sf_cmp_f64(uint64_t,uint64_t,uint32_t);\nint main(void){return !__bennett_sf_cmp_f64(0x3ff0000000000000ULL,0x3ff0000000000000ULL,9) || __bennett_sf_cmp_f64(0x3ff0000000000000ULL,0x4000000000000000ULL,8);}')
+            v.command(['cc', src, SEEDS/'softfloat.c', '-o', exe])
+            v.command([exe])
+
+    def test_fp_aggregate_map(self):
+        from dialect_map import map_object
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'map'})
+            got=map_object(runner,self.block('lift','fp-aggregate'))
+            self.assertEqual(got,self.block('object','fp-aggregate')['body'])
+
     def test_handle_containment_at_external_call(self):
         text = '''declare void @external(ptr)
 define void @top() {
