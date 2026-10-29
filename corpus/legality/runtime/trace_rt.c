@@ -8,6 +8,12 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#if defined(BENNETT_MARKERS_ABI) && BENNETT_MARKERS_ABI == 2
+#define BUDGET_T const bennett_budget *
+#else
+#define BUDGET_T uint64_t
+#endif
+
 /* Keep this translation unit outside every optimizer/LTO invocation. */
 enum { HANDLE_COUNT = 65536, HANDLE_STRIDE = 4096 };
 static unsigned char *guard;
@@ -106,23 +112,44 @@ void __bennett_qload(bq dst, bq mem, bq addr) {
 void __bennett_qstore(bq mem, bq addr, bq val) {
     char a[32], b[32], c[32]; printf("QSTORE %s %s %s\n", handle(mem,a), handle(addr,b), handle(val,c));
 }
-void __bennett_ctrl(bq q, uint64_t qi, bregion f, uint64_t budget, void *env) {
-    char b[32], s[32]; printf("CTRL %s %" PRIu64 " %s %" PRIu64 "\n", handle(q,b), qi, symbol((void *)f, s), budget);
+void __bennett_ctrl(bq q, uint64_t qi, bregion f, BUDGET_T budget, void *env) {
+    char b[32], s[32]; printf("CTRL %s %" PRIu64 " %s %" PRIu64 "\n", handle(q,b), qi, symbol((void *)f, s), (uint64_t)(uintptr_t)budget);
     f(env); puts("END CTRL");
 }
+#if defined(BENNETT_MARKERS_ABI) && BENNETT_MARKERS_ABI == 2
+void __bennett_adj(bregion f, const bennett_budget *budget, void *env) {
+    (void)budget;
+#else
 void __bennett_adj(bregion f, void *env) {
+#endif
     char s[32]; printf("ADJ %s\n", symbol((void *)f, s)); f(env); puts("END ADJ");
 }
+#if defined(BENNETT_MARKERS_ABI) && BENNETT_MARKERS_ABI == 2
+void __bennett_compute(bregion f, bregion use, const bennett_budget *budget, void *env) {
+    (void)budget;
+#else
 void __bennett_compute(bregion f, bregion use, void *env) {
+#endif
     char s[32], t[32]; printf("COMPUTE %s %s\n", symbol((void *)f, s), symbol((void *)use, t));
     f(env); use(env); f(env); puts("END COMPUTE");
 }
-void __bennett_reversible(bregion f, uint64_t budget, void *env) {
-    char s[32]; printf("REVERSIBLE %s %" PRIu64 "\n", symbol((void *)f, s), budget); f(env); puts("END REVERSIBLE");
+void __bennett_reversible(bregion f, BUDGET_T budget, void *env) {
+    char s[32]; printf("REVERSIBLE %s %" PRIu64 "\n", symbol((void *)f, s), (uint64_t)(uintptr_t)budget); f(env); puts("END REVERSIBLE");
 }
+#if defined(BENNETT_MARKERS_ABI) && BENNETT_MARKERS_ABI == 2
+void __bennett_inplace(const void *g, const void *ginv, const bennett_budget *budget, const bennett_oracle_desc *desc) {
+    (void)g; (void)ginv; (void)budget; (void)desc;
+    die("ABI 0.2 inplace requires the ISA executor");
+}
+void __bennett_oracle(const void *f, const bennett_budget *budget, const bennett_oracle_desc *desc) {
+    (void)f; (void)budget; (void)desc;
+    die("ABI 0.2 oracle requires the ISA executor");
+}
+#else
 void __bennett_inplace(bregion g, bregion ginv, void *env) {
     char s[32], t[32]; printf("INPLACE %s %s\n", symbol((void *)g, s), symbol((void *)ginv, t)); g(env); puts("END INPLACE");
 }
+#endif
 void __bennett_ctrl_v(bq q, uint64_t qi, void *f, uint64_t budget, ...) {
     char b[32], s[32]; printf("CTRL_V %s %" PRIu64 " %s %" PRIu64 "\n", handle(q,b), qi, symbol(f, s), budget);
 }

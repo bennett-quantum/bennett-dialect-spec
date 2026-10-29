@@ -1,5 +1,10 @@
 #ifndef BENNETT_LEGALITY_MARKERS_H
 #define BENNETT_LEGALITY_MARKERS_H
+#if defined(BENNETT_MARKERS_ABI) && BENNETT_MARKERS_ABI == 2
+#include "../../spec/bennett_markers.h"
+typedef bennett_q bq;
+typedef bennett_region bregion;
+#else
 #include <stdint.h>
 #include <stdbool.h>
 #ifdef __cplusplus
@@ -26,3 +31,4 @@ void __bennett_ctrl_v(bq q, uint64_t qi, void *f, uint64_t budget, ...);
 }
 #endif
 #endif
+#endif /* ABI selection */

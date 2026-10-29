@@ -1,0 +1,123 @@
+# Generated from dialect §15 and §20.2; section prevails.
+version = "0.2"
+architecture = "aarch64"
+
+[[rows]]
+asm = "svc 0"
+constraints = "={x0},{x8},~{memory},~{cc}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "svc 0"
+constraints = "={x0},{x8},{x0},~{memory},~{cc}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 0, i64 0, i64 0, i64 0, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "svc 0"
+constraints = "={x0},{x8},{x0},{x1},~{memory},~{cc}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 a2, i64 0, i64 0, i64 0, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "svc 0"
+constraints = "={x0},{x8},{x0},{x1},{x2},~{memory},~{cc}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 a2, i64 a3, i64 0, i64 0, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "svc 0"
+constraints = "={x0},{x8},{x0},{x1},{x2},{x3},~{memory},~{cc}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 a2, i64 a3, i64 a4, i64 0, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "svc 0"
+constraints = "={x0},{x8},{x0},{x1},{x2},{x3},{x4},~{memory},~{cc}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 a2, i64 a3, i64 a4, i64 a5, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "svc 0"
+constraints = "={x0},{x8},{x0},{x1},{x2},{x3},{x4},{x5},~{memory},~{cc}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 a2, i64 a3, i64 a4, i64 a5, i64 a6)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = ""
+constraints = "* (without outputs)"
+class = "lowered"
+replacement = "deleted"
+section = "15.2"
+match = "pattern"
+
+[[rows]]
+asm = "nop"
+constraints = "*"
+class = "lowered"
+replacement = "deleted"
+section = "15.2"
+match = "mnemonic"
+
+[[rows]]
+asm = "yield"
+constraints = "*"
+class = "lowered"
+replacement = "deleted"
+section = "15.2"
+match = "mnemonic"
+
+[[rows]]
+asm = "llvm.aarch64.hint"
+constraints = "*"
+class = "lowered"
+replacement = "deleted"
+section = "15.2"
+match = "mnemonic"
+
+[[rows]]
+asm = "mrs $0, cntvct_el0"
+constraints = "*"
+class = "lowered"
+replacement = "call i64 @__bennett_rt_cyclecounter()"
+section = "15.2"
+match = "pattern"
+
+[[rows]]
+asm = "llvm.readcyclecounter"
+constraints = "*"
+class = "lowered"
+replacement = "call i64 @__bennett_rt_cyclecounter()"
+section = "15.2"
+match = "intrinsic"
+
+[[rows]]
+asm = "llvm.readsteadycounter"
+constraints = "*"
+class = "lowered"
+replacement = "call i64 @__bennett_rt_cyclecounter()"
+section = "15.2"
+match = "intrinsic"
+
+[[rows]]
+asm = "*"
+constraints = "*"
+class = "trapped"
+replacement = "F(8)"
+section = "15.2"
+match = "fallback"

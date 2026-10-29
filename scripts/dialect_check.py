@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-flight check for spec/Bennett-Dialect-Spec.md (dialect 0.1).
+"""Pre-flight check for spec/Bennett-Dialect-Spec.md (dialect 0.2).
 
 Seed of the reference recogniser, the residual-poison validator and the
 lifting map. It extracts every tagged example from the spec (tagging:
@@ -474,6 +474,21 @@ def parse_call(ins):
     if not m:
         raise Fail(f"not a call: {ins.text}")
     tailkw, kind, rest = m.group(1), m.group(2), m.group(3)
+    if re.search(r'\basm\b', rest):
+        # Inline asm is ordinary §15 input, never a marker. Keep arguments for N31.
+        am = re.search(r'asm(?: sideeffect)?(?: alignstack)? "([^"\n]*)", "([^"\n]*)"\((.*)\)', rest)
+        if not am:
+            raise Fail("cannot parse inline asm: " + ins.text)
+        ret = parse_type(rest)[0]
+        args = []
+        for arg in split_top(am.group(3)):
+            ty, kk = parse_type(arg)
+            attrs, value = strip_param_attrs(arg[kk:])
+            args.append((ty, attrs, value))
+        return {"callee": "@llvm.inlineasm", "ret": ret, "params": [a[0] for a in args],
+                "vararg": False, "args": args, "fn_attrs": [], "ret_attrs": [], "cc": None,
+                "bundles": False, "tail": tailkw, "kind": kind, "unwind": None, "fmf": [],
+                "explicit": False, "asm": am.group(1), "constraints": am.group(2)}
     # callee: first top-level @name( or %name(
     cm = None
     depth = 0
@@ -1699,9 +1714,9 @@ def int_candidates(mod, f, v, depth=0):
     if ins.op in ("zext", "trunc", "sext"):
         body = ins.text.split(" = ", 1)[1]
         src = body[len(ins.op):].rsplit(" to ", 1)[0]
-        sty = parse_type(src)[0]
+        sty = parse_type(strip_flags(src.strip()))[0]
         dty = parse_type(body.rsplit(" to ", 1)[1])[0]
-        r = int_candidates(mod, f, typed_val(src), depth + 1)
+        r = int_candidates(mod, f, typed_val(strip_flags(src.strip())), depth + 1)
         if r == "TOP":
             return r
         out = set()
@@ -2214,7 +2229,7 @@ def lift(text):
                 rows.append(f"{vnum[ins.res]} = lift.select {C} {A} {B}")
             elif op in ("zext", "sext", "trunc"):
                 src, dst = body[len(op):].rsplit(" to ", 1)
-                sty = parse_type(src)[0]
+                sty = parse_type(strip_flags(src.strip()))[0]
                 dty = parse_type(dst)[0]
                 A = opnd(typed_val(src), sty, rows)
                 define(vnum[ins.res], dty[1])
@@ -2810,7 +2825,7 @@ def extract_function(m, name):
 SPEC_PATH = SPEC
 
 
-def main():
+def legacy_main():
     global SPEC_PATH, MARKERS, MARKERS_SHORT
     spec = Path(sys.argv[1]) if len(sys.argv) > 1 else SPEC
     SPEC_PATH = spec
@@ -3093,9 +3108,16 @@ def build_and_trace(body, k, tc, tmp):
     return out
 
 
+def main(argv=None):
+    # Make the parser module shared when invoked as a script or imported by tests.
+    sys.modules.setdefault("dialect_check", sys.modules[__name__])
+    from dialect_check_v02 import main as preflight
+    return preflight(argv)
+
+
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except Fail as e:
         print("FAIL:", e)
         sys.exit(1)

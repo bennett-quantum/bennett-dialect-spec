@@ -1,0 +1,235 @@
+# Generated from dialect §15 and §20.2; section prevails.
+version = "0.2"
+architecture = "riscv64"
+
+[[rows]]
+asm = "ecall"
+constraints = "={x10},{x17},~{memory}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "ecall"
+constraints = "={x10},{x17},{x10},~{memory}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 0, i64 0, i64 0, i64 0, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "ecall"
+constraints = "={x10},{x17},{x10},{x11},~{memory}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 a2, i64 0, i64 0, i64 0, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "ecall"
+constraints = "={x10},{x17},{x10},{x11},{x12},~{memory}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 a2, i64 a3, i64 0, i64 0, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "ecall"
+constraints = "={x10},{x17},{x10},{x11},{x12},{x13},~{memory}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 a2, i64 a3, i64 a4, i64 0, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "ecall"
+constraints = "={x10},{x17},{x10},{x11},{x12},{x13},{x14},~{memory}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 a2, i64 a3, i64 a4, i64 a5, i64 0)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = "ecall"
+constraints = "={x10},{x17},{x10},{x11},{x12},{x13},{x14},{x15},~{memory}"
+class = "shimmed"
+replacement = "call i64 @__bennett_rt_syscall(i64 nr, i64 a1, i64 a2, i64 a3, i64 a4, i64 a5, i64 a6)"
+section = "15.5"
+match = "exact"
+
+[[rows]]
+asm = ""
+constraints = "* (without outputs)"
+class = "lowered"
+replacement = "deleted"
+section = "15.2"
+match = "pattern"
+
+[[rows]]
+asm = "nop"
+constraints = "*"
+class = "lowered"
+replacement = "deleted"
+section = "15.2"
+match = "mnemonic"
+
+[[rows]]
+asm = "fence"
+constraints = "*"
+class = "lowered"
+replacement = "deleted"
+section = "15.2"
+match = "mnemonic"
+
+[[rows]]
+asm = "fence rw,rw"
+constraints = "*"
+class = "lowered"
+replacement = "deleted"
+section = "15.2"
+match = "mnemonic"
+
+[[rows]]
+asm = "fence.i"
+constraints = "*"
+class = "lowered"
+replacement = "deleted"
+section = "15.2"
+match = "mnemonic"
+
+[[rows]]
+asm = "rdtime"
+constraints = "*"
+class = "lowered"
+replacement = "call i64 @__bennett_rt_cyclecounter()"
+section = "15.2"
+match = "pattern"
+
+[[rows]]
+asm = "rdcycle"
+constraints = "*"
+class = "lowered"
+replacement = "call i64 @__bennett_rt_cyclecounter()"
+section = "15.2"
+match = "pattern"
+
+[[rows]]
+asm = "llvm.readcyclecounter"
+constraints = "*"
+class = "lowered"
+replacement = "call i64 @__bennett_rt_cyclecounter()"
+section = "15.2"
+match = "intrinsic"
+
+[[rows]]
+asm = "llvm.readsteadycounter"
+constraints = "*"
+class = "lowered"
+replacement = "call i64 @__bennett_rt_cyclecounter()"
+section = "15.2"
+match = "intrinsic"
+
+[[rows]]
+asm = "*"
+constraints = "*"
+class = "trapped"
+replacement = "F(8)"
+section = "15.2"
+match = "fallback"
+
+[[rows]]
+asm = "csrr"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_csr_read"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "csrw"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_csr_write"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "csrs"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_csr_set"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "csrc"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_csr_clear"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "csrrwi"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_csr_write"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "csrrsi"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_csr_set"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "csrrci"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_csr_clear"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "sfence.vma"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_sfence_vma"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "wfi"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_wfi"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "ecall"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_sbi_call (kernel); trap path (user)"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "mret"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_trap_return (machine)"
+section = "20.2"
+match = "platform-pattern"
+
+[[rows]]
+asm = "sret"
+constraints = "platform-spike inventory (\u00a720.7)"
+class = "shimmed"
+replacement = "__bennett_rt_trap_return (supervisor)"
+section = "20.2"
+match = "platform-pattern"
