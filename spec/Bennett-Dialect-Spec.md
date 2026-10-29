@@ -3311,7 +3311,10 @@ retains (TDL-7); f_k, compute copies g_k and a plugin-allocated Φ are declared 
 by CC. They are exempt from invocation T-LEAK and are neither measured nor freed at
 invocation return or device-entry return. No f_k is freed by firstfault. adjoint(E_f)
 reuses the same f_k wires (f9 in tdl-d); a cleaned f_k may be freed after that reuse.
-The CC epilogue means program end: measure each remaining declared output, report the
+The CC epilogue means program end: copy successive chunks of at most 128 bits of
+each remaining declared output into fresh non-view registers and measure those copies
+(ISA measure consumes the copies). The original output wires now hold the known
+basis outcome and remain live for correction and clean free. Report the
 invocation's combined Φ statistics (deduplicate correlated code copies, do not sum their
 rates), apply outcome-conditioned X corrections and free clean. Caller-supplied Φ remains
 caller-owned under §6.6. The certificate reports the rate (`fault_rate`, ISA §12.3). On a
