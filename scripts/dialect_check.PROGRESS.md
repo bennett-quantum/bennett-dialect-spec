@@ -1,5 +1,57 @@
 # Dialect 0.2 pre-flight checker progress
 
+## Current freeze status — supersedes historical milestones below
+
+**2311/2311 passed; 0 failed; 0 unavailable.** Normative spec commit 976e4bb,
+dialect/norm 0.2.2. Editor-owned V10 reconciliation and its carrier witness are
+validated; no red checks remain. R-budget is a passing blocked:BD-B-ISA7 verdict
+in the blocker family with its ISA-0.9 result recorded, explicitly not executed.
+All 31 checker unit regressions and 4 legacy runtime tests pass.
+
+ISA immutable offline build: `667e494320b7abcab5fcb82c1ceb5b2340e09b04`,
+fingerprint `e40c9867bc8c5865de8dc49112d839ecba7fab659a104f06ca555d07dcd72501`. HEAD equality verified after the gate.
+All four CLI commands execute their applicable checks. No push or protected edits.
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 7 | 0 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 15 | 0 | 0 |
+| coverage | 125 | 0 | 0 |
+| driver | 1 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 15 | 0 | 0 |
+| hash | 5 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 14 | 0 | 0 |
+| native | 13 | 0 | 0 |
+| normalise | 24 | 0 | 0 |
+| parse | 570 | 0 | 0 |
+| recognise | 125 | 0 | 0 |
+| run-oracle | 15 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 35 | 0 | 0 |
+| step-check | 6 | 0 | 0 |
+| tdl | 9 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1310 | 0 | 0 |
+
+Reproduce exactly:
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/implementation-final-freeze.json
+```
+
+Machine summary: scripts/dialect_check.LAST-RUN.json; full report:
+scripts/.tmp/implementation-final-freeze.json. Separate manifest integration
+**b-dialect-spec-bvy** remains open: SPEC_VERSIONS.toml still says 0.2.1 and is
+outside the implementer's ownership. Checker full-version handling is 0.2.2.
+ISA-7 **b-dialect-spec-bz6** remains an external semantics dependency; the
+passing blocker verdict does not claim that typed R faults execute on ISA 0.8.
+
+
 Tracking: `b-dialect-spec-qxd`; seeds `b-dialect-spec-d4k`; asm data
 `b-dialect-spec-rq0`; missing rule examples `b-dialect-spec-gvr`.
 Implementation sub-agent owns commits under the current user authorization. Never edit the protected spec/header/version files

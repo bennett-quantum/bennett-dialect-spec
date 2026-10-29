@@ -1,7 +1,8 @@
 {
-  "spec_commit": "c61de71",
-  "interpreter_commit": "8503d818b7cd96b95682e5970596790b364ea6a6",
-  "interpreter_source_sha256": "5178cabb4c3c2c6dcbf20a37da9b8679487deb54fe03f73b530c32572b6cc779",
+  "spec_commit": "976e4bb83feafe3d6fcb2b9ef25118a2aeb350de",
+  "dialect_version": "0.2.2",
+  "interpreter_commit": "667e494320b7abcab5fcb82c1ceb5b2340e09b04",
+  "interpreter_source_sha256": "e40c9867bc8c5865de8dc49112d839ecba7fab659a104f06ca555d07dcd72501",
   "counts": {
     "asm": {
       "passed": 1,
@@ -9,7 +10,7 @@
       "blocked": 0
     },
     "blocker": {
-      "passed": 5,
+      "passed": 7,
       "failed": 0,
       "blocked": 0
     },
@@ -19,13 +20,13 @@
       "blocked": 0
     },
     "check": {
-      "passed": 9,
+      "passed": 15,
       "failed": 0,
       "blocked": 0
     },
     "coverage": {
-      "passed": 90,
-      "failed": 35,
+      "passed": 125,
+      "failed": 0,
       "blocked": 0
     },
     "driver": {
@@ -54,7 +55,7 @@
       "blocked": 0
     },
     "map": {
-      "passed": 8,
+      "passed": 14,
       "failed": 0,
       "blocked": 0
     },
@@ -64,22 +65,22 @@
       "blocked": 0
     },
     "normalise": {
-      "passed": 18,
+      "passed": 24,
       "failed": 0,
       "blocked": 0
     },
     "parse": {
-      "passed": 393,
+      "passed": 570,
       "failed": 0,
       "blocked": 0
     },
     "recognise": {
-      "passed": 84,
+      "passed": 125,
       "failed": 0,
       "blocked": 0
     },
     "run-oracle": {
-      "passed": 9,
+      "passed": 15,
       "failed": 0,
       "blocked": 0
     },
@@ -94,9 +95,9 @@
       "blocked": 0
     },
     "state": {
-      "passed": 28,
+      "passed": 35,
       "failed": 0,
-      "blocked": 1
+      "blocked": 0
     },
     "step-check": {
       "passed": 6,
@@ -114,301 +115,932 @@
       "blocked": 0
     },
     "xrefs": {
-      "passed": 1285,
+      "passed": 1310,
       "failed": 0,
       "blocked": 0
     }
   },
-  "total": 2036,
-  "passed": 2000,
-  "failures": [
+  "total": 2311,
+  "passed": 2311,
+  "failures": [],
+  "blocked_verdict_evidence": [
     {
-      "family": "coverage",
-      "example": "N0",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: N0 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "94642c83d654e907ea6cb34af7bc3849d06b8fc3b127f56a235f1fff934d3581",
+      "status": "ok",
+      "symbols": {
+        "L1": {
+          "closure_hash": "d6d4b832fb8db9fc5b958869e19e2e40b09f48bdae7b025ad992dc158a03c85f",
+          "interface_hash": "d6d4b832fb8db9fc5b958869e19e2e40b09f48bdae7b025ad992dc158a03c85f"
+        },
+        "ref": {
+          "closure_hash": "53e80acd1ae1e915b3ce43f8d91c744d9f7c805920e0b1080d4d84c29ea75d91",
+          "interface_hash": "53e80acd1ae1e915b3ce43f8d91c744d9f7c805920e0b1080d4d84c29ea75d91"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "N12",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: N12 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "ced3e13e4bc7af8325b951b93cc8b87b54437f6cbe2b8b5156074309faba8e6e",
+      "status": "ok",
+      "symbols": {
+        "G1": {
+          "closure_hash": "3a60742cd66a29ff962e5c5d7d7826179e62c216f129a53f18177fac4416f0e8",
+          "interface_hash": "3a60742cd66a29ff962e5c5d7d7826179e62c216f129a53f18177fac4416f0e8"
+        },
+        "L1": {
+          "closure_hash": "96dc6b23dc45a2ae237008b19b5d4b6ec1d142e94329871d57cf797199dfbe48",
+          "interface_hash": "96dc6b23dc45a2ae237008b19b5d4b6ec1d142e94329871d57cf797199dfbe48"
+        },
+        "ref": {
+          "closure_hash": "27a8a0403bffc1938a3fe9ab8b05327d7ab4c826cf8e81ff8c6357cd158cbf73",
+          "interface_hash": "27a8a0403bffc1938a3fe9ab8b05327d7ab4c826cf8e81ff8c6357cd158cbf73"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "N15",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: N15 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "a0dbb16a79d34b95af199a6bf1fe3394589b8896e5556db9475460365a3d146c",
+      "status": "ok",
+      "symbols": {
+        "G1": {
+          "closure_hash": "3a60742cd66a29ff962e5c5d7d7826179e62c216f129a53f18177fac4416f0e8",
+          "interface_hash": "3a60742cd66a29ff962e5c5d7d7826179e62c216f129a53f18177fac4416f0e8"
+        },
+        "G2": {
+          "closure_hash": "152c175d592378069aaf67055e1d0ae1481a51cebce1e9f4f5d2b239ef7a253e",
+          "interface_hash": "152c175d592378069aaf67055e1d0ae1481a51cebce1e9f4f5d2b239ef7a253e"
+        },
+        "L1": {
+          "closure_hash": "f446e3af7690839e9a32c9a63b7bd87030b2d874ce5bc6fb426fbced076df0f0",
+          "interface_hash": "f446e3af7690839e9a32c9a63b7bd87030b2d874ce5bc6fb426fbced076df0f0"
+        },
+        "ref": {
+          "closure_hash": "04f3ca145a1ffc46dcd99ba50776a7a63cb538e5482bfa0ddff4249e4a0d58b4",
+          "interface_hash": "04f3ca145a1ffc46dcd99ba50776a7a63cb538e5482bfa0ddff4249e4a0d58b4"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "N25",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: N25 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "c396e3caa70f02c3f2ef1cd26ea7b565013a6798c45fea920f50da7a303237bf",
+      "status": "ok",
+      "symbols": {
+        "G1": {
+          "closure_hash": "3a60742cd66a29ff962e5c5d7d7826179e62c216f129a53f18177fac4416f0e8",
+          "interface_hash": "3a60742cd66a29ff962e5c5d7d7826179e62c216f129a53f18177fac4416f0e8"
+        },
+        "G2": {
+          "closure_hash": "152c175d592378069aaf67055e1d0ae1481a51cebce1e9f4f5d2b239ef7a253e",
+          "interface_hash": "152c175d592378069aaf67055e1d0ae1481a51cebce1e9f4f5d2b239ef7a253e"
+        },
+        "G3": {
+          "closure_hash": "9d3aca04351c878d6876df5bd35776f57012ffe2e47eee3cec4c6105684a9550",
+          "interface_hash": "9d3aca04351c878d6876df5bd35776f57012ffe2e47eee3cec4c6105684a9550"
+        },
+        "L1": {
+          "closure_hash": "e7ae395ec28f1ca3f2f30e81046b4b4a79ae95295a900a5d687daae2177486db",
+          "interface_hash": "e7ae395ec28f1ca3f2f30e81046b4b4a79ae95295a900a5d687daae2177486db"
+        },
+        "ref": {
+          "closure_hash": "82aa872187094d2e3f204da439cb5060bacd5c7c9234aafdc90da40940bd74b5",
+          "interface_hash": "82aa872187094d2e3f204da439cb5060bacd5c7c9234aafdc90da40940bd74b5"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "N34",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: N34 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "c47e9d7d175a92c7c3f4ef60c1ad62d19427a89981dd6729ae7ffcfb1791236b",
+      "status": "ok",
+      "symbols": {
+        "G1": {
+          "closure_hash": "b50c81820686bbeffee04bef717194a246cce129dfe075cd83f7236bf6b9e02d",
+          "interface_hash": "b50c81820686bbeffee04bef717194a246cce129dfe075cd83f7236bf6b9e02d"
+        },
+        "L1": {
+          "closure_hash": "8e9a3ee563fdedce6920d5630062ed936202eff72f00dc2c256c25b782fda397",
+          "interface_hash": "8e9a3ee563fdedce6920d5630062ed936202eff72f00dc2c256c25b782fda397"
+        },
+        "L2": {
+          "closure_hash": "a0f418bf7f4380dc92d0f8c085c90cbb65ff9239740d439b682e28f292060802",
+          "interface_hash": "a0f418bf7f4380dc92d0f8c085c90cbb65ff9239740d439b682e28f292060802"
+        },
+        "ref": {
+          "closure_hash": "4b46bebe4a5a235b4e45a2e1f4718dd88b733c97a8b6d2343cbb557889107cb2",
+          "interface_hash": "4b46bebe4a5a235b4e45a2e1f4718dd88b733c97a8b6d2343cbb557889107cb2"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "N35",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: N35 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "92802f732ce75ad94733a3c67e97fec44a4d2cc26099c3338379218bb01b9718",
+      "status": "ok",
+      "symbols": {
+        "G1": {
+          "closure_hash": "859dd54c2d35a0e71d8b1dd716104a495ddff4d99bf475cfecb9a338e9e21130",
+          "interface_hash": "859dd54c2d35a0e71d8b1dd716104a495ddff4d99bf475cfecb9a338e9e21130"
+        },
+        "L1": {
+          "closure_hash": "73ab604536abee68a6e99408a725c680a91a5657c05ba02d6eff32e42385d528",
+          "interface_hash": "73ab604536abee68a6e99408a725c680a91a5657c05ba02d6eff32e42385d528"
+        },
+        "ref": {
+          "closure_hash": "a2580fd9aee33acb7501709e08ccc38d57944b716c9aca371f0b2fc93554362c",
+          "interface_hash": "a2580fd9aee33acb7501709e08ccc38d57944b716c9aca371f0b2fc93554362c"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "PT12",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: PT12 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "8ac243f5cfec814221a859201ac78f713dbc533ed51e6d1b9287b7a234e7c1c7",
+      "status": "ok",
+      "symbols": {
+        "L1": {
+          "closure_hash": "a8c86313c60cd75a4f013bdaaa43ed5db78c444b0338a3d41d98a3871929250e",
+          "interface_hash": "a8c86313c60cd75a4f013bdaaa43ed5db78c444b0338a3d41d98a3871929250e"
+        },
+        "ref": {
+          "closure_hash": "151baad5625b3605eadf87005a19ea6e012e4347d6dfe096dbc4edcf2b68b94a",
+          "interface_hash": "151baad5625b3605eadf87005a19ea6e012e4347d6dfe096dbc4edcf2b68b94a"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "V10",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V10 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "a9660ece18422bc64557cb19f02d980339b44fa77b572e81dbc543716606f5d1",
+      "status": "ok",
+      "symbols": {
+        "L1": {
+          "closure_hash": "ad2332d5edae1d26b1c946a0d9f033c10c6e493be11c44ef5f910f548b3b2285",
+          "interface_hash": "ad2332d5edae1d26b1c946a0d9f033c10c6e493be11c44ef5f910f548b3b2285"
+        },
+        "ref": {
+          "closure_hash": "5b4c6624e0f20b5d60780fd8f27056f3f7efd4d27b9d47af8a70c8126100a10a",
+          "interface_hash": "5b4c6624e0f20b5d60780fd8f27056f3f7efd4d27b9d47af8a70c8126100a10a"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "V11",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V11 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "742ccbaf23ca1b89c93e8fa6e3e6953df99748d45d6ef01cfc9f91f1a89726a8",
+      "status": "ok",
+      "symbols": {
+        "G1": {
+          "closure_hash": "cd1c59e462e3c7cc7c57d38574c61e1f063375ef748567a9213952963a69ee61",
+          "interface_hash": "cd1c59e462e3c7cc7c57d38574c61e1f063375ef748567a9213952963a69ee61"
+        },
+        "L1": {
+          "closure_hash": "72b9a373406320f3ff6cb69c9edce3a4d8e1ae7a7433d88286844ab68dc4db81",
+          "interface_hash": "72b9a373406320f3ff6cb69c9edce3a4d8e1ae7a7433d88286844ab68dc4db81"
+        },
+        "L2": {
+          "closure_hash": "960dd380906f87a9154040ce51d207892a46574897dc749e72c31241bfe0517f",
+          "interface_hash": "960dd380906f87a9154040ce51d207892a46574897dc749e72c31241bfe0517f"
+        },
+        "L3": {
+          "closure_hash": "102ebe211e15cbb57f2ff0ce761197291d2e046c46e56d205939b4444660d3e6",
+          "interface_hash": "102ebe211e15cbb57f2ff0ce761197291d2e046c46e56d205939b4444660d3e6"
+        },
+        "L4": {
+          "closure_hash": "ae731d00bf437af71b684013b35ab29dcd6a4ee5ef8c974abe32d7116c89ba37",
+          "interface_hash": "ae731d00bf437af71b684013b35ab29dcd6a4ee5ef8c974abe32d7116c89ba37"
+        },
+        "ref": {
+          "closure_hash": "15c371b8e02e1bef6e9fa5220a8b128e1547fe2cf192e68a1045b3bebfeb0800",
+          "interface_hash": "15c371b8e02e1bef6e9fa5220a8b128e1547fe2cf192e68a1045b3bebfeb0800"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "V12",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V12 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "01a62578f819fdee9196652a444e0edbdc9c4fab53da177cc0a8ea89ae506711",
+      "status": "ok",
+      "symbols": {
+        "G1": {
+          "closure_hash": "b50c81820686bbeffee04bef717194a246cce129dfe075cd83f7236bf6b9e02d",
+          "interface_hash": "b50c81820686bbeffee04bef717194a246cce129dfe075cd83f7236bf6b9e02d"
+        },
+        "G2": {
+          "closure_hash": "152c175d592378069aaf67055e1d0ae1481a51cebce1e9f4f5d2b239ef7a253e",
+          "interface_hash": "152c175d592378069aaf67055e1d0ae1481a51cebce1e9f4f5d2b239ef7a253e"
+        },
+        "G3": {
+          "closure_hash": "9d3aca04351c878d6876df5bd35776f57012ffe2e47eee3cec4c6105684a9550",
+          "interface_hash": "9d3aca04351c878d6876df5bd35776f57012ffe2e47eee3cec4c6105684a9550"
+        },
+        "G4": {
+          "closure_hash": "3879e146fc0259de6e55b6419ae04d56e91a94d01e7ac18d36b9aee8bf2ecbe5",
+          "interface_hash": "3879e146fc0259de6e55b6419ae04d56e91a94d01e7ac18d36b9aee8bf2ecbe5"
+        },
+        "L1": {
+          "closure_hash": "9693c26332743afbabc98e27c52354a62c784770867c31704f859a862f608ce6",
+          "interface_hash": "9693c26332743afbabc98e27c52354a62c784770867c31704f859a862f608ce6"
+        },
+        "L2": {
+          "closure_hash": "430d12d36def3a829ce790134f9d0475cc2deaf5af6400cc2c3a9d7e4c52d7e0",
+          "interface_hash": "430d12d36def3a829ce790134f9d0475cc2deaf5af6400cc2c3a9d7e4c52d7e0"
+        },
+        "ref": {
+          "closure_hash": "9513f98fe923cc96f338736dba1f2ce66150b0ad479b708a8339d648264cfa44",
+          "interface_hash": "9513f98fe923cc96f338736dba1f2ce66150b0ad479b708a8339d648264cfa44"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "V13",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V13 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "c940c042ae230049e790f1257d9e7b40bdcd777478745b7af435acaa4046b121",
+      "status": "ok",
+      "symbols": {
+        "L1": {
+          "closure_hash": "5240453f456b06a3dad9264c52ccdb442072398e4f48dd13ffdf9198eff14ef0",
+          "interface_hash": "5240453f456b06a3dad9264c52ccdb442072398e4f48dd13ffdf9198eff14ef0"
+        },
+        "L2": {
+          "closure_hash": "46b439e82f9ccea0da6ae6039e312761f884af01c09b902df20fb995f33e4c4e",
+          "interface_hash": "46b439e82f9ccea0da6ae6039e312761f884af01c09b902df20fb995f33e4c4e"
+        },
+        "L3": {
+          "closure_hash": "0a525e87fd5d98e7137d23335c09d9a5a9fcf52047743ca3e0c08bf6af7ddb72",
+          "interface_hash": "0a525e87fd5d98e7137d23335c09d9a5a9fcf52047743ca3e0c08bf6af7ddb72"
+        },
+        "ref": {
+          "closure_hash": "066b70a9674347f05fd4d6e727760e63fd94aa0e52ac5b457f5ea27597856a35",
+          "interface_hash": "066b70a9674347f05fd4d6e727760e63fd94aa0e52ac5b457f5ea27597856a35"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "V14",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V14 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "1adefd004c93443ff7814b939dc85dd609104ada65d54e5b98398f1448208280",
+      "status": "ok",
+      "symbols": {
+        "L1": {
+          "closure_hash": "84e502d9807b1947e93d4314fab40f65bcb2a3f42735daa08cd05c8cd15ccf2c",
+          "interface_hash": "84e502d9807b1947e93d4314fab40f65bcb2a3f42735daa08cd05c8cd15ccf2c"
+        },
+        "ref": {
+          "closure_hash": "0575354a0ecceee58d8dfbcc5cb9a9b8851c5c2b3193bf543395bed13604ce80",
+          "interface_hash": "0575354a0ecceee58d8dfbcc5cb9a9b8851c5c2b3193bf543395bed13604ce80"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "V15",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V15 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "796922d5307e83f44a125221174517fff341a323f249b05bab2abfb9439e7ee2",
+      "status": "ok",
+      "symbols": {
+        "L1": {
+          "closure_hash": "9967104ff6b4ca88c991146eec9bc479d47e9dd572e818105b322cdb38c2c845",
+          "interface_hash": "9967104ff6b4ca88c991146eec9bc479d47e9dd572e818105b322cdb38c2c845"
+        },
+        "ref": {
+          "closure_hash": "1b33043e49b067f85baffa2b7e1e4390a9ea7f82f0c73cafd5482be68219d22b",
+          "interface_hash": "1b33043e49b067f85baffa2b7e1e4390a9ea7f82f0c73cafd5482be68219d22b"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "V16",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V16 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "1b06c23f4f195a7f8b6c2cc556c8f50495ddd7c395b55c1754dc54c980b7ce5a",
+      "status": "ok",
+      "symbols": {
+        "L1": {
+          "closure_hash": "4b221ed922ead2aba9c13f022d52a8505f7d11d7d384e2ea2803d25aafa96291",
+          "interface_hash": "4b221ed922ead2aba9c13f022d52a8505f7d11d7d384e2ea2803d25aafa96291"
+        },
+        "ref": {
+          "closure_hash": "1139edfe71a34500be515f3ff61380020ab781c254339eafbad172a94e095d69",
+          "interface_hash": "1139edfe71a34500be515f3ff61380020ab781c254339eafbad172a94e095d69"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "V2",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V2 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "object_hash": "97bef77fdee4a609b825cd8157eaf0b26c476c3765b9a380b83a689d5d7562b0",
+      "status": "ok",
+      "symbols": {
+        "G1": {
+          "closure_hash": "bbdd61d76d9382bb78e4ddea358cd37dc0bf5618c07a76ac93f0957c999a76e5",
+          "interface_hash": "bbdd61d76d9382bb78e4ddea358cd37dc0bf5618c07a76ac93f0957c999a76e5"
+        },
+        "L1": {
+          "closure_hash": "86becbb1ddcc433a4123e808f6c64c666a9509bad89625771a31b7cff9ed5dce",
+          "interface_hash": "86becbb1ddcc433a4123e808f6c64c666a9509bad89625771a31b7cff9ed5dce"
+        },
+        "L2": {
+          "closure_hash": "8288d26de1dea446a76b2f33016049afb721ef8575e8586289a81878ad33b44e",
+          "interface_hash": "8288d26de1dea446a76b2f33016049afb721ef8575e8586289a81878ad33b44e"
+        },
+        "L3": {
+          "closure_hash": "3488e572ba0e53b3671b6313b8cbc4339e600b0cd51f6c6c6338e4492b5aefd2",
+          "interface_hash": "3488e572ba0e53b3671b6313b8cbc4339e600b0cd51f6c6c6338e4492b5aefd2"
+        },
+        "ref": {
+          "closure_hash": "50289e34598400f57c820d819d83993e14d12e08596ba55ce070109b5746ad1f",
+          "interface_hash": "50289e34598400f57c820d819d83993e14d12e08596ba55ce070109b5746ad1f"
+        }
+      },
+      "unresolved_imports": []
     },
     {
-      "family": "coverage",
-      "example": "V3",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V3 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "verdict": "blocked:BD-B-ISA7",
+      "bead": "b-dialect-spec-bz6",
+      "executed": false,
+      "execution_target": "ISA 0.8",
+      "requires": "ISA 0.9 fault C, 61550b4 \u00a70.2 K5 / \u00a74.1",
+      "required_isa09": {
+        "status": "FAILED",
+        "fault": 1,
+        "console_hex": "",
+        "tape": [],
+        "terminal_records": [
+          {
+            "code": 1
+          }
+        ],
+        "host_requests": [],
+        "reversible_prefix_retained": true
+      },
+      "source_obligation": "source R body: console.write(\"x\"); return; steps=0\nISA 0.8 status=blocked:BD-B-ISA7 (BLK-5); generic trap is not equivalent\nrequired under ISA 0.9: fault code=1 before first counted instruction; console=empty; tape prefix=empty\nrequired under ISA 0.9: run=FAILED; exactly one terminal record, code=1; no host request; reversible prefix history retained\n"
     },
     {
-      "family": "coverage",
-      "example": "V4",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V4 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "18": {
+        "0": [
+          "IN 0",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 0"
+        ],
+        "1": [
+          "IN 1",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 1"
+        ],
+        "2": [
+          "IN 2",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 2"
+        ],
+        "3": [
+          "IN 3",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 3"
+        ]
+      },
+      "20": {
+        "0": [
+          "IN 0",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 0"
+        ],
+        "1": [
+          "IN 1",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 1"
+        ],
+        "2": [
+          "IN 2",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 2"
+        ],
+        "3": [
+          "IN 3",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 3"
+        ]
+      },
+      "23": {
+        "0": [
+          "IN 0",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 0"
+        ],
+        "1": [
+          "IN 1",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 1"
+        ],
+        "2": [
+          "IN 2",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 2"
+        ],
+        "3": [
+          "IN 3",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "CTRL H0 0 F@0x401230 0",
+          "GATE 1 H1 0",
+          "END CTRL",
+          "GATE 2 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 3"
+        ]
+      }
     },
     {
-      "family": "coverage",
-      "example": "V5",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V5 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
+      "18": {
+        "0": [
+          "IN 0",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 0"
+        ],
+        "1": [
+          "IN 1",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 1"
+        ],
+        "2": [
+          "IN 2",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 2"
+        ],
+        "3": [
+          "IN 3",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 3"
+        ]
+      },
+      "20": {
+        "0": [
+          "IN 0",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 0"
+        ],
+        "1": [
+          "IN 1",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 1"
+        ],
+        "2": [
+          "IN 2",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 2"
+        ],
+        "3": [
+          "IN 3",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 3"
+        ]
+      },
+      "23": {
+        "0": [
+          "IN 0",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 0"
+        ],
+        "1": [
+          "IN 1",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 1"
+        ],
+        "2": [
+          "IN 2",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 2"
+        ],
+        "3": [
+          "IN 3",
+          "QALLOC H0 0 1",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "ADJ F@0x401230",
+          "GATE 2 H0 0",
+          "GATE 3 H0 0",
+          "GATE 5 H0 0",
+          "END ADJ",
+          "QFREE H0",
+          "RET 3"
+        ]
+      }
     },
     {
-      "family": "coverage",
-      "example": "V6",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V6 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "V7",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V7 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "V8",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V8 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "V9",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: V9 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "binding:OUT",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: binding:OUT [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "device:BLOCK",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: device:BLOCK [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "device:CLOCK",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: device:CLOCK [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "device:CONSOLE",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: device:CONSOLE [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "\u00a78.5 entry-state transfer",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: \u00a78.5 entry-state transfer [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "\u00a714.9 indirectbr",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: \u00a714.9 indirectbr [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "\u00a719.3",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: \u00a719.3 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "\u00a719.4",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: \u00a719.4 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "\u00a719.5",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: \u00a719.5 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "\u00a719.6",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: \u00a719.6 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "\u00a719.7",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: \u00a719.7 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "\u00a719.8",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: \u00a719.8 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "coverage",
-      "example": "\u00a720",
-      "rule": "P-1",
-      "status": "failed",
-      "blocked_on": "",
-      "detail": "expected contract satisfied; actual Mismatch: \u00a720 [P-1 example coverage (b-dialect-spec-gvr)] expected=True; actual=False"
-    },
-    {
-      "family": "state",
-      "example": "r-budget-prefix",
-      "rule": "\u00a718.4",
-      "status": "blocked",
-      "blocked_on": "/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.isa-ref/source-5178cabb4c3c2c6dcbf2/target/debug/bennett-isa-ref run-cc /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/run-20261029T170833-155494/r-budget-prefix.bisa main --budget 0 / b-dialect-spec-bz6",
-      "detail": "P-2 checker-unimplemented: N34/ISA-7 typed R fault 1 before first counted instruction; CLI only supplies host fuel; expected executable check; actual unavailable; needs /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.isa-ref/source-5178cabb4c3c2c6dcbf2/target/debug/bennett-isa-ref run-cc /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/run-20261029T170833-155494/r-budget-prefix.bisa main --budget 0; blocked-on b-dialect-spec-bz6"
+      "18": {
+        "0": [
+          "IN 0",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 0"
+        ],
+        "1": [
+          "IN 1",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 1"
+        ],
+        "2": [
+          "IN 2",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 2"
+        ],
+        "3": [
+          "IN 3",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 3"
+        ]
+      },
+      "20": {
+        "0": [
+          "IN 0",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 0"
+        ],
+        "1": [
+          "IN 1",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 1"
+        ],
+        "2": [
+          "IN 2",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 2"
+        ],
+        "3": [
+          "IN 3",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 3"
+        ]
+      },
+      "23": {
+        "0": [
+          "IN 0",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 0"
+        ],
+        "1": [
+          "IN 1",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 1"
+        ],
+        "2": [
+          "IN 2",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 2"
+        ],
+        "3": [
+          "IN 3",
+          "QALLOC H0 0 1",
+          "QALLOC H1 0 1",
+          "GATE 2 H0 0",
+          "COMPUTE F@0x401230 F@0x401250",
+          "GATE2 1 H0 0 H1 0",
+          "GATE 7 H1 0",
+          "GATE2 1 H0 0 H1 0",
+          "END COMPUTE",
+          "GATE 2 H0 0",
+          "GATE 1 H0 0",
+          "QFREE H1",
+          "QFREE H0",
+          "RET 3"
+        ]
+      }
     }
-  ]
+  ],
+  "command": "env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/implementation-final-freeze.json",
+  "checker_regressions_passed": 31,
+  "runtime_regressions_passed": 4,
+  "version_manifest_followup": "b-dialect-spec-bvy (SPEC_VERSIONS.toml is outside owned paths)"
 }
