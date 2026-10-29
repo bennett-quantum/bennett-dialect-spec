@@ -518,3 +518,11 @@ Final consistency: canonical abs uses N27 compare/sub/select, not a runtime help
 new regression reproduced the wrong helper then passed. Allocation probes replay sizes,
 not a struct copy; nested-cl-view now checks a TDL event list and executes its states.
 All 36 checker tests and four legacy runtime tests pass headless.
+
+## Round-3 council fixes — b-dialect-spec-zax
+
+Theme A resolved SOL-R3-01, R3-CODEX-01, BD3-R3-1 and both regressions.
+0.2.4 restores clean control workspace; B2 keeps its compute/out-of-place interface
+and cannot invent a standalone inverse. Red-green loop unittest passed; new state
+adapters execute Rust run-action and native exhaustive collision validation.
+Full freeze pending the remaining themes; no green full-gate claim yet.

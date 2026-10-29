@@ -16,6 +16,23 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round3_loops(self):
+        from dialect_round3 import check_state
+        import json
+        vectors = {
+            'co-loop-identity': {'counts':[1,2], 'p_one':[0,0], 'flags_clean':True, 'trap':0},
+            'co-loop-adj-overwritten': {'entry':[2,2], 'compute_restored':[2,2], 'collision':True, 'bijective':False, 'trap':0},
+        }
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            for name, value in vectors.items():
+                b={'attrs':{'state':name,'at':'0'},'body':json.dumps(value)}
+                check_state(runner,b)
+                wrong=dict(value)
+                if name=='co-loop-identity':wrong['p_one']=[0.5,0.5]
+                else:wrong['bijective']=True
+                with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
+
     def test_round2_r_entry_classification(self):
         for name in ('region-reversible-marker','region-reversible-qalloc-static','effect-console-r'):
             with self.subTest(example=name):self.assertEqual(v.recognise(d.with_decls(self.block('example',name)['body']),rmode=self.block('example',name)['attrs'].get('rmode'))[0],'blocked:BD-B-ISA7')

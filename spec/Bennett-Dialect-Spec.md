@@ -1,6 +1,6 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.3
+# Bennett LLVM Dialect — Specification, draft 0.2.4
 
-**Date:** 2026-10-29. **Status:** draft 0.2.3 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
+**Date:** 2026-10-29. **Status:** draft 0.2.4 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
 2026-10-29 at its end) revised after council round 1 on 0.2; awaiting round 2. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
@@ -11,9 +11,9 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.3: markers 0.2, handles 0.2.3, regions 0.2.3, oracle-abi 0.2.3, tdl 0.2.3,
-effects 0.2.3, norm 0.2.3, map 0.2.3, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2.3`) is the compatibility unit (§23): drafts are not compatible
+**Versioning.** Dialect 0.2.4: markers 0.2, handles 0.2.4, regions 0.2.4, oracle-abi 0.2.4, tdl 0.2.4,
+effects 0.2.4, norm 0.2.4, map 0.2.4, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+The **full version string** (`0.2.4`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -1091,7 +1091,7 @@ INT(3) and, through the store of `%n2`, INT(4), INT(5), … until it exceeds K a
 holds no `ROOT` atom, and the arithmetic on it is legal (audit B-27: 0.1 gave the load offset `*`
 and rejected this program).
 
-## 6. Handles (handles 0.2.3)
+## 6. Handles (handles 0.2.4)
 
 ### 6.1 Representation
 
@@ -1672,7 +1672,7 @@ define void @top() {
 }
 ```
 
-## 7. Regions (regions 0.2.3)
+## 7. Regions (regions 0.2.4)
 
 ### 7.1 Region-entry markers and region kinds
 
@@ -1774,7 +1774,7 @@ Only the rules the north star requires:
   removal requires the complete instrument (outcomes and correlations included) to be
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). The coverage report has a
-  `lowered` entry with source `dialect-0.2.3:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.4:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -2280,7 +2280,7 @@ define void @top(i64 %n) {
 BD-B-ISA12 @rec %h: qalloc in a reversible closure with no instance bound (recursive, live across the recursive call: E = infinity); cannot be hoisted to the CC caller; ISA 0.8 qreg.new is CC only; BLK-4 (new ISA-12) qreg.* in R
 ```
 
-## 8. The oracle interface (oracle-abi 0.2.3)
+## 8. The oracle interface (oracle-abi 0.2.4)
 
 `__bennett_oracle(f, budget, desc)` applies the lifted oracle of region function f, under the
 budget of §9, to the registers and classical values that the **descriptor** `desc` binds to f's
@@ -2923,7 +2923,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.3.
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.4.
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -3113,7 +3113,7 @@ it is neither static nor a bitwise copy of a launch argument, and no launch-time
 covers it. Each wire of `%c` measured 1 is reset by an `x`, so `%c` is clean at its `qfree`
 (ISA §3.3).
 
-## 10. Taint-driven lifting under control (tdl 0.2.3)
+## 10. Taint-driven lifting under control (tdl 0.2.4)
 
 NS §0: "a way to condition a region on a qubit. Everything else is inferred"; NS §3.1 taint row:
 a context-sensitive interprocedural analysis "over data dependence, control dependence and
@@ -3294,8 +3294,9 @@ before the invocation returns; `compute` f may retain it only until adjoint(E_f)
 never implicitly made an output or measured. Predicate and parameter computation are part
 of TDL-5(b)'s total-bijection check. An uncleanable non-bijective coherent overwrite follows
 TDL-5(d), as ratified E3 requires; an out-of-place oracle or compute/use/uncompute retains
-that computation. Per-slice codes and Φ, and the explicitly declared Co-loop control outputs of TDL-10,
-are retained outcomes with TDL-8 lifetime, not incidental workspace. Intentional deferred-measurement records (§7.5a) are separate channel
+that computation. Per-slice codes and Φ are retained fault outcomes with TDL-8 lifetime, not incidental workspace.
+Continuation flags, per-iteration conditions and preserved trajectory records are control
+workspace, including in a standalone adjoint; declaring compiler outputs does not exempt them. Intentional deferred-measurement records (§7.5a) are separate channel
 outputs retained until their declared observation boundary, never a cleanup substitute.
 
 **TDL-8 Faults.** NS §4.2: "a quantum action has no fault outcome of its own: any fallible
@@ -3354,12 +3355,19 @@ record, each field completed from the budget table (§9); each slice gets the fu
   are literals or classical arguments fixed at region entry".
 - A loop whose trip count is Co is unrolled in the event list up to N = the `steps` field of the
   budget record: iteration i is predicated on the flag c_i (c_1 = the first continuation
-  condition, c_{i+1} = c_i ∧ condition_i, computed by `ccx` into fresh wires). Flags c_i and per-iteration conditions are
-  explicit declared control outputs with TDL-8 lifetime: leak-exempt, unmeasured until
-  program end. Preserve the bounded trajectory inputs needed to reconstruct each
-  iteration's condition, including overwritten condition inputs; compute each condition
-  by a bounded out-of-place slice on that preserved trajectory, not on a later overwritten
-  state. These explicitly declared control records are not implicit incidental history.
+  condition, c_{i+1} = c_i ∧ condition_i, computed by `ccx` into fresh wires). Flags c_i, per-iteration conditions and preserved trajectory records are
+  control workspace subject to TDL-7: clean them within their dependency-validity windows
+  and before successful action return. For preserved inputs compute bounded conditions
+  out of place, apply the controlled bodies, then reverse their exact computing slices.
+  For overwritten inputs the complete bounded transition must meet TDL-5(b)'s total-
+  bijection and bounded-inverse obligation: use that inverse on a copy of the output to
+  reconstruct the entry, recompute the forward trajectory on copies, erase the original
+  control records against it, then reverse the reconstruction and its copies. All these
+  slices preserve their inputs; all trajectory workspace is restored. In compute, history
+  may instead survive through use and be cleaned by the matching adjoint(E_f), TDL-5(c).
+  A non-bijective data-only update follows the existing TDL-5(d), with out-of-place oracle
+  and compute interfaces still available. A Co trip count alone never rejects a loop.
+  No trip-count record is measured at program end.
   A loop is a structured event; its adjoint is the special rule of §18.2, not flat ccx reversal; if c_{N+1} may be 1 the invocation records `FAULT_BUDGET_STEPS` under c_{N+1}
   into Φ. G-14 (§25.3) is the efficient form.
 - A `qalloc`/`qborrow` whose n is Co allocates the maximum of n's value set, padded to its bound
@@ -3409,7 +3417,7 @@ genuine host calls have `fault 8` and a trapped coverage line. Release of outliv
 requires clean/restored state, not unconditional fault 8. Oracle device state stays private
 under §11.3, with declared outputs under §8.6.
 
-## 11. Effects and device models per tier (effects 0.2.3)
+## 11. Effects and device models per tier (effects 0.2.4)
 
 ### 11.1 Tier table
 
@@ -3543,7 +3551,7 @@ hostcall: service=bennett.dev.console.write payload=6f6b0a reply=empty
 
 The ENTROPY-bound oracle of rung 8 is §16.8.
 
-## 12. Materialised normalisation (norm 0.2.3)
+## 12. Materialised normalisation (norm 0.2.4)
 
 ### 12.1 Scope, order and naming
 
@@ -5825,13 +5833,13 @@ define internal i64 @w(i64 %fd, i64 %a) {
 declare i64 @__bennett_rt_syscall(i64, i64, i64, i64, i64, i64, i64)
 ```
 
-## 16. The lifting map (map 0.2.3)
+## 16. The lifting map (map 0.2.4)
 
 The lifting map turns a materialised region function, a binding shape (§8.4) and the link
 layout (§19.5) into the **reference object** of that shape: the ISA object whose oracle `@ref`
 defines F_B and the budget unit by the reference interpreter (ISA §4.2 "Reference body and
 binding", §14.1). It is a function of its inputs alone, so two plugins on the same LLVM version
-and pipeline produce byte-identical reference objects. Its version (`map 0.2.3`) is the
+and pipeline produce byte-identical reference objects. Its version (`map 0.2.4`) is the
 certificate's `dialect_mapping_version` (ISA §12.3). The plugin's device objects (§17.4) are
 plugin-defined; they MUST be extensionally equal to the reference objects (ISA §5.7, T6; §18.7).
 
@@ -7872,12 +7880,19 @@ first reversed consumer. In compute(f,use), E_f's records survive E_u and adjoin
 which reuses these wires without copying or uncopying them, and measurement is at the
 first §7.5(a) boundary after compute returns.
 
-A Co-loop adjoint first computes conditions and flags forward from preserved trajectory
-inputs, runs body adjoints for i=N..1 under c_i, then uncomputes conditions/flags in
-reverse with their exact computing slices. Standalone adj uses the preserved-input
-construction (including bounded trace reconstruction for overwritten conditions), never
-uses fresh flags before computing them. compute's adjoint(E_f) reuses the same flags and
-cleans them as each iteration state is restored; it does not allocate another set.
+A Co-loop adjoint is the inverse of the complete clean-workspace transition, not
+forward evaluation of the guard on the adjoint-entry mutable data. For conditions on
+preserved inputs, compute flags forward, apply body adjoints for i=N..1, then uncompute
+the flags with their exact computing slices. For overwritten inputs in a standalone adj,
+use the bounded inverse required by TDL-5(b) to reconstruct the unique forward entry on
+copies, compute its trajectory, apply the inverse iterations, and clean that reconstruction
+against the restored entry. No assumed earlier invocation supplies this entry. When no
+unique inverse exists on the declared interface, the existing TDL-5(d) applies; changing
+adj into an entry-guard instrument is not an alternative inverse. Out-of-place evaluation
+and compute retain the computation under TDL-5(c). compute's adjoint(E_f) reuses the actual
+forward flags/history and cleans them as each iteration state is restored, without a fresh
+trajectory. Only genuine measurement records and actual fault outputs have their separate
+retained lifetimes.
 
 qxor and firstfault are self-adjoint
 XORs. `fault C` is an xmask of C on a fresh declared fault register, also self-adjoint.
@@ -7923,7 +7938,7 @@ and marker calls produce events per §10 and §18.3, nested `ctrl`, `adj` and `c
 their events into this recorder), pops the recorder and returns its event list E. On generation exhaustion, finalise by cancellation exactly as TDL-9 specifies, outside
 the exhausted budget; no unmatched provisional allocation is applied, no foreign register
 changes and a failed compute does not apply either part. **Leak rule** (successful source
-generation only, excluding the declared fault/control/measurement outputs):
+generation only, excluding the declared fault/measurement outputs):
 (`T-LEAK`): for `ctrl` and `adj`, every register allocated during the generation is freed during
 it; for `compute`, every register allocated during gen(use) is freed during it, while a register
 allocated during gen(f) and not freed during it is freed by adjoint(E_f), in which its `qalloc`
@@ -7973,6 +7988,28 @@ declared domain the comparison with the native comparison build (§17.7) has one
 | classifier-flagged undefined | an instrumented build (UBSan, ASan, MSan) flags the input (NS §3.2) | excluded from comparison, counted separately |
 
 ### 18.8 Worked examples
+
+**Round-3 loop witnesses.** co-loop-identity executes both council circuits with
+an external |+> control c copied into the count and a separate basis-one invocation
+control: count 0/1 with two X gates per iteration, and count 0/2 with one X per iteration.
+After exact flag uncomputation, undo count preparation and H(c): P(c=1)=0, z=0,
+all flags zero, no T-CLEAN or T-LEAK. Keeping flags instead gives P(c=1)=1/2.
+
+B2 is `while(x<2){x+=1;z+=1;}` on two-bit x,z. Entries (0,0), (1,1),
+and (2,2) collide at (2,2), so it has no data-only inverse. TDL-5(b)/(d) already
+exclude that standalone in-place interface; the proposed no-trap entry-guard adjoint
+would not be U-dagger. co-loop-adj-overwritten checks the collision and executes
+compute(B2,empty)'s exact saved-trajectory inverse for all three entries, restoring
+each entry and cleaning flags. In particular (2,2) remains (2,2), without a trap,
+inside compute. This keeps the computation without inventing an inverse.
+
+```text state=co-loop-identity at=0
+{"counts":[1,2],"p_one":[0,0],"flags_clean":true,"trap":0}
+```
+
+```text state=co-loop-adj-overwritten at=0
+{"entry":[2,2],"compute_restored":[2,2],"collision":true,"bijective":false,"trap":0}
+```
 
 **Round-2 action lifecycle witnesses.** In generation-cancel the source is qalloc(0,1),
 gate(1,h,0), gate(1,h,0), qfree(h), ret; steps=1 stops before the first gate. Recorder
@@ -8684,7 +8721,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.3 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.4 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -8800,14 +8837,14 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.3;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.4;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
-pipeline, normaliser_version: "0.2.3"}` and `bindings.dialect_mapping_version = "0.2.3"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.3:<rule id>` (e.g. `dialect-0.2.3:N33`); the
+pipeline, normaliser_version: "0.2.4"}` and `bindings.dialect_mapping_version = "0.2.4"`; the coverage
+report (ISA §13), whose `source` field is `dialect-0.2.4:<rule id>` (e.g. `dialect-0.2.4:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
 hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
@@ -8820,7 +8857,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.3"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.4"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`):
 
@@ -9222,11 +9259,11 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.3`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.4`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
 - Round-2 semantic corrections revise `norm`, `handles`, `regions`, `oracle-abi`,
-  `tdl`, `effects` and `map` to `0.2.3`; unchanged marker/header, asm and corpus ABIs
+  `tdl`, `effects` and `map` to `0.2.4`; unchanged marker/header, asm and corpus ABIs
   remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
   again; unchanged ISA-0.8 interface signatures retain their hashes. The map version
   is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
@@ -9364,7 +9401,7 @@ every departure keeps or widens the capability the outline gives.
 | A8 | TDL-5(a)/§18: "the uncompute is valid (ISA §6.2)" | events are applied as CC-level region calls with dynamic cleanliness checks; a static ISA action only when it satisfies ISA §6 (§18.2) | ISA §6.1 makes an oracle's value depend on every cell of a region it reads, so a static action cannot uncompute a slice after writing any arena cell; at CC level the uncompute is exact because the slice does not read the written cells |
 | A9 | TDL-8: combine into Φ; plugin register when null | per-slice fault registers retained and combined by `@firstfault`; in `compute`, copied between E_f and E_use (TDL-8) | the uncomputing call XORs the code out again, and in `compute` adjoint(E_f) would erase f's faults |
 | A10 | TDL-12 effects | inherited per-run virtual bindings and reversible state | D02-07 removes the action-effect narrowing |
-| A11 | TDL-7 history | clean workspace; explicit fault/control/channel outcomes | D02-05 restores ratified E3; no implicit history channel |
+| A11 | TDL-7 history | clean control workspace; explicit fault/channel outcomes | D02-05 restores ratified E3; no implicit history channel |
 | A12 | §3.1: primitive `__bennett_nz_fault` | also `__bennett_nz_alloc`, `__bennett_nz_free`; reserved-name rules apply to producer inputs (§3.1) | the runtimes allocator must reach `lift.alloc`/`alloc`; runtimes bitcode uses reserved names |
 | A13 | §3.8: a `@cfunction` constant "resolves whenever the body is in the link" | it is dispatched by value and traps unless it equals some A(F) (§3.8, §5.2) | A(F) is fixed by the comparison link after the analysis, and a Julia-process address never equals it; Bennett.jl's `ptr @f` route keeps the capability (audit B-14) |
 | A14 | §7.2: thunk resolution as 0.1 C1 (a cycle is `BD-E-REGION-THUNK`) | a thunk on a cycle resolves to itself; the code is deleted | a rejection with no NS clause behind it |
@@ -9474,6 +9511,7 @@ with the ISA-0.9 obligation recorded and explicitly not executed on ISA 0.8.
 
 | `entry-allocation-only`, `arena-logical-bounds` | §8.5, TDL-4, §16.2–§16.4 | state | native seed; Rust lifted helper |
 
+| `co-loop-identity`, `co-loop-adj-overwritten` | TDL-7, TDL-10, §18.2 | state | Rust run-action; native inverse-domain check |
 | `generation-cancel`, `nested-cl-view`, `fault-output-lifetime`, `co-loop-adjoint`, `deferred-channel-adj`, `co-store-release` | TDL-2, TDL-7–TDL-11, §18.2–§18.4 | state | native lifecycle; Rust run-action |
 
 | `handle-setjmp-reentry` (+ blocker/state) | §6.5, BLK-1 | parse, recognise, blocker, state | LLVM; reference bound; native setjmp |
