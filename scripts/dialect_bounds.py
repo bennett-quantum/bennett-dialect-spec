@@ -41,15 +41,26 @@ def loop_facts(text, major=None):
     return facts
 
 
-def setjmp_reentry(f,site):
-    """Conservative §6.5 default: continuation can reach the allocation site."""
-    nodes={};succ={};labels={lab:(lab,0) for lab,_ in f.blocks};continuations=[];target=None
-    for lab,blk in f.blocks:
-        for k,ins in enumerate(blk):
-            node=(lab,k);nodes[node]=ins
-            succ[node]=[(lab,k+1)] if k+1<len(blk) else [labels[x] for x in re.findall(r'label %([-\w.$]+)',ins.text)]
-            if ins is site:target=node
-            if ins.op=='call' and re.search(r'@(?:setjmp|_setjmp|sigsetjmp|__sigsetjmp|__bennett_rt_setjmp)\(',ins.text):continuations.extend(succ[node])
+def setjmp_reentry(f,site,a=None):
+    """Conservative N29 continuation reachability through may-ancestor calls."""
+    functions=list(a.funcs()) if a is not None else [f]
+    nodes={};succ={};entries={};continuations=[];target=None
+    for fun in functions:
+        labels={lab:(fun.name,lab,0) for lab,_ in fun.blocks}
+        if fun.blocks:entries[fun.name]=labels[fun.blocks[0][0]]
+        for lab,blk in fun.blocks:
+            for k,ins in enumerate(blk):
+                node=(fun.name,lab,k);nodes[node]=(fun,ins)
+                succ[node]=[(fun.name,lab,k+1)] if k+1<len(blk) else [labels[x] for x in re.findall(r'label %([-\w.$]+)',ins.text)]
+                if ins is site:target=node
+                ancestor=(fun.name==f.name or (a is not None and f.name in a.closure(fun.name)))
+                if ancestor and ins.op=='call' and re.search(r'@(?:setjmp|_setjmp|sigsetjmp|__sigsetjmp|__bennett_rt_setjmp)\(',ins.text):continuations.extend(succ[node])
+    if a is not None:
+        for node,(fun,ins) in nodes.items():
+            if ins.op not in ('call','invoke') or ' asm ' in ins.text:continue
+            c=d.parse_call(ins)
+            targets={c['callee'][1:]} if c['callee'].startswith('@') else a.indirect.get(id(ins),set())
+            succ[node].extend(entries[n] for n in targets if n in entries)
     stack=continuations;seen=set()
     while stack:
         node=stack.pop()
@@ -60,7 +71,7 @@ def setjmp_reentry(f,site):
 
 
 def self_disjoint(a,f,site):
-    if setjmp_reentry(f,site):return False
+    if setjmp_reentry(f,site,a):return False
     root=f.name+site.res
     allocas={f.name+i.res for i in f.instrs() if i.op=='alloca'}
     objects={o for (o,_,_),ats in a.memory.items() if ('R',root) in ats}
@@ -111,7 +122,7 @@ def instance_rules(a):
     a.instance_bounds={}
     nontrivial=[]
     for f,ins,in_r in sites:
-        if setjmp_reentry(f,ins):
+        if setjmp_reentry(f,ins,a):
             a.blockers.append(('BD-B-ISA12' if in_r else 'BD-B-ISA4',('BLK-4 §7.5(b)' if in_r else 'BLK-1 §6.5')+' setjmp continuation re-entry: '+ins.text))
         elif self_disjoint(a,f,ins):a.instance_bounds[f.name+ins.res]=1
         else:nontrivial.append((f,ins,in_r))
@@ -139,6 +150,7 @@ def instance_rules(a):
                     if call.op not in ('call','invoke') or ' asm ' in call.text:continue
                     c=d.parse_call(call);targets={c['callee'][1:]} if c['callee'].startswith('@') else a.indirect.get(id(call),set())
                     if name not in targets:continue
+                    if setjmp_reentry(caller,call,a):return None
                     count=executions(caller.name,seen|{name})
                     if count is None:return None
                     for major,info in facts.items():

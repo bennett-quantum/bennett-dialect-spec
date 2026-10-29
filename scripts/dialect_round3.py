@@ -6,7 +6,7 @@ from dialect_check_v02 import equal
 from dialect_state import run_native
 from dialect_tdl import Session, assert_view, add_constant
 
-STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place', 'co-observe-write-observe'}
+STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place', 'co-observe-write-observe', 'handle-setjmp-interproc'}
 
 
 def adjoint_records(events):
@@ -109,4 +109,18 @@ bennett_seed_observe(&o,1,1,out,widths);printf("[%u,%u,%u,%u,%u]\\n",o.k,o.shado
 printf("[%u,%u]\\n",o.k==0?o.shadow[0]:0,o.k==0?0:4);
 o.k=2;bennett_seed_mask(&o,0,1,1);printf("[%u,%u]\\n",!o.covered[0],bad);return 0;}'''
         run_native(runner,name,'',src,[v['after_first'],v['after_store'],v['after_second'],v['load'],[int(v['event_invalidates']),v['unobserved_store']]])
+    elif name == 'handle-setjmp-interproc':
+        from dialect_check_v02 import recognise
+        verdict,_=recognise(d.with_decls(runner.block('example',name)['body']))
+        equal(name,'BLK-1 conservative reference bound',v['verdict'],verdict)
+        src='''#include <setjmp.h>
+#include <stdlib.h>
+static jmp_buf jb;static unsigned slots[2],live[64],next,maxlive;
+static void deep(unsigned i){if(!i)longjmp(jb,1);}
+static void G(unsigned i){unsigned h=++next;if(h>=64)abort();live[h]=1;slots[i]=h;
+unsigned total=0;for(unsigned j=0;j<64;j++)total+=live[j];if(total>maxlive)maxlive=total;deep(i);}
+int main(void){unsigned r=setjmp(jb);G(r);unsigned distinct=slots[0]!=slots[1];
+live[slots[0]]=live[slots[1]]=0;unsigned total=0;for(unsigned j=0;j<64;j++)total+=live[j];
+printf("[%u,%u,%u,%u,%u]\\n",next,distinct,total,0,maxlive);return 0;}'''
+        run_native(runner,name,'',src,[[v['instances'],int(v['distinct']),v['live_after'],v['trap'],v['max_live']]])
     else:raise d.Fail('unimplemented round-3 state '+name)

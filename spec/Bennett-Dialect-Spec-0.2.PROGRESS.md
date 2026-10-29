@@ -547,3 +547,7 @@ Theme A commit 8e56d56; response 2412c4c.
 Theme C resolved BD3-R3-3: CC covering stores preserve observation coverage;
 applied events invalidate it. Native byte-level witness and mutation test added.
 Theme B commit 5e13596; response df75746.
+
+Theme D resolved BD3-R3-4: augmented interprocedural N29 continuation rule,
+E(c) defined; actual recogniser red accept -> green BLK-1. Native fallback
+witness uses two distinct live slots. Theme C 3303a5b / response c7523ab.

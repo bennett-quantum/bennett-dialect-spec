@@ -1178,13 +1178,17 @@ realises each allocation site s (a `qalloc` or `qborrow` call) in one of two way
 
 **Reference instance bound** of a site s in function F with a static register file:
 
-Before rules 1–2, account for N29 re-entry. The reference default is conservative:
-if F contains a setjmp site whose continuation can reach s by CFG edges, s is not
-self-disjoint and E(s)=∞. This includes the materialised __bennett_rt_setjmp continuation.
-Apply this rule also to §7.5(b) R hoisting. A normal return-edge/call-graph-only count
-is unsound: longjmp re-enters the continuation without a call of F. Such a site uses
-BLK-1 (R hoisting: BLK-4), with the bounded static-file fallback, not a rejection.
-This reference default deliberately does not claim N(s)=2 for the witness below.
+Before rules 1–2, augment each function's CFG with N29 continuation edges:
+from every call whose closure may longjmp, add an edge to each setjmp continuation
+in every function that may be an ancestor of that call (including the same function).
+Include the materialised __bennett_rt_setjmp continuations, candidate callees and
+interprocedural call edges. The reference default remains conservative: if a setjmp
+continuation in any may-ancestor A of F (A=F included) can reach s through these CFG
+and call edges, s is not self-disjoint and E(s)=∞. Apply this rule to §7.5(b) R
+hoisting as well. Such a site uses BLK-1 (R hoisting: BLK-4), with the bounded
+static-file fallback, never rejection. The read-only ISA 0.9 draft §0.2 K1 supplies
+the exact missing dynamic qreg.width/id/from_id and run-time-width register capability;
+K2 supplies R allocation for BLK-4. Neither witness claims a finite reference bound.
 
 1. s is **self-disjoint** iff the only memory its `ROOT(s)` atom reaches is allocas of F whose
    address does not escape F (it is not stored, returned, or passed to a call other than a marker
@@ -1193,14 +1197,66 @@ This reference default deliberately does not claim N(s)=2 for the witness below.
    provenance is exactly {s}. Then N(s) = 1.
 2. Otherwise N(s) = E(s), the bound on executions of s per device-entry call: E(s) = TC(s) ×
    Σ_c E(c) over the device call sites c of F (E = 1 for a device entry), where TC(s) is the
-   product of the constant maximum trip counts of the loops of F that contain s (LLVM's
+   product of the constant maximum trip counts of the loops of F's augmented CFG that contain s (LLVM's
    `ScalarEvolution::getSmallConstantMaxTripCount` on the materialised module of the major in
    use), and E(s) = ∞ when a containing loop has no constant maximum trip count or F is in a
-   cycle of the call graph.
+   cycle of the call graph. E(c), for a call site c in function C, uses the same
+   recurrence: TC(c) in C's augmented CFG times the sum of E over C's device call sites
+   (entry multiplicity 1). Any unbounded augmented loop, recursive cycle or conservative
+   setjmp-continuation case gives infinity; normal CFG loop facts cannot override it.
 3. If N(s) = ∞, every execution of s is a **blocker point** of BLK-1 (`blocked:BD-B-ISA4`,
    §25.1): ISA 0.8 cannot name an unbounded number of registers reached through memory. The
    plugin compiles the program with a static file of `--bennett-qreg-instances` instances
    (default 64, §24) and a blocker trap (§25.1) on an execution that needs more.
+
+**Ancestor setjmp witness.** P's continuation calls G again after deep longjmps;
+G contains no setjmp. The first handle is still live in slot[0] when the second is
+stored in slot[1]. The reference E(s)=∞ gives BLK-1; the 64-instance fallback
+executes two distinct clean handles and frees both, max live 2, no trap.
+
+```llvm example=handle-setjmp-interproc verdict=blocked:BD-B-ISA4
+@jb = global [256 x i8] zeroinitializer
+@slots = global [2 x ptr] zeroinitializer
+declare i32 @setjmp(ptr)
+declare void @longjmp(ptr, i32)
+define internal void @deep(i32 %i) {
+entry:
+ %first = icmp eq i32 %i, 0
+ br i1 %first, label %jump, label %done
+jump:
+ call void @longjmp(ptr @jb, i32 1)
+ unreachable
+done:
+ ret void
+}
+define internal void @G(i32 %i) {
+entry:
+ %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+ %p = getelementptr [2 x ptr], ptr @slots, i32 0, i32 %i
+ store ptr %h, ptr %p
+ call void @deep(i32 %i)
+ ret void
+}
+define void @P() {
+entry:
+ %r = call i32 @setjmp(ptr @jb)
+ call void @G(i32 %r)
+ %h0 = load ptr, ptr @slots
+ %p1 = getelementptr [2 x ptr], ptr @slots, i32 0, i32 1
+ %h1 = load ptr, ptr %p1
+ call void @__bennett_qfree(ptr %h0)
+ call void @__bennett_qfree(ptr %h1)
+ ret void
+}
+```
+
+```text blocker=handle-setjmp-interproc
+BD-B-ISA4 @G qalloc: ancestor setjmp continuation re-entry; BLK-1 (ISA-4); requires ISA 0.9 K1 dynamic qreg.width/id/from_id and run-time-width registers
+```
+
+```text state=handle-setjmp-interproc at=0
+{"verdict":"blocked:BD-B-ISA4","instances":2,"distinct":true,"live_after":0,"trap":0,"max_live":2}
+```
 
 A width with VS = ⊤ is BLK-1 likewise (§3.4). In R code, which cannot allocate registers on ISA
 0.8, §7.5(b) applies.
@@ -9550,6 +9606,7 @@ with the ISA-0.9 obligation recorded and explicitly not executed on ISA 0.8.
 | `co-loop-identity`, `co-loop-adj-overwritten` | TDL-7, TDL-10, §18.2 | state | Rust run-action; native inverse-domain check |
 | `generation-cancel`, `nested-cl-view`, `fault-output-lifetime`, `co-loop-adjoint`, `deferred-channel-adj`, `co-store-release` | TDL-2, TDL-7–TDL-11, §18.2–§18.4 | state | native lifecycle; Rust run-action |
 
+| `handle-setjmp-interproc` (+ blocker/state) | §6.5, §7.5(b), BLK-1/4 | parse, recognise, blocker, state | LLVM; interprocedural reference bound; native setjmp |
 | `handle-setjmp-reentry` (+ blocker/state) | §6.5, BLK-1 | parse, recognise, blocker, state | LLVM; reference bound; native setjmp |
 | `region-reversible-marker`, `region-reversible-qalloc-static`, `effect-console-r`, `sjlj-two-frames`, `fiber-pingpong`, `exit-status`, `platform-uart-write` (+ blocker) | BLK-5 | recognise, blocker; existing success execution | ISA-0.8 classification, ISA-0.9 K5 dependency |
 

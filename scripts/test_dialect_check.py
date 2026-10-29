@@ -56,6 +56,50 @@ class ContractTests(unittest.TestCase):
             value['load']=[0,4]
             with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(value)))
 
+    def test_round3_interprocedural_setjmp(self):
+        ir='''@jb = global [256 x i8] zeroinitializer
+@slots = global [2 x ptr] zeroinitializer
+declare i32 @setjmp(ptr)
+declare void @longjmp(ptr, i32)
+define internal void @deep(i32 %i) {
+entry:
+ %first = icmp eq i32 %i, 0
+ br i1 %first, label %jump, label %done
+jump:
+ call void @longjmp(ptr @jb, i32 1)
+ unreachable
+done:
+ ret void
+}
+define internal void @G(i32 %i) {
+entry:
+ %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+ %p = getelementptr [2 x ptr], ptr @slots, i32 0, i32 %i
+ store ptr %h, ptr %p
+ call void @deep(i32 %i)
+ ret void
+}
+define void @P() {
+entry:
+ %r = call i32 @setjmp(ptr @jb)
+ call void @G(i32 %r)
+ %h0 = load ptr, ptr @slots
+ %p1 = getelementptr [2 x ptr], ptr @slots, i32 0, i32 1
+ %h1 = load ptr, ptr %p1
+ call void @__bennett_qfree(ptr %h0)
+ call void @__bennett_qfree(ptr %h1)
+ ret void
+}
+'''
+        verdict,a=v.recognise(d.with_decls(ir))
+        self.assertEqual(verdict,'blocked:BD-B-ISA4')
+        from dialect_bounds import setjmp_reentry
+        f=a.m.funcs['G'];site=next(i for i in f.instrs() if '@__bennett_qalloc' in i.text)
+        self.assertTrue(setjmp_reentry(f,site,a))
+        # No setjmp, no exceptional re-entry: the ordinary finite bound survives.
+        self.assertEqual(v.recognise(d.with_decls(ir.replace('%r = call i32 @setjmp(ptr @jb)','%r = add i32 0, 0')))[0],'accept')
+
+
     def test_round2_r_entry_classification(self):
         for name in ('region-reversible-marker','region-reversible-qalloc-static','effect-console-r'):
             with self.subTest(example=name):self.assertEqual(v.recognise(d.with_decls(self.block('example',name)['body']),rmode=self.block('example',name)['attrs'].get('rmode'))[0],'blocked:BD-B-ISA7')
