@@ -106,6 +106,17 @@ class ContractTests(unittest.TestCase):
             v.command(['cc', src, SEEDS/'softfloat.c', '-o', exe])
             v.command([exe])
 
+    def test_binding_and_indirectbr_maps(self):
+        from dialect_map import map_object
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'map'})
+            for name in ('binding-out-byte','binding-block-byte','binding-clock-read','binding-console-byte','indirectbr-two-blocks'):
+                with self.subTest(example=name):
+                    got=map_object(runner,self.block('lift',name))
+                    self.assertEqual(got,self.block('object',name)['body'])
+                    bad=dict(self.block('lift',name),body=self.block('lift',name)['body'].replace('i8 9','i8 8').replace('i8 120','i8 121').replace('i64 %c, 1','i64 %c, 2').replace('load i8, ptr %p','load i8, ptr null'))
+                    with self.assertRaises(d.Fail):map_object(runner,bad)
+
     def test_fp_aggregate_map(self):
         from dialect_map import map_object
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:

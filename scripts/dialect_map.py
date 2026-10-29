@@ -62,11 +62,22 @@ class Mapper:
 
     def constant_bytes(self,ty,value):
         n=d.tsize(ty)
-        if value.startswith('@'):
+        if value.startswith('blockaddress('):
+            fn,lab=re.fullmatch(r'blockaddress\(@([-\w.$]+), %([-\w.$]+)\)',value).groups()
+            v=self.block_addresses(fn)[lab]
+        elif value.startswith('@'):
             name=value[1:];v=self.addresses.get(name)
             if v is None:v=self.globals[name][1]
         else:v=0 if value in ('null','zeroinitializer') else int(value)
         return (v%(1<<(8*n))).to_bytes(n,'little')
+
+    def block_addresses(self,name):
+        taken=set(re.findall(r'blockaddress\(@'+re.escape(name)+r', %([-\w.$]+)\)',self.m.text))
+        labels=[lab for lab,_ in self.m.funcs[name].blocks if lab in taken]
+        obj='__bennett_rt_blk.'+name
+        if obj not in self.globals:raise d.Fail('§14.9 missing comparison block object '+obj)
+        base=self.globals[obj][1]
+        return {lab:base+k for k,lab in enumerate(labels)}
 
     def wrapper(self):
         f=self.m.funcs[self.entry];desc=self.desc
@@ -84,12 +95,32 @@ class Mapper:
         if self.entry in self.arena_functions:
             mem.append(('coh',max(1,(max(self.arena.values())+1-1).bit_length())))
             dest('d0',64,'lift.addr @coh')
-        # §16.2 device prologue precedes parameter preparation.
-        dev=re.search(r'dev=ENTROPY\((\d+)\)',desc)
-        if dev:
-            A=int(dev[1]);mem.append(('e0',A));base=self.globals['__bennett_dev_entropy_base'][0];size=self.globals['__bennett_dev_entropy_size'][0]
-            dest('d0',64,'lift.addr @e0');dest('d1',64,'lift.addr @'+base);rows.append('lift.boundscheck d1 8');rows.append('lift.store.i64 d1 d0')
-            dest('d2',64,f'lift.const.i64 {1<<A}');dest('d3',64,'lift.addr @'+size);rows.append('lift.boundscheck d3 8');rows.append('lift.store.i64 d3 d2')
+        # §16.2 model order: ENTROPY, BLOCK, CLOCK, CONSOLE.
+        dn=0;outputs=[]
+        def dvalue(row):
+            nonlocal dn
+            n='d'+str(dn);dn+=1;return dest(n,64,row)
+        def store_global(name,value):
+            address=dvalue('lift.addr @'+self.globals[name][0])
+            rows.extend(['lift.boundscheck '+address+' 8','lift.store.i64 '+address+' '+value])
+        models=dict(re.findall(r'(ENTROPY|BLOCK|CLOCK|CONSOLE)\((\d+)\)',desc.split(';dev=',1)[-1] if ';dev=' in desc else desc if desc.startswith('dev=') else ''))
+        for model in ('ENTROPY','BLOCK','CLOCK','CONSOLE'):
+            if model not in models:continue
+            value=int(models[model])
+            if model in ('ENTROPY','BLOCK'):
+                region='e0' if model=='ENTROPY' else 'k0';A=value+(9 if model=='BLOCK' else 0)
+                mem.append((region,A));base=dvalue('lift.addr @'+region)
+                prefix='__bennett_dev_'+model.lower()
+                store_global(prefix+'_base',base)
+                length=dvalue('lift.const.i64 '+str(1<<value))
+                store_global(prefix+('_size' if model=='ENTROPY' else '_nsect'),length)
+            elif model=='CLOCK':
+                value=dvalue('lift.const.i64 '+str(value));store_global('__bennett_dev_clock_c',value)
+            else:
+                length=dvalue('lift.const.i64 '+str(value));store_global('__bennett_dev_console_L',length)
+                buf=dvalue('lift.alloc '+length);store_global('__bennett_dev_console_buf',buf)
+                zero=dvalue('lift.const.i64 0');store_global('__bennett_dev_console_n',zero)
+                outputs.append((buf,value))
         for i,((kind,value),(ty,_,_)) in enumerate(zip(bindings,f.params)):
             w=bits(ty);name='w'+str(i)
             if kind=='IN':
@@ -99,11 +130,17 @@ class Mapper:
                 a='a'+str(len(args));args.append('i'+str(w));actual.append(a)
             elif kind=='MEM_IN':
                 mn='m'+str(sum(n.startswith('m') for n,_ in mem));mem.append((mn,int(value)));actual.append(dest(name,w,'lift.addr @'+mn))
-            else:raise d.Fail('checker-unimplemented: §16.2 OUT wrapper')
+            elif kind=='OUT':
+                size=const(64,int(value));buf=dest(name,w,'lift.alloc '+size);actual.append(buf);outputs.insert(i,(buf,int(value)))
         if self.entry in self.arena_functions:actual.append('d0')
         R=bits(f.ret);T=int(re.search(r'tgt=(\d+)',desc)[1]);dest('r',R,'lift.call @L1 ('+', '.join(actual)+')')
         result='r'
-        if T<R:
+        if outputs:
+            if len(outputs)!=1 or f.ret[0]!='void':raise d.Fail('§16.2 multiple payloads need an explicit slice selection')
+            buf,size=outputs[0]
+            if T>8*size or T>128:raise d.Fail('§16.2 payload slice width exceeds buffer/carrier')
+            rows.append(f'lift.boundscheck {buf} {(T+7)//8}');result=temp(T,f'lift.load.i{T} {buf}')
+        elif T<R:
             c=const(R,T);t=temp(R,'lift.lshr r '+c);z=const(R,0);u=temp(1,'lift.icmp.ne '+t+' '+z);rows.append('lift.faultif '+u+' 4');result=temp(T,f'lift.trunc.i{T} r')
         elif T>R:result=temp(T,f'lift.zext.i{T} r')
         rows.append('lift.retval '+result)
@@ -138,6 +175,9 @@ class Mapper:
                 if n in self.globals:return fresh('c',64,'lift.addr @'+self.globals[n][0],rows)
                 if n in self.addresses:return fresh('c',64,'lift.const.i64 '+str(self.addresses[n]),rows)
                 raise d.Fail('§16.3 missing address '+n)
+            if v.startswith('blockaddress('):
+                fn,lab=re.fullmatch(r'blockaddress\(@([-\w.$]+), %([-\w.$]+)\)',v).groups()
+                return fresh('c',64,'lift.const.i64 '+str(self.block_addresses(fn)[lab]),rows)
             val=0 if v in ('null','false','zeroinitializer') else 1 if v=='true' else int(v)%(1<<w)
             return fresh('c',w,f'lift.const.i{w} {val}',rows)
         def moves(src,dst,rows):
@@ -254,6 +294,11 @@ class Mapper:
                     if len(labs)==1 or labs[0]==labs[1]:moves(lab,labs[0],current);current.append('qjump ^b'+str(bidx[labs[0]]))
                     else:
                         cond=re.match(r'br i1 ([^,]+),',body)[1];C=operand(cond,('int',1),current);current.append('qbranch '+C+' '+target(labs[0])+' '+target(labs[1]))
+                elif op=='indirectbr':
+                    dest,labels=d.split_top(body[len(op):].strip())
+                    C=operand(d.typed_val(dest),('ptr',),current);addresses=self.block_addresses(name)
+                    keys=sorted((addresses[label],target(label)) for label in re.findall(r'label %([-\w.$]+)',labels))
+                    tree(C,64,keys,f'^b{i}.d',current);extra.append((f'b{i}.d',['fault 4']))
                 elif op=='switch':
                     m=re.match(r'switch (i\d+) ([^,]+), label %([-\w.$]+) \[(.*)\]',body);ty=d.parse_type(m[1])[0];C=operand(m[2],ty,current)
                     keys=sorted((int(k)%(1<<bits(ty)),target(t)) for k,t in re.findall(r'i\d+ (-?\d+), label %([-\w.$]+)',m[4]));tree(C,bits(ty),keys,target(m[3]),current)

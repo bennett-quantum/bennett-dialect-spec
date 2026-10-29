@@ -326,3 +326,15 @@ through the R closure; N35 routes volatile memory before N9 and inserts entry
 and loop-back-edge polls. All 24 exact pairs ran red before implementation and
 now pass, including validator and LLVM 18/20/23 verification. Each major runs
 its own N0 lowering. No changed or omitted expected output.
+
+## Freeze repair item 3 — OUT/device/indirectbr maps
+
+Five new per-adapter map regressions were observed red (OUT/indirectbr missing;
+BLOCK/CLOCK/CONSOLE byte-map differences). Implemented allocation/delivery,
+model prologues, interface-region sizing, and comparison-link block addresses
+with compare-tree dispatch and no-match fault 4. All five exact maps plus
+source-mutation failures pass. Selected map/check/run-oracle gate: 14/14,
+15/15, 15/15 respectively. Existing maps remain green.
+Concurrent uncommitted protected spec edits now reconcile V10 and add a carrier
+witness; implementation has not touched them. User's explicit V10-red instruction
+remains in force pending their clarification.
