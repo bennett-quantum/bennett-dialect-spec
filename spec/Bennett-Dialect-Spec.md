@@ -1002,7 +1002,7 @@ AV(operand) lane by lane; ⊤ absorbs.
 | PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | shifts each pointer atom's offset by each constant (classes and `*` stay); any other integer operation on a pointer atom gives (X, `*`) for each X; on `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; `and x, m` with m constant gives the submasks of m intersected with the operand's set when that is ⊤; `urem x, c` with c constant gives {0, …, c−1} when x is ⊤; a `range(lo, hi)` attribute or `!range` metadata (read before N3 removes it) restricts ⊤ to [lo, hi) |
 | PT6 | `load T, ptr p` | for each (X, o) ∈ AV(p): the union of AV(X, o′) over the slots o′ that overlap [o, o + size(T)); for a global X declared `constant`, the atoms of its initialiser at those offsets (`FN(F)` for `ptr @F`, `(G, c)` for a pointer into G, `INT(c)` for integers); for X = EXT, ⊤ |
 | PT7 | `store v, ptr p` | AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
-| PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len) | for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when the offsets and len are constants and [s, s + 1) lies in the copied range, AV(Z, o_d + s − o_s) ⊇ AV(Y, s); else AV(Z, `*`) ⊇ AV(Y, s) |
+| PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when the offsets and len are constants and [s, s + 1) lies in the copied range, AV(Z, o_d + s − o_s) ⊇ AV(Y, s); else AV(Z, `*`) ⊇ AV(Y, s). Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
 | PT9 | direct call of G, or indirect call with candidate G (§14.2) | AV(parameter i of G) ⊇ AV(argument i); AV(result) ⊇ the union of AV over G's `ret` operands; `byval` arguments copy the pointee's slots into the callee's copy object |
 | PT10 | `insertelement`/`extractelement`/`shufflevector`/`insertvalue`/`extractvalue` | atoms move with constant lanes and index paths; a non-constant lane index moves the union of all lanes (a handle-table read, audit B-23) |
 | PT11 | a parameter of a function with a host caller, a device entry, or a function whose address host code uses | AV ⊇ {(EXT, `*`)} for `ptr` parameters, ⊤ for integer parameters, plus the atoms of the device-side arguments by PT9 |
@@ -2739,11 +2739,14 @@ part of the heap budget. The driver resolves every symbol entry to identities an
 resolved table and its SHA-256 in the build record (§19.9).
 
 ```json budget-table=rung4-mini
-{"defaults":{"depth":"256","heap":"1048576","sstack":"65536","stack":"65536","steps":"1048576"},"entries":[{"depth":"8","heap":"0","stack":"512","steps":"400","symbol":"q"}],"version":"0.2"}
+{"defaults":{"depth":"64","heap":"0","sstack":"0","stack":"1024","steps":"100000"},"entries":[{"depth":"8","heap":"0","stack":"512","steps":"400","symbol":"q"}],"version":"0.2"}
 ```
 
-*(non-normative)* The entry above is the budget of the reduced rung-4 oracle of §16.7 by symbol;
-its `sstack` comes from the default.
+*(non-normative)* This is the budget table of the reduced rung-4 link of §16.7: the entry names
+the region function `q` by symbol; the defaults govern every other region of that link. Its
+largest heap (0) and stack (1024) fix that link's `heap_limit_max` and `S_cells` (§16.3); the
+entry's 400 steps, 512 cells and depth 8 cover the 112 steps, 126 cells and depth 4 that the
+runs of §16.7 need.
 
 ### 9.3 What each budget governs
 
@@ -4462,5 +4465,1161 @@ tree over the labels' values to static branches (`qjump` in L, `br` in CC/R); no
 *(non-normative)* LangRef permits a `blockaddress` only in `indirectbr` and in comparisons with
 null; an execution in which its bits influence a result otherwise (printing, hashing) is
 layout-dependent and validated against the reference interpreter (NS §3.2, §17.1).
+
+## 15. Inline asm and target intrinsics (asm 0.2)
+
+NS §3.3: "Target intrinsics and asm are classified *lowered / trapped / shimmed* in the coverage
+report." N31 applies the tables of this section.
+
+### 15.1 Table format
+
+An asm **row** is keyed by (target architecture, normalised asm string, constraint string):
+
+- the asm string with every run of whitespace (including `\n`, `\t` and `;` separators) replaced
+  by one space and leading and trailing whitespace removed, operand placeholders (`$0`, `${0:w}`)
+  kept;
+- the constraint string exactly as LLVM prints it (clobbers included).
+
+A row has a **class** and a **replacement** in IR. Target-intrinsic rows are keyed by the
+intrinsic name. The rows of this section are normative; they are also published as data files
+`spec/asm/<arch>.toml` (`asm 0.2`, one table per architecture with the fields `asm`,
+`constraints`, `class`, `replacement`), generated from this section; the section prevails on a
+difference. Rows are added with a version change (§23).
+
+### 15.2 Classes
+
+- **lowered** (an IR replacement with the same meaning on the single-threaded device):
+  - an empty asm string (any constraints without outputs) → deleted (a compiler barrier);
+  - `pause` (x86), `nop` (all), `yield` (AArch64), `fence`, `fence rw,rw`, `fence.i` (RISC-V) and
+    the target intrinsics `llvm.x86.sse2.pause`, `llvm.aarch64.hint` → deleted;
+  - `rdtsc` (x86, `={ax},={dx}`), `rdtime`/`rdcycle` (RISC-V), `mrs $0, cntvct_el0` (AArch64),
+    and `llvm.x86.rdtsc`, `llvm.readcyclecounter`, `llvm.readsteadycounter` → a call of
+    `__bennett_rt_cyclecounter()`, which reads the clock model (§11) in every tier;
+  - `cpuid` (x86) → the constant table of the declared CPU model (`--bennett-cpu=<model>`,
+    default `x86-64` with the leaf values of §24);
+  - asm-goto (`callbr`) whose asm string is lowered → its replacement followed by a branch to the
+    default destination; `llvm.callbr.landingpad` → its operand.
+- **shimmed** (a call of a runtimes or platform function):
+  - the system-call instructions (§15.5) → `__bennett_rt_syscall(nr, a1, …, a6)`, the runtimes'
+    system-call layer, which maps calls onto device models (§11.2) and runtimes services;
+  - privileged forms → platform functions (§20.2).
+- **trapped**: every other row → F(8) with a coverage line naming the asm string. This is
+  required by NS §3.3 ("trapped"), and it occurs only on the executions that reach the asm.
+
+### 15.3 Module-level asm and assembly objects
+
+Symbols defined only by `module asm` or by non-bitcode objects (`.S` files) resolve like
+external functions (§4.5): to a runtime or platform shim with the same symbol, recorded with its
+content hash in the certificate's coverage entries (`shim_hash`), else trapped.
+
+### 15.4 Target intrinsics
+
+`llvm.x86.*`, `llvm.aarch64.*`, `llvm.riscv.*` and the other target families use rows of the same
+form keyed by name; the rows the rungs need are those of §15.2 and §20.2; every other target
+intrinsic is trapped until a row is added (a mechanics deferral, §24).
+
+### 15.5 Required rows for 0.2
+
+The musl `__syscall0` … `__syscall6` asm of the three architectures (rung 3). For k arguments the
+replacement is `%r = call i64 @__bennett_rt_syscall(i64 nr, i64 a1, …, i64 ak, i64 0, …)` with
+the absent arguments 0; `nr` and a1 … ak are the inputs named below.
+
+| Architecture | asm | Constraints (k = 0 … 6) | Inputs |
+|---|---|---|---|
+| x86-64 | `syscall` | `={ax},{ax}` then the first k of `{di},{si},{dx},{r10},{r8},{r9}`, then `~{rcx},~{r11},~{memory},~{dirflag},~{fpsr},~{flags}` | nr = `{ax}`, a1 … ak in order |
+| AArch64 | `svc 0` | `={x0},{x8}` then the first k of `{x0},{x1},{x2},{x3},{x4},{x5}`, then `~{memory},~{cc}` | nr = `{x8}`, a1 … ak in order |
+| RISC-V64 | `ecall` | `={x10},{x17}` then the first k of `{x10},{x11},{x12},{x13},{x14},{x15}`, then `~{memory}` | nr = `{x17}`, a1 … ak in order |
+
+*(non-normative)* These are the strings clang 18 and clang 23 produce from musl's
+`arch/*/syscall_arch.h` (the RISC-V source string `ecall\n\t` normalises to `ecall`). The
+xv6-riscv and Linux `tinyconfig` rows are §20.2, fixed by the platform spike (§20.7).
+
+```llvm example=asm-musl-syscall verdict=accept
+define i64 @write3(i64 %fd, ptr %buf) {
+  %a = ptrtoint ptr %buf to i64
+  %r = call i64 asm sideeffect "syscall", "={ax},{ax},{di},{si},{dx},~{rcx},~{r11},~{memory},~{dirflag},~{fpsr},~{flags}"(i64 1, i64 %fd, i64 %a, i64 3)
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_qfree(ptr %h)
+  ret i64 %r
+}
+```
+
+```llvm normalise-in=n-asm
+define internal i64 @w(i64 %fd, i64 %a) {
+  %r = call i64 asm sideeffect "syscall", "={ax},{ax},{di},{si},{dx},~{rcx},~{r11},~{memory},~{dirflag},~{fpsr},~{flags}"(i64 1, i64 %fd, i64 %a, i64 3)
+  call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"()
+  ret i64 %r
+}
+```
+
+```llvm normalise-out=n-asm
+define internal i64 @w(i64 %fd, i64 %a) {
+  %r = call i64 @__bennett_rt_syscall(i64 1, i64 %fd, i64 %a, i64 3, i64 0, i64 0, i64 0)
+  ret i64 %r
+}
+
+declare i64 @__bennett_rt_syscall(i64, i64, i64, i64, i64, i64, i64)
+```
+
+## 16. The lifting map (map 0.2)
+
+The lifting map turns a materialised region function, a binding shape (§8.4) and the link
+layout (§19.5) into the **reference object** of that shape: the ISA object whose oracle `@ref`
+defines F_B and the budget unit by the reference interpreter (ISA §4.2 "Reference body and
+binding", §14.1). It is a function of its inputs alone, so two plugins on the same LLVM version
+and pipeline produce byte-identical reference objects. Its version (`map 0.2`) is the
+certificate's `dialect_mapping_version` (ISA §12.3). The plugin's device objects (§17.4) are
+plugin-defined; they MUST be extensionally equal to the reference objects (ISA §5.7, T6; §18.7).
+
+### 16.1 Liftable means materialised, always
+
+Every materialised function is liftable (outline B1): §12 legalises every construct into integer
+SSA values of at most 128 bits, memory, calls and branches, and §16.4 has a row for each. 0.1's
+`BD-E-LIFT-SUBSET` is deleted.
+
+### 16.2 The reference object
+
+For a shape with region function f, the reference object is the ISA text (ISA §16) with:
+
+- the header `bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8
+  target=0.8 ptr_width=<pw>`;
+- `section symbols`: one JCS line, keys `"0"`, `"1"`, … in the order `@ref`, `@L1` … `@Ln`, then
+  the data symbols `G…` in `section data` order, each with its kind, name, signature (ISA §9.1;
+  `args` types spelled as JCS strings of the ISA §16.2 type, e.g. `"i64"`) and interface hash
+  (ISA §9.2);
+- `section functions`: `@ref`, then the lprocs `@L1` … `@Ln`: one per function of the L closure of
+  f (direct calls and indirect-call candidates), numbered in depth-first preorder from `@ref`
+  along the `lift.call` rows in text order;
+- `section data`: one line `G<n> <hex>` per global of the layout below, in `layout.globals` key
+  order, with the global's initialiser bytes after §12 (function addresses encoded as A(F) in
+  pw-bit little-endian, §4.4; pointers to globals as their bases plus offsets);
+- `section layout`: one JCS line (§16.3).
+
+**The wrapper `@ref`.** Its header is `oracle @ref (<ins>) (tgt:wire[T]) (fault:wire[4])
+(<mems>) (<args>)`:
+
+- `<ins>`: `x<k>:wire[n] in` for the k-th `IN` binding in parameter order (n = n(q));
+- T: the width of the variant's slice (§8.6), or 1 when the shape has no output;
+- `<mems>`: `m<k>:region[A,8] in` for the k-th `MEM_IN` binding in parameter order, then `e0` for
+  an ENTROPY binding, `k0` for a BLOCK binding, `s0` for an entry-state snapshot (§8.5);
+- `<args>`: `a<k>:i<W>` for the k-th `ARG` binding in parameter order (W = pw for a `ptr`).
+
+Its body is one block `^entry():` with, in order:
+
+1. **Prologue** (each part only when needed): the entry-state replay `t = lift.call
+   @L(__bennett_rt_entry_replay) (s)` with `s = lift.addr @s0`; the device-state stores of §11.3
+   (for ENTROPY: `d0 = lift.addr @e0`, `d1 = lift.addr @G(base)`, `lift.boundscheck d1 8`,
+   `lift.store.i64 d1 d0`, `d2 = lift.const.i64 <2^A>`, `d3 = lift.addr @G(size)`,
+   `lift.boundscheck d3 8`, `lift.store.i64 d3 d2`; the position starts at its data image 0; the
+   other models likewise in model order); the shadow-stack setup `t = lift.call
+   @L(__bennett_rt_ss_init) (c)` with c = `lift.const.i64 <sstack>` when the closure contains a
+   call of `__bennett_rt_ss_push` (§17.3).
+2. **Arguments**, for each parameter i in order: `IN` with n = W: the pseudo-location `x<k>`
+   itself; `IN` with n < W: `w<i> = lift.zext.iW x<k>` (`lift.sext` for SEXT); `ARG`: `a<k>`
+   itself; `MEM_IN`: `w<i> = lift.addr @m<k>`; `OUT`: `w<i> = lift.alloc <size>`.
+3. **Call**: `r = lift.call @L1 (<arguments>)` (`r:reg[R]`, R the return width, 1 for `void`).
+4. **Unwind check** (only when f may unwind, §14.4): `e = lift.addr @G(__bennett_rt_eh)`,
+   `lift.boundscheck e 4`, `l = lift.load.i32 e`, `z = lift.const.i32 0`, `u = lift.icmp.ne l z`,
+   `lift.faultif u 4`. A function **may unwind** iff it is not `nounwind` and calls (directly or
+   through a candidate) a function that may unwind, an external function without `nounwind`, or
+   one of the raise functions of §14.4 (least fixpoint).
+5. **Delivery** of slice j of the payload: for the `tgt` output with n(tgt) < R: `c = lift.const.iR
+   <n(tgt)>`, `t = lift.lshr r c`, `z = lift.const.iR 0`, `u = lift.icmp.ne t z`, `lift.faultif
+   u 4` (the dropped-bits check of §8.2, in every variant); then the slice value: from `r` by
+   `lift.lshr` of its low bit position (when nonzero) and `lift.trunc`/`lift.zext` to T (when the
+   widths differ); from an `OUT` buffer `w<i>` by `p = lift.add w<i> <offset>` (when nonzero),
+   `lift.boundscheck p <T/8>`, `v = lift.load.i<T> p`; then `lift.retval <value>`.
+
+Wrapper locations are `w<i>` (arguments), `r` (the call's result), `d<k>` (prologue), and `c<j>`,
+`t<j>` for its constants and temporaries in emission order.
+
+**lprocs.** Each lifted function g becomes `lproc @L<n> (a0:reg[W0], …) (r:reg[R]) () () ()`
+with the parameters in order (`ptr` → `reg[pw]`; an aggregate parameter flattened into one
+parameter per field in field order), the result `r` of the return width (1 for `void`, whose
+`ret void` is `lift.ret r`), a `regs` line, and the blocks of §16.4.
+
+### 16.3 Names and layout
+
+| LLVM entity | ISA name |
+|---|---|
+| the i-th parameter of g | `a<i>` (fields of a flattened aggregate `a<i>_<f>`) |
+| the k-th instruction of g that produces a value (0-based, in layout order, phis included) | location `v<k>` (fields of an aggregate value `v<k>_<f>`) |
+| the j-th constant materialisation of g, in text order of the output | location `c<j>` |
+| the j-th mapping temporary of g, in text order | location `t<j>` |
+| the i-th basic block of g (0-based, layout order) | block `^b<i>` |
+| a block created by a compare tree in block i (§16.4), in creation order | `^b<i>.s<j>` (j ≥ 1) |
+| for the q-th indirect call of block i (q ≥ 1): the leaf of candidate k (sorted order), the default, the continuation | `^b<i>.q<q>c<k>`, `^b<i>.q<q>d`, `^b<i>.q<q>r` |
+| the edge block from block i to block s | `^b<i>.e<s>` |
+| the n-th global of the layout | data symbol and global `G<n>` |
+
+The `regs` line lists every location of the function that is neither a parameter nor the result,
+in order of first appearance as a destination in the text, as `name:reg[W]`, separated by `, `;
+it is omitted when empty. W: a value's width (`i1` → 1, `ptr` → pw); a constant's width; a
+temporary's width (1 for a compare, else its operation's width).
+
+**Layout.** The reference object's `layout` is the device link layout (§19.5) restricted to the
+globals that the L closure names in `lift.addr` and, transitively, the globals their initialisers
+point to (in link order, numbered G1, G2, …), with the link's `ptr_width`, `null_size`,
+`heap_base`, `heap_limit_max`, `H`, `A_tab` and `S_cells`, and `interface_regions` = { "ref": the
+shape's regions } with bases assigned in `<mems>` order: each base is the smallest multiple of
+the region's size that is ≥ the end of the previous range (the heap's end `heap_base +
+heap_limit_max` for the first). H is the smallest value with every range inside [0, 2^H); A_tab
+is the smallest value with 2^A_tab ≥ P + `heap_limit_max`, P the link's number of globals plus
+the largest number of interface regions of any oracle, so that allocation-table overflow never
+precedes heap exhaustion (both fault with code 2, ISA §4.2, and a reference object with fewer
+pre-entries than the device object faults at the same allocation); S_cells is the smallest value
+with 2^S_cells ≥ the largest `stack` of the budget table.
+
+### 16.4 Rows
+
+Rows of an instruction are emitted in instruction order within its block. Before the rows of an
+instruction, each of its **constant operands** that is a value operand (in operand order; not an
+immediate flag; for `getelementptr`, not a constant index) is materialised: an integer constant by
+`c<j> = lift.const.iW <unsigned decimal>`; `null` by `lift.const.i<pw> 0`; a global `@G` by
+`c<j> = lift.addr @G<n>`; a function `@F` by `c<j> = lift.const.i<pw> <A(F)>`; a constant
+expression by the rows of its instructions, innermost first, into temporaries. The operand then
+reads `c<j>`. A non-constant operand reads the location of its value (`a<i>` for a parameter).
+`A`, `B`, `C` below are the operands so read; `v` is the instruction's location.
+
+| LLVM | Rows |
+|---|---|
+| `add sub mul and or xor shl lshr ashr` | `v = lift.<op> A B` |
+| `udiv sdiv urem srem` | `v = lift.<op> A B` (division faults, ISA §4.2) |
+| `icmp eq/ne/ult/ule/slt/sle a, b` (integers or pointers) | `v = lift.icmp.<pred> A B` |
+| `icmp ugt/uge/sgt/sge a, b` | `v = lift.icmp.{ult,ule,slt,sle} B A` (operands swapped) |
+| `select c, a, b` | `v = lift.select C A B` |
+| `zext/sext/trunc a to iM` | `v = lift.<op>.iM A` |
+| `ptrtoint` to iM, `inttoptr` from iM | M = pw: `v = lift.mov A`; ptrtoint M < pw or inttoptr M > pw: `lift.trunc`; otherwise `lift.zext` (LangRef zero-extends) |
+| `bitcast` (integer to integer of equal width, pointer to pointer), `addrspacecast` | `v = lift.mov A` |
+| `getelementptr T, ptr p, idx…` | acc := P; for each non-constant index in order: `t = lift.sext.i<pw> I` (or `lift.trunc`, omitted when the index is pw wide); if its element size s ≠ 1, `c = lift.const.i<pw> s` and `t′ = lift.mul t c`; `acc′ = lift.add acc t′`; then, if the constant byte offset Δ of the constant indices (mod 2^pw) ≠ 0, `c = lift.const.i<pw> Δ` and `lift.add acc c`. The last row writes v; with no row at all, `v = lift.mov P` |
+| `load T, ptr p` (T = iN with N a multiple of 8, or `ptr`; N ≤ 128 after §12) | `lift.boundscheck P <N/8>`; `v = lift.load.iN P` |
+| `store v, ptr p` | `lift.boundscheck P <N/8>`; `lift.store.iN P V` |
+| `insertvalue`, `extractvalue` | `lift.mov` of the field locations |
+| `phi` | none at its position (edge moves) |
+| direct `call @g(args)` of a defined function | `v = lift.call @L(g) (A_1 … A_m)` (flattened arguments); a `void` callee writes a temporary `t<j>:reg[1]` |
+| `call @__bennett_nz_alloc(n)`, `call @__bennett_nz_free(p)` | `v = lift.alloc N`; `lift.free P` |
+| `call void @__bennett_nz_fault(i64 C)`; `unreachable` | `fault C` (one row for the pair) |
+| indirect call | the compare tree below over the candidates' A(F_k) (§14.2) on the callee value, leaf k `v = lift.call @L(F_k) (…)` then `qjump` to the continuation, default `fault 4`; the rows after the call continue in the continuation block |
+| `ret a` | `lift.ret A` (`void`: `lift.ret r`) |
+| `unreachable` | `fault 4` |
+| `br label %S` | edge moves (B → S); `qjump ^S` |
+| `br i1 c, label %T, label %F`, T ≠ F | `qbranch C ^T′ ^F′` |
+| `br i1 c, label %S, label %S` | as `br label %S` |
+| `switch iW c, label %D [k_j, label %L_j]` | the compare tree below on C, cases sorted unsigned, default D′ |
+| `indirectbr` | the compare tree over the block values of §14.9, leaves `qjump` |
+
+**Compare tree** (outline E6) over sorted distinct keys k_lo … k_hi of width W, condition C,
+targets T_j and default D, emitted into the current block X by node(lo, hi, X):
+
+- if hi − lo + 1 ≤ 3: for j = lo … hi, in block X: `c = lift.const.iW k_j`; `t = lift.icmp.eq C
+  c`; `qbranch t ^T_j ^Y`, where Y is a new block `^b<i>.s<n>` for j < hi and D for j = hi; X := Y;
+- otherwise, with mid = ⌊(lo + hi)/2⌋: in X: `c = lift.const.iW k_mid`; `t = lift.icmp.ult C
+  c`; new blocks L then R; `qbranch t ^L ^R`; node(lo, mid − 1, L); node(mid, hi, R);
+- with no key: `qjump ^D`.
+
+**Edge moves** (B → S), S with phis φ_1 … φ_r in S's order and incoming values a_1 … a_r for B:
+the constant materialisations of the a_k that are constants (in order), then `(v_φ1, …, v_φr) =
+lift.parmov (A_1, …, A_r)` (ISA §4.2, parallel). None when S has no phi. For a successor X of a
+conditional terminator or of a compare-tree leaf in block i, X′ is `^b<i>.e<x>` when X has a phi,
+else `^b<x>`; the **edge block** `^b<i>.e<x>` holds the edge moves (i → x) and `qjump ^b<x>`.
+
+**Block order.** For i = 0, 1, …: block `^b<i>`, then the blocks created in it (compare-tree
+blocks, and per indirect call its leaves, default and continuation) in creation order, then its
+edge blocks in ascending successor index.
+
+### 16.5 Runtime oracles, identity and F_B
+
+The CC tier's entry-state transfer (§8.5) and TDL (§10) use three families of runtime oracles,
+generated per width and part of the device object:
+
+- `@xor128`: `oracle @xor128 () (t:wire[128]) (f:wire[4]) () (lo:i64, hi:i64)` with body `a =
+  lift.zext.i128 lo`, `b = lift.zext.i128 hi`, `s = lift.const.i128 64`, `h = lift.shl b s`, `v =
+  lift.or h a`, `lift.retval v` (6 steps; memoryless, ISA §7.2);
+- `@xorargs<A>`: payload = a mod 2^A | m · 2^A for the classical arguments (a: i64, m: i8), a
+  (A + 8)-wire target (TDL-4);
+- `@firstfault<K>`: `in` = K 4-wire bundles, payload = the first nonzero one in order, else 0
+  (TDL-8).
+
+An oracle region's identity (§7.3) is the interface hash of `@ref` (ISA §9.2), recorded as the
+certificate's `reference_program_hash` (ISA §12.3). F_B(x) is ISA §5.2's on `@ref` with the token's
+budget (B, heap, stack, depth) (§9.4): success at `lift.retval` within B steps gives (payload, 0);
+a fault row, a faulting division or memory row, or a budget flag gives (0, code); otherwise (0,
+1). Stated results are lines `input=<x,…> [mem=<region>:<hex>] [arg=<value>] budget=<s,h,st,d>
+-> code=<C> payload=<P> steps=<N>`, each the output of `bennett-isa-ref run-oracle <object> ref`
+with those options.
+
+### 16.6 Example: rung 1 (`inc8`, two inputs)
+
+`inc8` of §8.8, one `IN` of 8 wires, an 8-wire target. The link has no globals; the budget table
+has heap 0 and largest stack 7, so `heap_limit_max` = 0, A_tab = 0, S_cells = 3, and H = 12 covers
+the null region [0, 4096):
+
+```llvm lift=inc8 region=@inc8 desc=IN(8,zext);tgt=8
+define internal i8 @inc8(i8 %x) {
+  %r = add i8 %x, 1
+  ret i8 %r
+}
+```
+
+```text linkmap=inc8
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 7, heap max 0
+```
+
+```isa object=inc8
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"151baad5625b3605eadf87005a19ea6e012e4347d6dfe096dbc4edcf2b68b94a","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[8],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"a8c86313c60cd75a4f013bdaaa43ed5db78c444b0338a3d41d98a3871929250e","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[8],"result":8,"tier":"q"}}}
+
+section functions
+oracle @ref (x0:wire[8] in) (tgt:wire[8]) (fault:wire[4]) () ()
+regs { r:reg[8] }
+^entry():
+r = lift.call @L1 (x0)
+lift.retval r
+lproc @L1 (a0:reg[8]) (r:reg[8]) () () ()
+regs { c0:reg[8], v0:reg[8] }
+^b0():
+c0 = lift.const.i8 1
+v0 = lift.add a0 c0
+lift.ret v0
+
+section layout
+{"A_tab":0,"H":12,"S_cells":3,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=inc8
+ref 151baad5625b3605eadf87005a19ea6e012e4347d6dfe096dbc4edcf2b68b94a
+L1 a8c86313c60cd75a4f013bdaaa43ed5db78c444b0338a3d41d98a3871929250e
+```
+
+```text run=inc8
+input=0 budget=5,0,7,1 -> code=0 payload=1 steps=5
+input=7 budget=5,0,7,1 -> code=0 payload=8 steps=5
+input=255 budget=5,0,7,1 -> code=0 payload=0 steps=5
+input=7 budget=4,0,7,1 -> code=1 payload=0 steps=4
+input=7 budget=5,0,6,1 -> code=3 payload=0 steps=1
+input=7 budget=5,0,7,0 -> code=3 payload=0 steps=1
+```
+
+```text step-check=inc8
+budget=5,0,7,1 -> status=ok cases=256 input_and_memory_bits=8
+```
+
+*(non-normative)* Five steps: `lift.call`, the three rows of `@L1` (`lift.const`, `lift.add`,
+`lift.ret`) and `lift.retval`. The call needs R_L1 = 3 + m′ = 3 + 4 = 7 stack cells (m′ = one
+parameter, the result and two `regs`, ISA §3.7) and depth 1: with 6 cells or depth 0 the
+`lift.call` flag gives `FAULT_BUDGET_DEPTH` (3) at step 1. 0.1's memoryless `inc8` body is
+replaced by this wrapper form, so its hash changes (a draft-to-draft change, §23).
+
+Two `IN` bindings (`oracle-two-in`, §8.8):
+
+```llvm lift=add2 region=@add desc=IN(8,zext),IN(8,zext);tgt=9
+define internal i9 @add(i8 %a, i8 %b) {
+  %a9 = zext i8 %a to i9
+  %b9 = zext i8 %b to i9
+  %s = add i9 %a9, %b9
+  ret i9 %s
+}
+```
+
+```text linkmap=add2
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 9, heap max 0
+```
+
+```isa object=add2
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"5b4c6624e0f20b5d60780fd8f27056f3f7efd4d27b9d47af8a70c8126100a10a","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[8,8],"kind":"oracle","mem":[],"tgt":9,"tier":"q"}},"1":{"interface_hash":"ad2332d5edae1d26b1c946a0d9f033c10c6e493be11c44ef5f910f548b3b2285","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[8,8],"result":9,"tier":"q"}}}
+
+section functions
+oracle @ref (x0:wire[8] in, x1:wire[8] in) (tgt:wire[9]) (fault:wire[4]) () ()
+regs { r:reg[9] }
+^entry():
+r = lift.call @L1 (x0, x1)
+lift.retval r
+lproc @L1 (a0:reg[8], a1:reg[8]) (r:reg[9]) () () ()
+regs { v0:reg[9], v1:reg[9], v2:reg[9] }
+^b0():
+v0 = lift.zext.i9 a0
+v1 = lift.zext.i9 a1
+v2 = lift.add v0 v1
+lift.ret v2
+
+section layout
+{"A_tab":0,"H":12,"S_cells":4,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=add2
+input=200,100 budget=6,0,9,1 -> code=0 payload=300 steps=6
+input=255,255 budget=6,0,9,1 -> code=0 payload=510 steps=6
+input=0,0 budget=6,0,9,1 -> code=0 payload=0 steps=6
+input=1,2 budget=6,0,8,1 -> code=3 payload=0 steps=1
+```
+
+```text step-check=add2
+budget=6,0,9,1 -> status=ok cases=65536 input_and_memory_bits=16
+```
+
+### 16.7 Example: a reduced rung 4 (route A)
+
+The shape of the SQLite oracle of SQLite §5.2(i), route A, at toy size: a page image in a `MEM_IN`
+region (the database "fixed classically before entry", loaded into the register by
+`__bennett_qprep`), its classical length as an `ARG`, a superposed record key as a 3-wire `IN`
+(zero-extended to `i32`, like the 20-wire rowid), and a 1-wire target that receives an `i8`
+result through the dropped-bits check. The library code is ordinary C with a recursive binary
+search, a function-pointer callback through a constant table (an indirect call with two
+candidates) and an error path that traps. The image is: byte 0 the predicate id, byte 1 the
+record count n, then n records (key, value) sorted by key.
+
+```c example=rung4-minidb verdict=accept
+/* A reduced rung-4 "database": a 16-byte page image (predicate id, record count, sorted (key, value) records) */
+#include <stdint.h>
+
+typedef uint8_t (*pred_fn)(const uint8_t *rec);
+static uint8_t pred_even(const uint8_t *rec) { return (rec[1] & 1) == 0; }
+static uint8_t pred_big(const uint8_t *rec) { return rec[1] >= 100; }
+static pred_fn const preds[2] = { pred_even, pred_big };
+
+static const uint8_t *find(const uint8_t *base, uint32_t lo, uint32_t hi, uint32_t key) {
+  if (lo >= hi) return 0;
+  uint32_t mid = (lo + hi) / 2;
+  const uint8_t *rec = base + 2 * mid;
+  if (rec[0] == key) return rec;
+  if (rec[0] < key) return find(base, mid + 1, hi, key);
+  return find(base, lo, mid, key);
+}
+
+uint8_t q(const uint8_t *img, uint64_t len, uint32_t rowid) {
+  uint32_t n = img[1];
+  if (len < 2 + 2 * (uint64_t)n) __builtin_trap();
+  const uint8_t *rec = find(img + 2, 0, n, rowid);
+  if (!rec) return 0;
+  return preds[img[0] & 1](rec);
+}
+```
+
+The quantum programmer's translation unit (outline §19.3: the normative route is a separate TU
+naming the unmodified function) applies one Grover iteration; it is linked with the library by
+`clang -O2 -flto` and the driver's `lto<O3>`, after which the module holds 4 `qalloc`, 2 `qprep`,
+24 `gate`, 1 `gate3`, 1 `oracle`, 3 `measure` and 4 `qfree` calls (counted on LLVM 18):
+
+```c example=rung4-grover-tu verdict=accept
+/* The quantum programmer's translation unit: one Grover iteration over the 3-bit rowid. */
+#include <stdint.h>
+#include "bennett_markers.h"
+
+extern uint8_t q(const uint8_t *img, uint64_t len, uint32_t rowid);
+
+static void hadamards(bennett_q r) {
+  for (uint64_t i = 0; i < 3; i++) __bennett_gate(BENNETT_GATE_H, r, i);
+}
+
+static void phase_oracle(bennett_q db, bennett_q row, bennett_q t, bennett_q f) {
+  BENNETT_ORACLE_DESC_P(3) d;
+  bennett_oracle_desc_init(&d.h, 3, 0, t, f);
+  bennett_bind_set(&d.param[0], BENNETT_BIND_MEM_IN, 0, db, 0, 16);
+  bennett_bind_set(&d.param[1], BENNETT_BIND_ARG, 0, 0, 16, 0);
+  bennett_bind_set(&d.param[2], BENNETT_BIND_IN, BENNETT_MODE_ZEXT, row, 0, 0);
+  bennett_budget b = { 400, 0, 512, 8, 0 };
+  __bennett_oracle((const void *)q, &b, &d.h);
+}
+
+static void diffusion(bennett_q row) {
+  hadamards(row);
+  for (uint64_t i = 0; i < 3; i++) __bennett_gate(BENNETT_GATE_X, row, i);
+  __bennett_gate(BENNETT_GATE_H, row, 2);
+  __bennett_gate3(BENNETT_GATE3_CCX, row, 0, row, 1, row, 2);
+  __bennett_gate(BENNETT_GATE_H, row, 2);
+  for (uint64_t i = 0; i < 3; i++) __bennett_gate(BENNETT_GATE_X, row, i);
+  hadamards(row);
+}
+
+uint32_t grover_once(const uint8_t img[16]) {
+  bennett_q db = __bennett_qalloc(BENNETT_CLASS_ANY, 128);
+  bennett_q row = __bennett_qalloc(BENNETT_CLASS_ANY, 3);
+  bennett_q t = __bennett_qalloc(BENNETT_CLASS_ANY, 1);
+  bennett_q f = __bennett_qalloc(BENNETT_CLASS_ANY, 4);
+  __bennett_qprep(db, img, 16);                   /* the database, fixed classically before entry */
+  hadamards(row);
+  __bennett_gate(BENNETT_GATE_X, t, 0);           /* |-> target: phase kickback */
+  __bennett_gate(BENNETT_GATE_H, t, 0);
+  phase_oracle(db, row, t, f);
+  diffusion(row);
+  uint32_t r = 0;
+  for (uint64_t i = 0; i < 3; i++) r |= (uint32_t)__bennett_measure(row, i) << i;
+  __bennett_gate(BENNETT_GATE_H, t, 0);
+  __bennett_gate(BENNETT_GATE_X, t, 0);
+  __bennett_qprep(db, img, 16);                   /* XOR again: db is clean */
+  for (uint64_t i = 0; i < 3; i++) if ((r >> i) & 1) __bennett_gate(BENNETT_GATE_X, row, i);
+  __bennett_qfree(f);
+  __bennett_qfree(t);
+  __bennett_qfree(row);
+  __bennett_qfree(db);
+  return r;
+}
+```
+
+*(non-normative)* The descriptor's kinds and the budget record's fields reach the marker as
+constant stores and `memset`s (PT7, PT8), so there is one shape. The MEM_IN register is the
+static register of the root `db` (it is stored in the descriptor, so it has a static register
+file with N = 1 by §6.5 rule 1); `f` stays clean when the fault rate is zero, and `t` returns to
+|0⟩ after H and X.
+
+The materialised region function and its closure, written in the shape the pipeline gives them
+(the recursion kept, `__builtin_trap` already replaced by N11):
+
+```llvm lift=rung4-mini region=@q desc=MEM_IN(4),ARG(64),IN(3,zext);tgt=1
+@preds = internal constant [2 x ptr] [ptr @pred_even, ptr @pred_big]
+
+define internal i8 @q(ptr %img, i64 %len, i32 %rowid) {
+b0:
+  %p1 = getelementptr i8, ptr %img, i64 1
+  %n8 = load i8, ptr %p1
+  %n = zext i8 %n8 to i32
+  %n64 = zext i8 %n8 to i64
+  %twon = shl i64 %n64, 1
+  %need = add i64 %twon, 2
+  %short = icmp ult i64 %len, %need
+  br i1 %short, label %b1, label %b2
+
+b1:
+  call void @__bennett_nz_fault(i64 4)
+  unreachable
+
+b2:
+  %base = getelementptr i8, ptr %img, i64 2
+  %rec = call ptr @find(ptr %base, i32 0, i32 %n, i32 %rowid)
+  %none = icmp eq ptr %rec, null
+  br i1 %none, label %b3, label %b4
+
+b3:
+  ret i8 0
+
+b4:
+  %h8 = load i8, ptr %img
+  %h = and i8 %h8, 1
+  %hi = zext i8 %h to i64
+  %pp = getelementptr [2 x ptr], ptr @preds, i64 0, i64 %hi
+  %f = load ptr, ptr %pp
+  %r = call i8 %f(ptr %rec)
+  ret i8 %r
+}
+
+define internal ptr @find(ptr %base, i32 %lo, i32 %hi, i32 %key) {
+b0:
+  %e = icmp uge i32 %lo, %hi
+  br i1 %e, label %b5, label %b1
+
+b1:
+  %s = add i32 %lo, %hi
+  %mid = lshr i32 %s, 1
+  %m2 = shl i32 %mid, 1
+  %off = zext i32 %m2 to i64
+  %rec = getelementptr i8, ptr %base, i64 %off
+  %k8 = load i8, ptr %rec
+  %k = zext i8 %k8 to i32
+  %eq = icmp eq i32 %k, %key
+  br i1 %eq, label %b6, label %b2
+
+b2:
+  %lt = icmp ult i32 %k, %key
+  br i1 %lt, label %b3, label %b4
+
+b3:
+  %mid1 = add i32 %mid, 1
+  %r1 = call ptr @find(ptr %base, i32 %mid1, i32 %hi, i32 %key)
+  ret ptr %r1
+
+b4:
+  %r2 = call ptr @find(ptr %base, i32 %lo, i32 %mid, i32 %key)
+  ret ptr %r2
+
+b5:
+  ret ptr null
+
+b6:
+  ret ptr %rec
+}
+
+define internal i8 @pred_even(ptr %rec) {
+  %p = getelementptr i8, ptr %rec, i64 1
+  %v = load i8, ptr %p
+  %b = and i8 %v, 1
+  %z = icmp eq i8 %b, 0
+  %r = zext i1 %z to i8
+  ret i8 %r
+}
+
+define internal i8 @pred_big(ptr %rec) {
+  %p = getelementptr i8, ptr %rec, i64 1
+  %v = load i8, ptr %p
+  %c = icmp uge i8 %v, 100
+  %r = zext i1 %c to i8
+  ret i8 %r
+}
+```
+
+```text linkmap=rung4-mini
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @preds -> G1 base=4096 size=16
+function @pred_even A=0x401160 (4198752)
+function @pred_big A=0x4011a0 (4198816)
+budget-table=rung4-mini (largest stack 1024, largest heap 0)
+```
+
+The L closure is `@q`, `@find`, `@pred_even`, `@pred_big`; in preorder from `@ref`'s call of `@q`
+(L1), `@q`'s first `lift.call` is `@find` (L2), and its indirect call's candidates sorted by A(F)
+are `@pred_even` (L3) and `@pred_big` (L4). The layout: one global and one region, so P = 2 and
+A_tab = 1 (2^1 ≥ 2 + 0); the region m0 (16 bytes) is placed at 8192, the end of the empty heap;
+H = 14 (8208 ≤ 2^14); S_cells = 10 (2^10 ≥ 1024):
+
+```isa object=rung4-mini
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"15c371b8e02e1bef6e9fa5220a8b128e1547fe2cf192e68a1045b3bebfeb0800","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":["i64"],"fault":4,"in":[3],"kind":"oracle","mem":[{"A":4,"W":8,"role":"in"}],"tgt":1,"tier":"q"}},"1":{"interface_hash":"72b9a373406320f3ff6cb69c9edce3a4d8e1ae7a7433d88286844ab68dc4db81","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[64,64,32],"result":8,"tier":"q"}},"2":{"interface_hash":"960dd380906f87a9154040ce51d207892a46574897dc749e72c31241bfe0517f","kind":"lproc","name":"L2","signature":{"abi":"0.8","kind":"lproc","params":[64,32,32,32],"result":64,"tier":"q"}},"3":{"interface_hash":"102ebe211e15cbb57f2ff0ce761197291d2e046c46e56d205939b4444660d3e6","kind":"lproc","name":"L3","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":8,"tier":"q"}},"4":{"interface_hash":"ae731d00bf437af71b684013b35ab29dcd6a4ee5ef8c974abe32d7116c89ba37","kind":"lproc","name":"L4","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":8,"tier":"q"}},"5":{"interface_hash":"cd1c59e462e3c7cc7c57d38574c61e1f063375ef748567a9213952963a69ee61","kind":"data","name":"G1","signature":{"abi":"0.8","kind":"data","size":16,"tier":"-"}}}
+
+section functions
+oracle @ref (x0:wire[3] in) (tgt:wire[1]) (fault:wire[4]) (m0:region[4,8] in) (a0:i64)
+regs { w0:reg[64], w2:reg[32], r:reg[8], c0:reg[8], t0:reg[8], c1:reg[8], t1:reg[1], t2:reg[1] }
+^entry():
+w0 = lift.addr @m0
+w2 = lift.zext.i32 x0
+r = lift.call @L1 (w0, a0, w2)
+c0 = lift.const.i8 1
+t0 = lift.lshr r c0
+c1 = lift.const.i8 0
+t1 = lift.icmp.ne t0 c1
+lift.faultif t1 4
+t2 = lift.trunc.i1 r
+lift.retval t2
+lproc @L1 (a0:reg[64], a1:reg[64], a2:reg[32]) (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], v1:reg[8], v2:reg[32], v3:reg[64], c1:reg[64], v4:reg[64], c2:reg[64], v5:reg[64], v6:reg[1], c3:reg[64], v7:reg[64], c4:reg[32], v8:reg[64], c5:reg[64], v9:reg[1], c6:reg[8], v10:reg[8], c7:reg[8], v11:reg[8], v12:reg[64], c8:reg[64], c9:reg[64], t0:reg[64], v13:reg[64], v14:reg[64], c10:reg[64], t1:reg[1], c11:reg[64], t2:reg[1], v15:reg[8] }
+^b0():
+c0 = lift.const.i64 1
+v0 = lift.add a0 c0
+lift.boundscheck v0 1
+v1 = lift.load.i8 v0
+v2 = lift.zext.i32 v1
+v3 = lift.zext.i64 v1
+c1 = lift.const.i64 1
+v4 = lift.shl v3 c1
+c2 = lift.const.i64 2
+v5 = lift.add v4 c2
+v6 = lift.icmp.ult a1 v5
+qbranch v6 ^b1 ^b2
+^b1():
+fault 4
+^b2():
+c3 = lift.const.i64 2
+v7 = lift.add a0 c3
+c4 = lift.const.i32 0
+v8 = lift.call @L2 (v7, c4, v2, a2)
+c5 = lift.const.i64 0
+v9 = lift.icmp.eq v8 c5
+qbranch v9 ^b3 ^b4
+^b3():
+c6 = lift.const.i8 0
+lift.ret c6
+^b4():
+lift.boundscheck a0 1
+v10 = lift.load.i8 a0
+c7 = lift.const.i8 1
+v11 = lift.and v10 c7
+v12 = lift.zext.i64 v11
+c8 = lift.addr @G1
+c9 = lift.const.i64 8
+t0 = lift.mul v12 c9
+v13 = lift.add c8 t0
+lift.boundscheck v13 8
+v14 = lift.load.i64 v13
+c10 = lift.const.i64 4198752
+t1 = lift.icmp.eq v14 c10
+qbranch t1 ^b4.q1c0 ^b4.s1
+^b4.s1():
+c11 = lift.const.i64 4198816
+t2 = lift.icmp.eq v14 c11
+qbranch t2 ^b4.q1c1 ^b4.q1d
+^b4.q1c0():
+v15 = lift.call @L3 (v8)
+qjump ^b4.q1r
+^b4.q1c1():
+v15 = lift.call @L4 (v8)
+qjump ^b4.q1r
+^b4.q1d():
+fault 4
+^b4.q1r():
+lift.ret v15
+lproc @L2 (a0:reg[64], a1:reg[32], a2:reg[32], a3:reg[32]) (r:reg[64]) () () ()
+regs { v0:reg[1], v1:reg[32], c0:reg[32], v2:reg[32], c1:reg[32], v3:reg[32], v4:reg[64], v5:reg[64], v6:reg[8], v7:reg[32], v8:reg[1], v9:reg[1], c2:reg[32], v10:reg[32], v11:reg[64], v12:reg[64], c3:reg[64] }
+^b0():
+v0 = lift.icmp.ule a2 a1
+qbranch v0 ^b5 ^b1
+^b1():
+v1 = lift.add a1 a2
+c0 = lift.const.i32 1
+v2 = lift.lshr v1 c0
+c1 = lift.const.i32 1
+v3 = lift.shl v2 c1
+v4 = lift.zext.i64 v3
+v5 = lift.add a0 v4
+lift.boundscheck v5 1
+v6 = lift.load.i8 v5
+v7 = lift.zext.i32 v6
+v8 = lift.icmp.eq v7 a3
+qbranch v8 ^b6 ^b2
+^b2():
+v9 = lift.icmp.ult v7 a3
+qbranch v9 ^b3 ^b4
+^b3():
+c2 = lift.const.i32 1
+v10 = lift.add v2 c2
+v11 = lift.call @L2 (a0, v10, a2, a3)
+lift.ret v11
+^b4():
+v12 = lift.call @L2 (a0, a1, v2, a3)
+lift.ret v12
+^b5():
+c3 = lift.const.i64 0
+lift.ret c3
+^b6():
+lift.ret v5
+lproc @L3 (a0:reg[64]) (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], v1:reg[8], c1:reg[8], v2:reg[8], c2:reg[8], v3:reg[1], v4:reg[8] }
+^b0():
+c0 = lift.const.i64 1
+v0 = lift.add a0 c0
+lift.boundscheck v0 1
+v1 = lift.load.i8 v0
+c1 = lift.const.i8 1
+v2 = lift.and v1 c1
+c2 = lift.const.i8 0
+v3 = lift.icmp.eq v2 c2
+v4 = lift.zext.i8 v3
+lift.ret v4
+lproc @L4 (a0:reg[64]) (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], v1:reg[8], c1:reg[8], v2:reg[1], v3:reg[8] }
+^b0():
+c0 = lift.const.i64 1
+v0 = lift.add a0 c0
+lift.boundscheck v0 1
+v1 = lift.load.i8 v0
+c1 = lift.const.i8 100
+v2 = lift.icmp.ule c1 v1
+v3 = lift.zext.i8 v2
+lift.ret v3
+
+section data
+G1 6011400000000000a011400000000000
+
+section layout
+{"A_tab":1,"H":14,"S_cells":10,"globals":{"G1":{"base":4096,"image":"G1","size":16}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{"m0":{"base":8192}}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=rung4-mini
+ref 15c371b8e02e1bef6e9fa5220a8b128e1547fe2cf192e68a1045b3bebfeb0800
+L1 72b9a373406320f3ff6cb69c9edce3a4d8e1ae7a7433d88286844ab68dc4db81
+L2 960dd380906f87a9154040ce51d207892a46574897dc749e72c31241bfe0517f
+L3 102ebe211e15cbb57f2ff0ce761197291d2e046c46e56d205939b4444660d3e6
+L4 ae731d00bf437af71b684013b35ab29dcd6a4ee5ef8c974abe32d7116c89ba37
+G1 cd1c59e462e3c7cc7c57d38574c61e1f063375ef748567a9213952963a69ee61
+```
+
+The image of the runs below has 7 records with keys 0, 1, 3, 4, 5, 6, 7 (key 2 is absent) and
+values 10, 101, 7, 200, 42, 99, 150; its byte 0 selects `pred_even` (value even) or `pred_big`
+(value ≥ 100):
+
+```text run=rung4-mini
+input=0 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=107
+input=1 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=0 steps=89
+input=2 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=0 steps=91
+input=3 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=0 steps=109
+input=4 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=71
+input=5 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=109
+input=6 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=0 steps=91
+input=7 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=111
+input=0 mem=m0:0107000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=0 steps=108
+input=1 mem=m0:0107000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=90
+input=4 mem=m0:0107000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=72
+input=7 mem=m0:0107000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=112
+input=0 mem=m0:0007000a0165030704c8052a06630796 arg=15 budget=400,0,512,8 -> code=4 payload=0 steps=16
+input=4 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=70,0,512,8 -> code=1 payload=0 steps=70
+input=4 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=71,0,512,8 -> code=0 payload=1 steps=71
+input=7 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,125,8 -> code=3 payload=0 steps=92
+input=7 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,126,8 -> code=0 payload=1 steps=111
+input=7 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,3 -> code=3 payload=0 steps=57
+```
+
+```text step-check=rung4-mini
+mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=120,0,512,8 -> status=ok cases=8 input_and_memory_bits=3 fixed_regions=m0
+```
+
+```text native=rung4-mini
+q(img with byte 0 = 0, 16, rowid) for rowid 0..7 = 1 0 0 0 1 1 0 1
+q(img with byte 0 = 1, 16, rowid) for rowid 0..7 = 0 1 0 0 1 0 0 1
+q(img, 15, 0) = __bennett_nz_fault(4)
+```
+
+*(non-normative)* Derivation of the 71 steps of rowid 4: `@ref` 3 rows to the call; `@L1`
+`^b0` 12 rows; `^b2` 4 rows to the call of `@L2`; `@L2` 15 rows (lo = 0, hi = 7, mid = 3: record
+3 at offset 2 + 6 has key 4, found at once); `@L1` 3 more rows of `^b2` and 14 of `^b4` to the
+`qbranch`; the leaf's `lift.call` (1), `@L3`'s 10 rows, `qjump` (1), `lift.ret` (1); `@ref`'s 7
+delivery rows: 3 + 12 + 4 + 15 + 3 + 14 + 1 + 10 + 1 + 1 + 7 = 71, and B = 70 is
+`FAULT_BUDGET_STEPS`. Rowid 7 recurses three times (mid 3, then 5 in [4, 7), then 6 in [6, 7)):
+the stack holds R_L1 = 3 + 35 = 38 cells, three R_L2 = 3 + 22 = 25 frames and R_L3 = 13, 126
+cells in all, and the depth reaches 4, so 125 cells or depth 3 give `FAULT_BUDGET_DEPTH`. The
+step check runs the reversible machine for B = 120 on all 8 rowids with this image fixed and
+reverses every step to the entry tuple. The certificate claim of NS §8 rung 4(a) is this check
+over all rows and all target values with the database fixed classically (§25.2 records how ISA
+§12.2 labels a domain with a fixed region).
+
+### 16.8 Example: a reduced rung 8 (ENTROPY binding)
+
+NS §8 rung 8: "the entropy device is replaced by a superposed register". A Monte Carlo trial
+reads one random byte through the entropy device and succeeds when it is below 77. The region
+function has no parameters; the descriptor has one ENTROPY binding of 8 wires (one byte,
+region[0,8]) and a 1-wire target. In L the effect marker is the runtimes function
+`__bennett_dev_entropy_read` over the device state (§11.3), shown here with the runtimes' code
+(a byte loop):
+
+```llvm lift=rung8-mini region=@mc desc=dev=ENTROPY(0);tgt=1
+@buf = internal global i8 0
+@__bennett_dev_entropy_base = internal global ptr null
+@__bennett_dev_entropy_size = internal global i64 0
+@__bennett_dev_entropy_pos = internal global i64 0
+
+define internal i8 @mc() {
+  call void @__bennett_dev_entropy_read(ptr @buf, i64 1)
+  %b = load i8, ptr @buf
+  %c = icmp ult i8 %b, 77
+  %r = zext i1 %c to i8
+  ret i8 %r
+}
+
+define internal void @__bennett_dev_entropy_read(ptr %p, i64 %len) {
+b0:
+  %size = load i64, ptr @__bennett_dev_entropy_size
+  %pos = load i64, ptr @__bennett_dev_entropy_pos
+  %left = sub i64 %size, %pos
+  %bad = icmp ugt i64 %len, %left
+  br i1 %bad, label %b1, label %b2
+
+b1:
+  call void @__bennett_nz_fault(i64 10)
+  unreachable
+
+b2:
+  %base = load ptr, ptr @__bennett_dev_entropy_base
+  %src = getelementptr i8, ptr %base, i64 %pos
+  br label %b3
+
+b3:
+  %i = phi i64 [ 0, %b2 ], [ %i2, %b4 ]
+  %done = icmp eq i64 %i, %len
+  br i1 %done, label %b5, label %b4
+
+b4:
+  %sp = getelementptr i8, ptr %src, i64 %i
+  %v = load i8, ptr %sp
+  %dp = getelementptr i8, ptr %p, i64 %i
+  store i8 %v, ptr %dp
+  %i2 = add i64 %i, 1
+  br label %b3
+
+b5:
+  %pos2 = add i64 %pos, %len
+  store i64 %pos2, ptr @__bennett_dev_entropy_pos
+  ret void
+}
+```
+
+```text linkmap=rung8-mini
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @buf -> G1 base=4096 size=1
+global @__bennett_dev_entropy_base -> G2 base=4104 size=8
+global @__bennett_dev_entropy_size -> G3 base=4112 size=8
+global @__bennett_dev_entropy_pos -> G4 base=4120 size=8
+budget-table: largest stack 512, largest heap 0
+```
+
+The layout: four globals and one region, P = 5, A_tab = 3; e0 at 8192; H = 14; S_cells = 9. The
+prologue stores the region base and its size 2^0 = 1 into the device state (G2, G3); the
+position G4 starts at its image 0:
+
+```isa object=rung8-mini
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"9513f98fe923cc96f338736dba1f2ce66150b0ad479b708a8339d648264cfa44","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[{"A":0,"W":8,"role":"in"}],"tgt":1,"tier":"q"}},"1":{"interface_hash":"9693c26332743afbabc98e27c52354a62c784770867c31704f859a862f608ce6","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":8,"tier":"q"}},"2":{"interface_hash":"430d12d36def3a829ce790134f9d0475cc2deaf5af6400cc2c3a9d7e4c52d7e0","kind":"lproc","name":"L2","signature":{"abi":"0.8","kind":"lproc","params":[64,64],"result":1,"tier":"q"}},"3":{"interface_hash":"b50c81820686bbeffee04bef717194a246cce129dfe075cd83f7236bf6b9e02d","kind":"data","name":"G1","signature":{"abi":"0.8","kind":"data","size":1,"tier":"-"}},"4":{"interface_hash":"152c175d592378069aaf67055e1d0ae1481a51cebce1e9f4f5d2b239ef7a253e","kind":"data","name":"G2","signature":{"abi":"0.8","kind":"data","size":8,"tier":"-"}},"5":{"interface_hash":"9d3aca04351c878d6876df5bd35776f57012ffe2e47eee3cec4c6105684a9550","kind":"data","name":"G3","signature":{"abi":"0.8","kind":"data","size":8,"tier":"-"}},"6":{"interface_hash":"3879e146fc0259de6e55b6419ae04d56e91a94d01e7ac18d36b9aee8bf2ecbe5","kind":"data","name":"G4","signature":{"abi":"0.8","kind":"data","size":8,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[1]) (fault:wire[4]) (e0:region[0,8] in) ()
+regs { d0:reg[64], d1:reg[64], d2:reg[64], d3:reg[64], r:reg[8], c0:reg[8], t0:reg[8], c1:reg[8], t1:reg[1], t2:reg[1] }
+^entry():
+d0 = lift.addr @e0
+d1 = lift.addr @G2
+lift.boundscheck d1 8
+lift.store.i64 d1 d0
+d2 = lift.const.i64 1
+d3 = lift.addr @G3
+lift.boundscheck d3 8
+lift.store.i64 d3 d2
+r = lift.call @L1 ()
+c0 = lift.const.i8 1
+t0 = lift.lshr r c0
+c1 = lift.const.i8 0
+t1 = lift.icmp.ne t0 c1
+lift.faultif t1 4
+t2 = lift.trunc.i1 r
+lift.retval t2
+lproc @L1 () (r:reg[8]) () () ()
+regs { c0:reg[64], c1:reg[64], t0:reg[1], c2:reg[64], v0:reg[8], c3:reg[8], v1:reg[1], v2:reg[8] }
+^b0():
+c0 = lift.addr @G1
+c1 = lift.const.i64 1
+t0 = lift.call @L2 (c0, c1)
+c2 = lift.addr @G1
+lift.boundscheck c2 1
+v0 = lift.load.i8 c2
+c3 = lift.const.i8 77
+v1 = lift.icmp.ult v0 c3
+v2 = lift.zext.i8 v1
+lift.ret v2
+lproc @L2 (a0:reg[64], a1:reg[64]) (r:reg[1]) () () ()
+regs { c0:reg[64], v0:reg[64], c1:reg[64], v1:reg[64], v2:reg[64], v3:reg[1], c2:reg[64], v4:reg[64], v5:reg[64], c3:reg[64], v6:reg[64], v7:reg[1], v8:reg[64], v9:reg[8], v10:reg[64], c4:reg[64], v11:reg[64], v12:reg[64], c5:reg[64] }
+^b0():
+c0 = lift.addr @G3
+lift.boundscheck c0 8
+v0 = lift.load.i64 c0
+c1 = lift.addr @G4
+lift.boundscheck c1 8
+v1 = lift.load.i64 c1
+v2 = lift.sub v0 v1
+v3 = lift.icmp.ult v2 a1
+qbranch v3 ^b1 ^b2
+^b1():
+fault 10
+^b2():
+c2 = lift.addr @G2
+lift.boundscheck c2 8
+v4 = lift.load.i64 c2
+v5 = lift.add v4 v1
+c3 = lift.const.i64 0
+(v6) = lift.parmov (c3)
+qjump ^b3
+^b3():
+v7 = lift.icmp.eq v6 a1
+qbranch v7 ^b5 ^b4
+^b4():
+v8 = lift.add v5 v6
+lift.boundscheck v8 1
+v9 = lift.load.i8 v8
+v10 = lift.add a0 v6
+lift.boundscheck v10 1
+lift.store.i8 v10 v9
+c4 = lift.const.i64 1
+v11 = lift.add v6 c4
+(v6) = lift.parmov (v11)
+qjump ^b3
+^b5():
+v12 = lift.add v1 a1
+c5 = lift.addr @G4
+lift.boundscheck c5 8
+lift.store.i64 c5 v12
+lift.ret r
+
+section data
+G1 00
+G2 0000000000000000
+G3 0000000000000000
+G4 0000000000000000
+
+section layout
+{"A_tab":3,"H":14,"S_cells":9,"globals":{"G1":{"base":4096,"image":"G1","size":1},"G2":{"base":4104,"image":"G2","size":8},"G3":{"base":4112,"image":"G3","size":8},"G4":{"base":4120,"image":"G4","size":8}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{"e0":{"base":8192}}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=rung8-mini
+input= mem=e0:00 budget=100,0,512,4 -> code=0 payload=1 steps=61
+input= mem=e0:4c budget=100,0,512,4 -> code=0 payload=1 steps=61
+input= mem=e0:4d budget=100,0,512,4 -> code=0 payload=0 steps=61
+input= mem=e0:ff budget=100,0,512,4 -> code=0 payload=0 steps=61
+```
+
+```text step-check=rung8-mini
+budget=100,0,512,4 -> status=ok cases=256 input_and_memory_bits=8
+```
+
+*(non-normative)* 0x4c = 76 < 77 and 0x4d = 77 is not, so the payload is 1 on exactly 77 of the
+256 entropy values (checked by running all 256): amplitude estimation on this oracle estimates
+77/256. The step check enumerates the superposed entropy byte itself.
+
+### 16.9 Example: rung 2 (heap, phis, a loop, `free`)
+
+A linked list of n nodes built with `malloc` (the runtimes allocator over `lift.alloc`, shown with
+its code), summed and freed. n comes from a 2-wire `IN` register zero-extended to `i8`:
+
+```llvm lift=listsum region=@listsum desc=IN(2,zext);tgt=8
+define ptr @malloc(i64 %n) {
+  %p = call ptr @__bennett_nz_alloc(i64 %n)
+  ret ptr %p
+}
+
+define void @free(ptr %p) {
+  %z = icmp eq ptr %p, null
+  br i1 %z, label %out, label %rel
+
+rel:
+  call void @__bennett_nz_free(ptr %p)
+  br label %out
+
+out:
+  ret void
+}
+
+define internal i8 @listsum(i8 %n) {
+b0:
+  %z = icmp eq i8 %n, 0
+  br i1 %z, label %b3, label %b1
+
+b1:
+  %i = phi i8 [ 0, %b0 ], [ %i2, %b1 ]
+  %head = phi ptr [ null, %b0 ], [ %node, %b1 ]
+  %node = call ptr @malloc(i64 16)
+  store i8 %i, ptr %node
+  %np = getelementptr i8, ptr %node, i64 8
+  store ptr %head, ptr %np
+  %i2 = add i8 %i, 1
+  %more = icmp ult i8 %i2, %n
+  br i1 %more, label %b1, label %b2
+
+b2:
+  %p = phi ptr [ %node, %b1 ], [ %next, %b2 ]
+  %s = phi i8 [ 0, %b1 ], [ %s2, %b2 ]
+  %v = load i8, ptr %p
+  %s2 = add i8 %s, %v
+  %nextp = getelementptr i8, ptr %p, i64 8
+  %next = load ptr, ptr %nextp
+  call void @free(ptr %p)
+  %end = icmp eq ptr %next, null
+  br i1 %end, label %b4, label %b2
+
+b3:
+  ret i8 0
+
+b4:
+  ret i8 %s2
+}
+```
+
+```text linkmap=listsum
+null_size=4096 heap_base=4096 heap_limit_max=64 globals=none budget-table: largest stack 512, largest heap 64
+```
+
+A_tab = 6 (2^6 ≥ 0 + 64), H = 13 (4096 + 64 ≤ 2^13), S_cells = 9:
+
+```isa object=listsum
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"066b70a9674347f05fd4d6e727760e63fd94aa0e52ac5b457f5ea27597856a35","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[2],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"5240453f456b06a3dad9264c52ccdb442072398e4f48dd13ffdf9198eff14ef0","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[8],"result":8,"tier":"q"}},"2":{"interface_hash":"46b439e82f9ccea0da6ae6039e312761f884af01c09b902df20fb995f33e4c4e","kind":"lproc","name":"L2","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":64,"tier":"q"}},"3":{"interface_hash":"0a525e87fd5d98e7137d23335c09d9a5a9fcf52047743ca3e0c08bf6af7ddb72","kind":"lproc","name":"L3","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":1,"tier":"q"}}}
+
+section functions
+oracle @ref (x0:wire[2] in) (tgt:wire[8]) (fault:wire[4]) () ()
+regs { w0:reg[8], r:reg[8] }
+^entry():
+w0 = lift.zext.i8 x0
+r = lift.call @L1 (w0)
+lift.retval r
+lproc @L1 (a0:reg[8]) (r:reg[8]) () () ()
+regs { c0:reg[8], v0:reg[1], c1:reg[8], c2:reg[64], v1:reg[8], v2:reg[64], c3:reg[64], v3:reg[64], c4:reg[64], v4:reg[64], c5:reg[8], v5:reg[8], v6:reg[1], c6:reg[8], v7:reg[64], v8:reg[8], v9:reg[8], v10:reg[8], c7:reg[64], v11:reg[64], v12:reg[64], t0:reg[1], c8:reg[64], v13:reg[1], c9:reg[8] }
+^b0():
+c0 = lift.const.i8 0
+v0 = lift.icmp.eq a0 c0
+qbranch v0 ^b3 ^b0.e1
+^b0.e1():
+c1 = lift.const.i8 0
+c2 = lift.const.i64 0
+(v1, v2) = lift.parmov (c1, c2)
+qjump ^b1
+^b1():
+c3 = lift.const.i64 16
+v3 = lift.call @L2 (c3)
+lift.boundscheck v3 1
+lift.store.i8 v3 v1
+c4 = lift.const.i64 8
+v4 = lift.add v3 c4
+lift.boundscheck v4 8
+lift.store.i64 v4 v2
+c5 = lift.const.i8 1
+v5 = lift.add v1 c5
+v6 = lift.icmp.ult v5 a0
+qbranch v6 ^b1.e1 ^b1.e2
+^b1.e1():
+(v1, v2) = lift.parmov (v5, v3)
+qjump ^b1
+^b1.e2():
+c6 = lift.const.i8 0
+(v7, v8) = lift.parmov (v3, c6)
+qjump ^b2
+^b2():
+lift.boundscheck v7 1
+v9 = lift.load.i8 v7
+v10 = lift.add v8 v9
+c7 = lift.const.i64 8
+v11 = lift.add v7 c7
+lift.boundscheck v11 8
+v12 = lift.load.i64 v11
+t0 = lift.call @L3 (v7)
+c8 = lift.const.i64 0
+v13 = lift.icmp.eq v12 c8
+qbranch v13 ^b4 ^b2.e2
+^b2.e2():
+(v7, v8) = lift.parmov (v12, v10)
+qjump ^b2
+^b3():
+c9 = lift.const.i8 0
+lift.ret c9
+^b4():
+lift.ret v10
+lproc @L2 (a0:reg[64]) (r:reg[64]) () () ()
+regs { v0:reg[64] }
+^b0():
+v0 = lift.alloc a0
+lift.ret v0
+lproc @L3 (a0:reg[64]) (r:reg[1]) () () ()
+regs { c0:reg[64], v0:reg[1] }
+^b0():
+c0 = lift.const.i64 0
+v0 = lift.icmp.eq a0 c0
+qbranch v0 ^b2 ^b1
+^b1():
+lift.free a0
+qjump ^b2
+^b2():
+lift.ret r
+
+section layout
+{"A_tab":6,"H":13,"S_cells":9,"globals":{},"heap_base":4096,"heap_limit_max":64,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=listsum
+input=0 budget=1000,64,512,4 -> code=0 payload=0 steps=8
+input=1 budget=1000,64,512,4 -> code=0 payload=0 steps=45
+input=2 budget=1000,64,512,4 -> code=0 payload=1 steps=80
+input=3 budget=1000,64,512,4 -> code=0 payload=3 steps=115
+input=2 budget=1000,32,512,4 -> code=0 payload=1 steps=80
+input=3 budget=1000,32,512,4 -> code=2 payload=0 steps=44
+```
+
+```text step-check=listsum
+budget=200,64,512,4 -> status=ok cases=4 input_and_memory_bits=2
+```
+
+*(non-normative)* The payload is 0 + 1 + … + (n − 1). n = 3 allocates 3 × 16 bytes: with a heap
+budget of 32 the third `lift.alloc` (`heap_used` 32 + 16 > 32) is `FAULT_BUDGET_HEAP` (2). The 45
+steps of n = 1: `@ref` 2 rows to the call; `^b0` 3; `^b0.e1` 4; `^b1` 14 (including `@L2`'s 2);
+`^b1.e2` 3; `^b2` 17 (including `@L3`'s 6); `^b4` 1; `lift.retval` 1.
 
 <!-- APPEND -->
