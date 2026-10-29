@@ -145,3 +145,21 @@ relative to the editor's report); 35 coverage obligations remain explicitly
 missing in Appendix B. They cannot be removed or made green by weakening P-1.
 Next: independent boundary/state adapters; then inspect the published interpreter
 command contracts and wire TDL/CC/R. No spec, docs, worklog or ISA edits.
+
+## Resume milestone 7 — executable boundary and CC adapters
+
+Added packed sub-byte vector loads, partial top-limb memory/arithmetic and wide
+sign extension, and GC GEP provenance queries. New boundary regression was red
+before these changes. Five state witnesses now execute native generated LLVM
+and/or recogniser/budget obligations: normalisation-boundaries, fcmp-abi,
+fp-sign-carrier, inplace-bound, r-fault-code. clang 18/23 observations are compared
+with stated vectors, including a wrong-expectation mutation. 17 regressions pass.
+
+Read dependency README and commit log after core adapters: run-cc and reverse
+landed as bc63483/d987500; README Commands lags, while executable --help documents
+them. Command discovery now checks both. Rebuilt original interpreter offline as
+requested and refreshed the isolated snapshot. CC fixtures were red on invented
+addr/gep.i8 pseudo-ops; replaced with ISA pointer conversion/add. **cc-run 8/8**
+now passes, including console tape, host transcript, native statuses and reversal.
+run-action/run-program remain absent from --help at this milestone. TDL/state
+adapters continue; no placeholder result is treated as an execution.

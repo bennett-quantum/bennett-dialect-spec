@@ -166,7 +166,7 @@ class Interpreter:
     def call(self, verb, *args):
         self.build()
         readme = (ISA_DIR / 'source' / 'README.md').read_text()
-        if verb in ('run-cc', 'reverse', 'run-action', 'run-program') and not re.search(r'`' + verb + r'\s', readme):
+        if verb in ('run-cc', 'reverse', 'run-action', 'run-program') and not re.search(r'(?:`|bennett-isa-ref )' + verb + r'\s', readme+'\n'+command([self.exe,'--help'])):
             raise Unavailable(verb, shlex.join(['bennett-isa-ref', verb, *map(str, args)]), CLI_BEAD)
         output = command([self.exe, verb, *args], timeout=180)
         try:
@@ -636,6 +636,8 @@ def action_object(isa,path,name,widths,rows):
 
 def state_check(runner,block):
     a=block['attrs'];ident=a['state'];at=int(a['at'])
+    from dialect_state import NATIVE_STATES, check_native_state
+    if ident in NATIVE_STATES:return check_native_state(runner,block)
     if 'input' not in a:
         raise Unavailable('TDL state execution',f'bennett-isa-ref run-action {runner.tmp / (ident+".bisa")} {ident} --mut <TDL-registers> --mem <coherent-arena>',CLI_BEAD)
     eb=runner.block('events',ident);lines=d.collapse(eb['body'])[:at];widths=[];rows=[]

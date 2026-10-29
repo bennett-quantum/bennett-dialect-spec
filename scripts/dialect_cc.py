@@ -11,6 +11,11 @@ import dialect_check as d
 
 
 def emit(runner,path,functions,signatures,data=None,devices=None):
+    # ISA CC has pointer conversions and integer add, no gep/addr pseudo-op.
+    def gep(m):
+        dst,base,off=m.groups()
+        return f'{dst}.base = ptrtoint.i64 {base}\n{dst}.address = add {dst}.base {off}\n{dst} = inttoptr {dst}.address'
+    functions=[re.sub(r'^(\w+) = gep.i8 (\w+) (\w+)$',gep,f,flags=re.M) for f in functions]
     symbols={str(i):{'interface_hash':'0'*64,'kind':s['kind'],'name':n,'signature':s} for i,(n,s) in enumerate(signatures.items())}
     data=data or {}
     for name,image in data.items():symbols[str(len(symbols))]={'interface_hash':'0'*64,'kind':'data','name':name,'signature':{'abi':'0.8','kind':'data','size':len(image),'tier':'-'}}
@@ -41,7 +46,7 @@ def fixture(runner,ident):
         image=re.sub(r'\\([0-9A-Fa-f]{2})',lambda m:chr(int(m[1],16)),msg[2]).encode('latin1')
         data['msg']=image;tier='r' if ident.endswith('-r') else 'cc';entry='main' if tier=='r' else 'report'
         sigs[entry]=signature([],['i32'] if tier=='r' else [],tier)
-        rows=[f'fn {tier} @{entry} () '+('(r:i32)' if tier=='r' else '()')+' () () ()','^entry():','p = addr @msg',f'len = const.i64 {len(image)}']
+        rows=[f'fn {tier} @{entry} () '+('(r:i32)' if tier=='r' else '()')+' () () ()','^entry():','address = const.i64 4096','p = inttoptr address',f'len = const.i64 {len(image)}']
         if tier=='r':
             rows+=['effect console.write p len','r = const.i32 0','ret r'];devices={'models':{'console':{'version':'0.8'}},'services':{}}
         else:
@@ -173,6 +178,12 @@ def check(runner,block,verb):
         # JSON contract is checked strictly; unknown/new schemas fail with values.
         observed=got.get('results');equal(ident,'§18.6 results',[{'type':'i'+w,'value':v} for w,v in expected],observed)
         equal(ident,'§18.6 faults',[],got.get('faults'))
+        if 'hostcall:' in block['body']:
+            m=re.search(r'hostcall: service=(\S+) payload=([0-9a-f]+) reply=empty',block['body'])
+            requests=got.get('host_requests')
+            equal(ident,'§11.4 host transcript',[{'service':m[1],'payload':m[2],'reply':''}],
+                  [{k:x[k] for k in ('service','payload','reply')} for x in requests])
         if 'tape:' in block['body']:
             tape=got.get('tape');want=re.search(r'bytes=([a-f0-9]+)',block['body'])[1]
             if not tape or tape[0].get('bytes')!=want:raise d.Fail(f'{ident} [§11.2 tape] expected bytes={want}; actual={tape!r}')
+

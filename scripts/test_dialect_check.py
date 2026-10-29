@@ -113,6 +113,41 @@ class ContractTests(unittest.TestCase):
             got=map_object(runner,self.block('lift','fp-aggregate'))
             self.assertEqual(got,self.block('object','fp-aggregate')['body'])
 
+    def test_packed_partial_and_gc_adapters(self):
+        cases=[
+            'define i1 @f(ptr %p) {\n %v = load <8 x i1>, ptr %p\n %r = extractelement <8 x i1> %v, i64 7\n ret i1 %r\n}\n',
+            'define void @f(ptr %p, ptr %q) {\n %v = load i129, ptr %p\n %r = add i129 %v, 1\n store i129 %r, ptr %q\n ret void\n}\n',
+            'define void @f(ptr %p, ptr %q) {\n %v = load i129, ptr %p\n %r = sext i129 %v to i256\n store i256 %r, ptr %q\n ret void\n}\n',
+            'declare ptr @llvm.experimental.gc.get.pointer.base.p0.p0(ptr)\ndeclare i64 @llvm.experimental.gc.get.pointer.offset.p0.i64(ptr)\ndefine i64 @f(ptr %b) {\n %p = getelementptr i8, ptr %b, i64 8\n %r = call i64 @llvm.experimental.gc.get.pointer.offset.p0.i64(ptr %p)\n ret i64 %r\n}\n']
+        for body in cases:
+            with self.subTest(body=body):
+                got=v.normalise(body)
+                self.assertEqual(v.validate(got),'accept')
+                self.assertNotIn('load i1,',got)
+                self.assertNotIn('call i64 @llvm.experimental.gc.',got)
+
+    def test_boundary_state_execution(self):
+        from dialect_state import check_native_state
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'state'})
+            for name in ('normalisation-boundaries','fcmp-abi','fp-sign-carrier','inplace-bound','r-fault-code'):
+                with self.subTest(example=name):
+                    b=self.block('state',name)
+                    check_native_state(runner,b)
+                    if name=='fcmp-abi':
+                        bad=dict(b,body=b['body'].replace(',9)=1',',9)=0'))
+                        with self.assertRaises(v.Mismatch):check_native_state(runner,bad)
+
+    def test_cc_fixtures_validate(self):
+        from dialect_cc import fixture
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'cc-run'})
+            for b in self.blocks:
+                if 'cc-run' in b['attrs']:
+                    with self.subTest(example=b['attrs']['cc-run']):
+                        path,_=fixture(runner,b['attrs']['cc-run'])
+                        runner.isa.call('check',path)
+
     def test_handle_containment_at_external_call(self):
         text = '''declare void @external(ptr)
 define void @top() {

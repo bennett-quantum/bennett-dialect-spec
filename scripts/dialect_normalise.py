@@ -125,9 +125,18 @@ class Normaliser:
         def go(f,i,r):
             b=i.text.split(' = ',1)[-1]
             if i.op=='load' and re.search(r'<\d+ x ',b):
-                ty,_,ptr,*_=d.split_top(b[5:]);t=d.parse_type(ty)[0];n=t[1];e=d.tstr(t[2]);p=d.typed_val('ptr '+ptr) if False else d.typed_val(d.split_top(b[5:])[1])
+                ps=d.split_top(b[5:]);t=d.parse_type(ps[0])[0];n=t[1];e=d.tstr(t[2]);p=d.typed_val(ps[1])
                 al=re.search(r', align (\d+)',b);align=min(int(al[1]),d.talign(t[2])) if al else d.talign(t[2])
                 vals=[];out=[]
+                if t[2][0]=='int' and t[2][1]%8:
+                    ew=t[2][1];mw=((n*ew+7)//8)*8
+                    if mw>128:raise d.Fail('N21 packed load exceeds scalar carrier; needs chunk expansion')
+                    packed=f'%nz.packed.{r}';out.append(f'{packed} = load i{mw}, ptr {p}, align 1')
+                    for k in range(n):
+                        src=packed
+                        if k:src=f'%nz.shift{k}.{r}';out.append(f'{src} = lshr i{mw} {packed}, {k*ew}')
+                        v=f'%nz.l{k}.{r}';out.append(f'{v} = trunc i{mw} {src} to {e}');vals.append(v)
+                    self.lanes[i.res]=vals;return out
                 for k in range(n):
                     q=f'%nz.p{k}.{r}';v=f'%nz.l{k}.{r}';vals.append(v)
                     out += [f'{q} = getelementptr {e}, ptr {p}, i64 {k}',f'{v} = load {e}, ptr {q}, align {align}']
@@ -156,23 +165,46 @@ class Normaliser:
             m=re.search(r'\bi(\d+)\b',b)
             if not m or int(m[1])<=128:return
             w=int(m[1]);n=(w+63)//64
-            if w%64:raise d.Fail('N22 top partial limb not implemented')
+            widths=[64]*(n-1)+[w-64*(n-1)]
+            def parts(v):
+                if v in self.limbs:return self.limbs[v]
+                if re.fullmatch(r'-?\d+',v):
+                    return [str((int(v)>>(64*k))% (1<<lw)) for k,lw in enumerate(widths)]
+                raise d.Fail('N22 missing limb source '+v)
+            if i.op in ('sext','zext'):
+                src,dst=b[len(i.op):].rsplit(' to ',1);st,j=d.parse_type(src);sw=st[1];dw=int(dst.strip()[1:]);v=src[j:].strip()
+                source=parts(v);out=[];result=list(source);top=sw%64 or 64
+                if top<64:
+                    q=f'%nz.ext.{r}';out.append(f'{q} = {i.op} i{top} {source[-1]} to i64');result[-1]=q
+                fill='0'
+                if i.op=='sext':
+                    fill=f'%nz.sign.{r}';out.append(f'{fill} = ashr i64 {result[-1]}, 63')
+                result += [fill]*((dw+63)//64-len(result));self.limbs[i.res]=result
+                return out
             if i.op=='load':
                 p=d.typed_val(d.split_top(b[5:])[1]);al=re.search(r', align (\d+)',b);al=', align '+al[1] if al else ''
                 vals=[];out=[]
                 for k in range(n):
-                    q=f'%nz.p{k}.{r}';v=f'%nz.m{k}.{r}';vals.append(v);out += [f'{q} = getelementptr i64, ptr {p}, i64 {k}',f'{v} = load i64, ptr {q}{al}']
+                    q=f'%nz.p{k}.{r}';v=f'%nz.m{k}.{r}';vals.append(v);out.append(f'{q} = getelementptr i64, ptr {p}, i64 {k}')
+                    lw=widths[k];mw=(lw+7)//8*8
+                    if lw==mw:out.append(f'{v} = load i{lw}, ptr {q}{al}')
+                    else:out += [f'%nz.raw{k}.{r} = load i{mw}, ptr {q}{al}',f'{v} = trunc i{mw} %nz.raw{k}.{r} to i{lw}']
                 self.limbs[i.res]=vals;return out
             if i.op=='add':
-                a,bv=d.split_top(b.split(None,2)[2]);a=self.limbs[a];z=self.limbs[bv];out=[f'%nz.m0.{r} = add i64 {a[0]}, {z[0]}',f'%nz.c0.{r} = icmp ult i64 %nz.m0.{r}, {a[0]}']
+                a,bv=d.split_top(b.split(None,2)[2]);a=parts(a);z=parts(bv);out=[f'%nz.m0.{r} = add i64 {a[0]}, {z[0]}',f'%nz.c0.{r} = icmp ult i64 %nz.m0.{r}, {a[0]}']
                 for k in range(1,n):
-                    out += [f'%nz.t{k}.{r} = add i64 {a[k]}, {z[k]}',f'%nz.z{k}.{r} = zext i1 %nz.c{k-1}.{r} to i64',f'%nz.m{k}.{r} = add i64 %nz.t{k}.{r}, %nz.z{k}.{r}']
+                    lw=widths[k];carry=f'%nz.c{k-1}.{r}'
+                    out.append(f'%nz.t{k}.{r} = add i{lw} {a[k]}, {z[k]}')
+                    if lw>1:out.append(f'%nz.z{k}.{r} = zext i1 {carry} to i{lw}');carry=f'%nz.z{k}.{r}'
+                    out.append(f'%nz.m{k}.{r} = add i{lw} %nz.t{k}.{r}, {carry}')
                     if k<n-1:out += [f'%nz.u{k}.{r} = icmp ult i64 %nz.t{k}.{r}, {a[k]}',f'%nz.v{k}.{r} = icmp ult i64 %nz.m{k}.{r}, %nz.t{k}.{r}',f'%nz.c{k}.{r} = or i1 %nz.u{k}.{r}, %nz.v{k}.{r}']
                 self.limbs[i.res]=[f'%nz.m{k}.{r}' for k in range(n)];return out
             if i.op=='store':
                 ps=d.split_top(b[6:]);v=d.typed_val(ps[0]);p=d.typed_val(ps[1]);al=re.search(r', align (\d+)',b);al=', align '+al[1] if al else '';out=[]
-                for k,val in enumerate(self.limbs[v]):
-                    q=f'%nz.q{k}.{r}';out += [f'{q} = getelementptr i64, ptr {p}, i64 {k}',f'store i64 {val}, ptr {q}{al}']
+                for k,val in enumerate(parts(v)):
+                    lw=widths[k];mw=(lw+7)//8*8;q=f'%nz.q{k}.{r}';out.append(f'{q} = getelementptr i64, ptr {p}, i64 {k}')
+                    if lw!=mw:out.append(f'%nz.pad{k}.{r} = zext i{lw} {val} to i{mw}');val=f'%nz.pad{k}.{r}'
+                    out.append(f'store i{mw} {val}, ptr {q}{al}')
                 return out
             raise d.Fail('N22 unsupported wide operation '+i.op)
         self.rewrite(go)
@@ -224,6 +256,18 @@ class Normaliser:
             if re.match(r'@llvm\.(abs|ctlz|cttz)\.',cal):i.text=i.text.replace('i1 true','i1 false')
         self.rewrite(go)
 
+    def gc(self):
+        def go(f,i,r):
+            if i.op!='call' or '@llvm.experimental.gc.get.pointer.' not in i.text:return
+            c=d.parse_call(i);v=c['args'][0][2];defs={x.res:x for x in f.instrs() if x.res};off=0;seen=set()
+            while v in defs and defs[v].op=='getelementptr':
+                if v in seen:raise d.Fail('N27 cyclic GC provenance')
+                seen.add(v);ps=d.split_top(defs[v].text.split('getelementptr ',1)[1]);ty=self.typ(ps[0]);indices=[d.typed_val(x) for x in ps[2:]]
+                if not all(re.fullmatch(r'-?\d+',x) for x in indices):raise d.Fail('N27 dynamic GC provenance requires offset expression')
+                off+=d.gep_offset(ty,[int(x) for x in indices]);v=d.typed_val(ps[1])
+            self.replace(f,i.res,v if '.base.' in c['callee'] else str(off));return []
+        self.rewrite(go)
+
     def asm(self):
         def go(f,i,r):
             if i.op!='call' or ' asm ' not in i.text:return
@@ -273,7 +317,7 @@ class Normaliser:
 
     def run(self):
         self.basic();self.atomics();self.traps();self.shifts();self.fmuladd();self.vector();self.wide()
-        self.varargs();self.shadow();self.memory();self.intrinsics();self.eh();self.asm();self.fp()
+        self.varargs();self.shadow();self.memory();self.intrinsics();self.gc();self.eh();self.asm();self.fp()
         return self.result()
 
     def varargs(self):
