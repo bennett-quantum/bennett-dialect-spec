@@ -3474,6 +3474,153 @@ generic intrinsic is `trapped`.
 faults of the reference semantics (§17.5), the ISA's `lift.div` and CC division fault on them
 directly (ISA §4.1, §4.2), and the native comparison build traps (§17.7).
 
+
+Checked boundary witnesses for the previously unindexed normalisation rules. Results below
+are derived before execution; a missing transform remains a P-2 failure.
+
+**`n-lower-widenable`.** N0 replaces the widenable condition by true. The returned value is therefore true for every call.
+
+```llvm normalise-in=n-lower-widenable
+declare i1 @llvm.experimental.widenable.condition()
+define i1 @f() {
+entry:
+  %c = call i1 @llvm.experimental.widenable.condition()
+  ret i1 %c
+}
+```
+
+```llvm normalise-out=n-lower-widenable
+declare i1 @llvm.experimental.widenable.condition()
+define i1 @f() {
+entry:
+  ret i1 true
+}
+```
+
+**`n-defined-zero`.** N12 changes both zero-is-poison flags to false. At x=0 both counts are 8, so the sum is 16; at x=1 they are 7 and 0, so the sum is 7.
+
+```llvm normalise-in=n-defined-zero
+declare i8 @llvm.ctlz.i8(i8, i1 immarg)
+declare i8 @llvm.cttz.i8(i8, i1 immarg)
+define i8 @f(i8 %x) {
+entry:
+  %a = call i8 @llvm.ctlz.i8(i8 %x, i1 true)
+  %b = call i8 @llvm.cttz.i8(i8 %x, i1 true)
+  %r = add i8 %a, %b
+  ret i8 %r
+}
+```
+
+```llvm normalise-out=n-defined-zero
+declare i8 @llvm.ctlz.i8(i8, i1 immarg)
+declare i8 @llvm.cttz.i8(i8, i1 immarg)
+define i8 @f(i8 %x) {
+entry:
+  %a = call i8 @llvm.ctlz.i8(i8 %x, i1 false)
+  %b = call i8 @llvm.cttz.i8(i8 %x, i1 false)
+  %r = add i8 %a, %b
+  ret i8 %r
+}
+```
+
+**`n-dynamic-lane`.** N15 chooses zero when unsigned i >= 2; N21 selects lanes in order. Indices 0, 1, 2 and -1 therefore return 5, 9, 0 and 0. The scalar select chain retains the N15 guard.
+
+```llvm normalise-in=n-dynamic-lane
+define i8 @f(i32 %i) {
+entry:
+  %r = extractelement <2 x i8> <i8 5, i8 9>, i32 %i
+  ret i8 %r
+}
+```
+
+```llvm normalise-out=n-dynamic-lane
+define i8 @f(i32 %i) {
+entry:
+  %nz.c.r = icmp uge i32 %i, 2
+  %nz.k0.r = icmp eq i32 %i, 0
+  %nz.l0.r = select i1 %nz.k0.r, i8 5, i8 0
+  %nz.k1.r = icmp eq i32 %i, 1
+  %nz.e.r = select i1 %nz.k1.r, i8 9, i8 %nz.l0.r
+  %r = select i1 %nz.c.r, i8 0, i8 %nz.e.r
+  ret i8 %r
+}
+```
+
+**`n-byval-copy`.** N25 copies the one-byte argument into the caller frame before the call. N24 gives that slot offset 0 in a one-byte, align-1 frame. The callee writes 9 into the copy; the caller still loads the original byte (7 when p initially holds 7).
+
+```llvm normalise-in=n-byval-copy
+define internal void @change(ptr byval(i8) align 1 %p) {
+entry:
+  store i8 9, ptr %p, align 1
+  ret void
+}
+define i8 @f(ptr %p) {
+entry:
+  call void @change(ptr byval(i8) align 1 %p)
+  %r = load i8, ptr %p, align 1
+  ret i8 %r
+}
+```
+
+```llvm normalise-out=n-byval-copy
+define internal void @change(ptr %p) {
+entry:
+  store i8 9, ptr %p, align 1
+  ret void
+}
+define i8 @f(ptr %p) {
+entry:
+  %nz.fp.f = call ptr @__bennett_rt_ss_push(i64 1, i64 1)
+  %nz.bv0.f.0 = getelementptr i8, ptr %nz.fp.f, i64 0
+  call void @__bennett_rt_memmove(ptr %nz.bv0.f.0, ptr %p, i64 1)
+  call void @change(ptr %nz.bv0.f.0)
+  %r = load i8, ptr %p, align 1
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.f)
+  ret i8 %r
+}
+declare ptr @__bennett_rt_ss_push(i64, i64)
+declare void @__bennett_rt_ss_pop(ptr)
+declare void @__bennett_rt_memmove(ptr, ptr, i64)
+```
+
+**`n-rstep-return`.** With f selected as the R entry, its single return is counted. N34 marks it; it inserts no call. Budget 0 must fault 1 before returning; budget 1 permits return (subject to BLK-5 on ISA 0.8).
+
+```llvm normalise-in=n-rstep-return rmode=@f
+define i8 @f() {
+entry:
+  ret i8 7
+}
+```
+
+```llvm normalise-out=n-rstep-return
+define i8 @f() {
+entry:
+  ret i8 7, !bennett.rstep !0
+}
+!0 = !{}
+```
+
+**`n-platform-mmio`.** Under riscv64-bennett-virt, the function-entry poll precedes the volatile byte load. N35 routes it through the MMIO helper before N9 removes volatile; no raw access to the UART window remains. At UART address 0x10000000, the value comes from the model, not an allocation at that address.
+
+```llvm normalise-in=n-platform-mmio platform=riscv64-bennett-virt
+define i8 @f(ptr %p) {
+entry:
+  %v = load volatile i8, ptr %p, align 1
+  ret i8 %v
+}
+```
+
+```llvm normalise-out=n-platform-mmio
+define i8 @f(ptr %p) {
+entry:
+  call void @__bennett_rt_poll()
+  %v = call i8 @__bennett_rt_mmio_load_i8(ptr %p)
+  ret i8 %v
+}
+declare void @__bennett_rt_poll()
+declare i8 @__bennett_rt_mmio_load_i8(ptr)
+```
+
 ### 12.3 Fault replacement F(C)
 
 F(C): the instruction is replaced by `call void @__bennett_nz_fault(i64 C)` followed by
@@ -7851,6 +7998,13 @@ compute expected artefacts only (P-3).
 | `rung4-minidb`, `rung4-grover-tu` (+ `native=rung4-mini`) | §3.3, §8, §16.7 | frontend, recognise, native | clang 18/20/23; Python; clang native |
 | `sem2-ctrl`, `sem2-adj`, `sem2-compute` with `events=`, `state=` | §18.3, §18.4 | trace, run-action | trace runtime (ABI 0.2 needed for `adj` and `compute`); isa-ref `run-action` (requested) |
 | `version-flag` | §19.9 | parse, recognise | LLVM; Python |
+
+| `n-lower-widenable` | N0 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `n-defined-zero` | N12 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `n-dynamic-lane` | N15 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `n-byval-copy` | N25 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `n-rstep-return` | N34 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `n-platform-mmio` | N35 | parse, normalise | LLVM 18/20/23; Python normaliser |
 
 **Rule ids without an example yet** (the check fails on them, P-1, until examples land): N0, N12,
 N15, N25, N34, N35; V2–V16; PT12; the `OUT` binding's object (`oracle-wide-out` is recognised

@@ -225,3 +225,30 @@ arena base propagation, Q1 candidates and Q2 punctuation, and all-guest Sv39 wor
 - New ISA dependency b-dialect-spec-bz6: BLK-5/ISA-7 requires R fault C with exact record
   code, no later effects, preserved reversible prefix history; no ISA source edits.
 - No push. Only owned files committed; generated Beads export remains uncommitted.
+
+## Freeze-gate coverage follow-up (2026-10-29)
+
+Read CLAUDE.md in full, both task beads, checker PROGRESS/LAST-RUN and questions,
+this progress file, README and the round-1 response. Checker 56fe08c is read-only.
+Example additions do not change semantics; README requires bumps for semantic
+changes, so version remains 0.2.1. ISA 0.9 draft 61550b4 is reference-only.
+
+### Round-1 fixes table additions
+
+| Finding | Change | Verification |
+|---|---|---|
+| P-1 / b-dialect-spec-1jb: N0/N12/N15/N25/N34/N35 | Six hand-derived normalisation pairs and Appendix B rows; no rule narrowed | N12 passes; five missing transforms fail loudly |
+
+### Verification table
+
+| Group | Gate | Result |
+|---|---|---|
+| normalisation omissions | whole direct gate, headless, repository TMPDIR | 2043 pass / 34 fail / 1 blocked (2078); parse 429/429; normalise 19/24 |
+
+Normalisation report: `scripts/.tmp/coverage-normalisation.json`. Coverage 96/125
+is index discovery only, not successful execution: the six added witnesses remove six
+missing-index rows, but five transforms remain red. N0 leaves widenable.condition;
+N15 raises “dynamic extract needs select chain”; N25 leaves byval and omits copy;
+N34 emits no R marks (rmode attribute ignored); N35 drops volatile without MMIO
+routing/poll (platform attribute ignored). These are checker limitations, not
+permissions to alter the normative output. N12 passes on all three LLVM majors.

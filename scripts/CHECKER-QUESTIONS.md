@@ -89,3 +89,11 @@ the checker-owned old predicate seed; no claim is made that the old seed passes.
 Final repeat: full gate 1939/2029 (90 failed/blocked); selected
 parse/header/check/hash/run-oracle/xrefs gate 1702/1702. Detailed family counts and
 independent validation are in round-1/response.md. Follow-up b-dialect-spec-ofu.
+
+## Q9 — freeze coverage: normalisation witnesses (editor)
+
+New pairs n-lower-widenable, n-defined-zero, n-dynamic-lane, n-byval-copy,
+n-rstep-return (R entry f), n-platform-mmio (riscv64-bennett-virt). N12 passes.
+N0/N15/N25/N34/N35 expose absent transforms; rmode/platform context must be
+consumed for the last two. Keep expected outputs and P-1 intact. Whole gate
+2043/2078 passes, 34 failures and one ISA-7 blocked state. Tracked on 1jb.
