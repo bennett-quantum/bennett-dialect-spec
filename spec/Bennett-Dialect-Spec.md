@@ -145,7 +145,6 @@ bd `b-isa-spec-xam`).
 | `text hash=ID` | the interface hashes of the object's symbols (`bennett-isa-ref hash`) | `hash` |
 | `text run=ID` | lines `input=… [mem=name:hex] [arg=…] budget=s,h,st,d -> code=C payload=P steps=N`; each line is the output of `bennett-isa-ref run-oracle <object> ref` with those options | `run-oracle` |
 | `text step-check=ID` | a prefix-reversal claim; the output of `bennett-isa-ref step-check <object> ref --exhaustive` with the stated options | `step-check` |
-| `text inplace=ID` | an in-place verification verdict (§8.7) | `run-oracle` |
 | `llvm semantics=ID corpus=NAME` | a marker program; byte-equal to `corpus/legality/cases/NAME.ll`; run through the trace runtime and the reference semantics (§18) | `trace`, `run-action` |
 | `text events=ID` / `text state=ID` | the event list (§18.2) of a marker program on an input, and the state vector before event `at` | `trace`, `run-action` |
 | `text tdl=ID` | the TDL partition (§10, TDL-3) and generated event list of an action region invocation | `tdl`, `run-action` |
@@ -175,7 +174,7 @@ A module's **verdict** is one of:
   executions that reach the point), MUST emit the blocker report of §25.1 and MUST exit with the
   distinct status 3. The code is the first blocker report in processing order.
 
-A module that would be rejected and blocked is rejected. Warnings (`BD-W-*`, §22.3) never change
+A module that would be rejected and blocked is rejected. Warnings (`BD-W-*`, §22.4) never change
 a verdict.
 
 ## 2. Terminology
@@ -189,8 +188,9 @@ a verdict.
   bitcode (§3.1).
 - **Handle**: the `ptr` value a `__bennett_qalloc` or `__bennett_qborrow` call returns; it
   denotes a **register** of n qubits, the ISA's `qreg[n]` (ISA §3.3). Qubit `i` of a handle is a
-  **wire**. **Register id**: the 64-bit value that represents a handle in memory and at the
-  host–device boundary (§6.1).
+  **wire**. **Register tag**: the opaque value (nonzero, below 2^pw) that represents a handle in
+  device memory and in integers; at the host–device boundary a handle is an ISA launch register
+  id (§6.1).
 - **Root**: an allocation of a register, identified by its allocation site and dynamic instance
   index (§6.5). **Handle-derived**: a value whose provenance (§6.2) contains a root.
 - **Region function**: a function a region-entry marker receives. **Region operand**: the marker
@@ -383,10 +383,12 @@ The header also defines:
 
 - `typedef struct bennett_q_opaque *bennett_q;` and `typedef void (*bennett_region)(void *env);`;
 - `bennett_budget` (§9.1), `bennett_bind`, `bennett_devbind` and `bennett_oracle_desc` (§8.1),
-  and the macro `BENNETT_ORACLE_DESC(NP, ND)` that declares a descriptor with NP parameter and
-  ND device bindings;
-- `bennett_oracle_desc_init(d, np, nd, tgt, fault)`, a macro that sets the header fields by
-  plain stores, so that producers build descriptors by constant stores (§8.1);
+  and the macros `BENNETT_ORACLE_DESC(NP, ND)`, `BENNETT_ORACLE_DESC_P(NP)` and
+  `BENNETT_ORACLE_DESC_D(ND)` that declare a descriptor with NP ≥ 1 parameter bindings and ND ≥ 1
+  device bindings, parameters only, or devices only;
+- `bennett_oracle_desc_init(d, np, nd, tgt, fault)` and `bennett_bind_set(b, kind, mode, q,
+  value, size)`, macros that set the fields by plain stores, so that producers build descriptors
+  by constant stores (§8.1);
 - the operation codes of §3.4 and the constants of §8 and §9.
 
 Clang lowers C `bool` to `zeroext i1`, which §3.6 admits. The checker compiles the header with
@@ -437,8 +439,8 @@ Its value set VS(v) is computed by §5.3. The plugin compiles one alternative pe
   A run-time value outside the table traps (`T-OP`).
 - `cls`: VS(cls) when finite, else {0} ∪ every index of the class-name table. A value outside
   traps (`T-CLASS`).
-- `n`: VS(n) when finite (constants, `range` attributes and metadata, known bits, `select`,
-  `phi`, loads from constant tables, §5.3). A value 0 at run time traps (`T-SIZE`). When VS(n)
+- `n`: VS(n) when finite (constants, `range` attributes and metadata, masks, `select`, `phi`,
+  loads from constant tables, §5.3). A value 0 at run time traps (`T-SIZE`). When VS(n)
   is ⊤, ISA 0.8 has no register of run-time width: the verdict is `blocked:BD-B-ISA4` (BLK-1,
   §25.1) and the blocker report names the value.
 
@@ -1000,14 +1002,14 @@ AV(operand) lane by lane; ⊤ absorbs.
 | PT2 | `getelementptr T, ptr p, idx…` | for each (X, o) ∈ AV(p), indices in order: a constant index adds its byte offset under the datalayout (to an exact offset, or to r, lo and hi of a class); a non-constant index with element size s into an array type `[N x E]` that starts at byte offset b of the indexed position turns the offset into the class (b mod s)[b, b + N·s), and into (b mod s)[lo′, hi′) with the union of the extents if it is already a class with the same s; a non-constant index of the GEP's first (pointer) operand, or into a class with a different stride s′, gives (o mod gcd(s, s′)) over the whole object; a class with stride 1 is `*`; `*` stays `*` |
 | PT3 | `phi`, `select` (value operands), `freeze`, `bitcast`, `addrspacecast` | copies (union) |
 | PT4 | `ptrtoint`, `inttoptr`, `zext`/`sext`/`trunc` of a pointer-width integer to pointer width | copies |
-| PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | shifts each pointer atom's offset by each constant (classes and `*` stay); any other integer operation on a pointer atom gives (X, `*`) for each X; on `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; `and x, m` with m constant gives the submasks of m intersected with the operand's set when that is ⊤; `urem x, c` with c constant gives {0, …, c−1} when x is ⊤; a `range(lo, hi)` attribute or `!range` metadata (read before N3 removes it) restricts ⊤ to [lo, hi) |
+| PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | shifts each pointer atom's offset by each constant (classes and `*` stay); any other integer operation on a pointer atom gives (X, `*`) for each X; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a `range(lo, hi)` attribute or `!range` metadata (read before N3 removes it) restricts ⊤ to [lo, hi) |
 | PT6 | `load T, ptr p` | for each (X, o) ∈ AV(p): the union of AV(X, o′) over the slots o′ that overlap [o, o + size(T)); for a global X declared `constant`, the atoms of its initialiser at those offsets (`FN(F)` for `ptr @F`, `(G, c)` for a pointer into G, `INT(c)` for integers); for X = EXT, ⊤ |
 | PT7 | `store v, ptr p` | AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
 | PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when the offsets and len are constants and [s, s + 1) lies in the copied range, AV(Z, o_d + s − o_s) ⊇ AV(Y, s); else AV(Z, `*`) ⊇ AV(Y, s). Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
 | PT9 | direct call of G, or indirect call with candidate G (§14.2) | AV(parameter i of G) ⊇ AV(argument i); AV(result) ⊇ the union of AV over G's `ret` operands; `byval` arguments copy the pointee's slots into the callee's copy object |
 | PT10 | `insertelement`/`extractelement`/`shufflevector`/`insertvalue`/`extractvalue` | atoms move with constant lanes and index paths; a non-constant lane index moves the union of all lanes (a handle-table read, audit B-23) |
-| PT11 | a parameter of a function with a host caller, a device entry, or a function whose address host code uses | AV ⊇ {(EXT, `*`)} for `ptr` parameters, ⊤ for integer parameters, plus the atoms of the device-side arguments by PT9 |
-| PT12 | `qalloc`/`qborrow` call (§6.5); a call of a function with no definition that resolves to a host call (§4.5) or is trapped; an `atomicrmw`/`cmpxchg` (before N9) | AV ∋ ROOT(site); the result is ⊤ and every pointer argument's reachable slots get ⊤ (host calls are pointer-free, §11.4, so no pointer atoms escape into host code); rmw/cmpxchg are a load plus a store (PT6, PT7) |
+| PT11 | a parameter of a function with a host caller, a device entry, or a function whose address host code uses | AV ⊇ {(EXT, `*`)} for `ptr` parameters, ⊤ for integer parameters, plus the atoms of the device-side arguments by PT9; for a pointer parameter i of a device entry E, also the candidate atom ROOT(E, i) of §6.6 |
+| PT12 | a `qalloc`/`qborrow` call; a call of a function with no definition that resolves to a host call (§4.5) or is trapped; an `atomicrmw`/`cmpxchg` (before N9) | `qalloc`/`qborrow`: AV ∋ ROOT(site) (§6.5). An undefined callee: the result is ⊤ and every slot reachable from its pointer arguments gets ⊤. `atomicrmw`/`cmpxchg`: a load plus a store (PT6, PT7) |
 
 An `inttoptr` of a constant gives (EXT, `*`) and, for function-pointer purposes, ⊤: function
 addresses are symbolic `FN` atoms during the analysis, and their numeric values A(F) are fixed
@@ -1070,11 +1072,13 @@ and rejected this program).
 
 ### 6.1 Representation
 
-A handle is an ordinary `ptr` in address space 0. In memory, in integers and at the host–device
-boundary a handle is its **register id**: an opaque value below 2^pw that the device allocates
-(the ISA launch representation `bennett_qreg`, ISA §10; on a 32-bit target the device allocates
-ids below 2^32). Its bits are distinct from every other live handle, never equal 0, and MUST NOT
-influence any result other than through §6.3; the rules below make them unobservable. A handle
+A handle is an ordinary `ptr` in address space 0. In device memory and in integers a handle is
+its **register tag**: an opaque value below 2^pw that the plugin assigns to each root (§6.5),
+nonzero and distinct from the tag of every other live handle. ISA 0.8 has no instruction that
+reads a `qreg`'s launch id (BLK-1's `qreg.id` would add one), so tags are the plugin's. At the
+host–device boundary a handle is the ISA launch register id (`bennett_qreg`, ISA §10), which the
+launch binds to a `qreg` parameter or result (§6.6). Neither value may influence a result other
+than through §6.3; the rules below make them unobservable. A handle
 denotes a register of n wires, n the `qalloc` operand; wire i of handle h is written h.i.
 
 ### 6.2 Provenance (maintainer decision 2)
@@ -1107,7 +1111,7 @@ handle (a stale copy, a freed register) traps at the marker (`T-DEAD`, §18.3).
 
 `icmp eq` and `icmp ne` of a handle with `null`, or with another handle-derived value, compare
 **identity**: a live handle is never null, and two handles are equal iff they denote the same
-register. The result is not handle-derived. In CC it lowers to `icmp` on register ids. This
+register. The result is not handle-derived. In CC it lowers to `icmp` on register tags. This
 covers C `if (!q)` and Rust's `Option<Handle>` niche (audit D8). *(non-normative)* A comparison
 is a classical observation of identity, not of the register's content; ids are unique, so it
 equals the native comparison of the two handle values.
@@ -1121,10 +1125,10 @@ the analysis cannot see could read it:
 
 - `BD-E-HANDLE-ESCAPE`: a `ROOT` atom reaches a slot of `EXT`, an argument or a reachable slot of
   a call that resolves to a host call or is trapped (§4.5), or the return value of a function
-  whose callers are not all in the link. NS §3.1: "any handle use that survives into host native
+  whose callers are not all in the link, other than a device entry's `QREG` result (§6.6). NS §3.1: "any handle use that survives into host native
   code is rejected".
 
-H functions in the link that receive register ids through §6.6 are analysed like device code:
+H functions in the link that receive launch register ids through §6.6 are analysed like device code:
 they may copy, store, compare and pass them back to device entries (§6.2 items 2–4); any other
 use is `BD-E-HANDLE-USE`.
 
@@ -1144,14 +1148,16 @@ realises each allocation site s (a `qalloc` or `qborrow` call) in one of two way
   each root the plugin keeps one CC `qreg` variable, threaded like a direct handle through every
   CC variant that may use it; `qalloc` at s picks a free instance index at run time and executes
   `qreg.new cls n` into that variable (one variable per member of the width dispatch domain,
-  §3.4); the register id stored in memory is the id of that register. A marker operand whose
-  provenance holds several roots is dispatched by comparing its register id with the ids of the
-  live candidate roots (compare tree, §14.2).
+  §3.4); the value stored in memory is the root's register tag (§6.1). A marker operand whose
+  provenance holds several roots is dispatched by comparing its tag with the tags of the live
+  candidate roots (compare tree, §14.2). A direct handle that is converted to an integer
+  (`ptrtoint`, a store) gets a tag in the same way.
 
 **Reference instance bound** of a site s in function F with a static register file:
 
 1. s is **self-disjoint** iff the only memory its `ROOT(s)` atom reaches is allocas of F whose
-   address does not escape F, and every CFG path of F from s to a `ret`, to s again, or to a call
+   address does not escape F (it is not stored, returned, or passed to a call other than a marker
+   call, which includes the `env` of a region-entry marker), and every CFG path of F from s to a `ret`, to s again, or to a call
    whose callee may reach F through the call graph passes through a `qfree` whose operand's
    provenance is exactly {s}. Then N(s) = 1.
 2. Otherwise N(s) = E(s), the bound on executions of s per device-entry call: E(s) = TC(s) ×
@@ -1174,7 +1180,7 @@ A device entry's parameters and results of handle type bind to launch `QREG` arg
 results (ISA §10). A `ptr` parameter of a device entry is a **handle parameter** iff its
 candidate atom `ROOT(E, i)` (added by PT11 to every pointer parameter of every device entry)
 reaches a marker handle operand; otherwise the candidate atom is removed before §6.2 is checked.
-A handle parameter binds to `QREG`; host code may copy, store and compare register ids and pass
+A handle parameter binds to `QREG`; host code may copy, store and compare launch register ids and pass
 them back. Leak checking happens at program end and at `bennett_qreg_free`, not at each
 device-entry return, which gives the REPL's lexical lifetime (NS §5; audit B-30). *(non-normative)*
 A register returned to the host stays live across launches until the host frees it or a
@@ -1682,8 +1688,9 @@ Only the rules the north star requires:
   !"bennett.measure_in_unitary", !"defer"}` (NS §3.1: "or, when the front end asks for it,
   deferred by the deferred-measurement principle, which the certificate states"). Then a
   `measure(h, i)` inside a generation becomes a `qcopy` of `h.i` onto a fresh wire w (ISA §4.5),
-  the call's `i1` result is a Co value whose wire is w (§10, TDL-2 seed), and the wire is
-  released by the uncomputation of the region (it is history, TDL-7). The coverage report has a
+  the call's `i1` result is a Co value whose wire is w (§10, TDL-2 seed), and w is released by
+  `quncopy` after its last use while its window is open (ISA §4.5, §6.2), else it is retained
+  history (TDL-7). The coverage report has a
   `lowered` entry with source `dialect-0.2:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
@@ -2255,7 +2262,9 @@ This is rung 4 route A (SQLite §5.2(i)). Otherwise the plugin emits an **entry-
 2. **Register.** The CC tier builds a register of 8·2^A_s wires holding S with a **concat
    tree** of A_s − 3 static-width CC functions `B_j` (j = 4, …, A_s): `B_4(p)` executes
    `qreg.new any 128`, loads the 16 bytes at p as two `i64` values and makes the `oracle_call`
-   of the runtime oracle `@xor128` (§16.5) that XORs them into the register; `B_j(p)` (j > 4)
+   of the runtime oracle `@xor128` (§16.5) that XORs them into the register (with a token minted
+   at launch for budget (6, 0, 0, 0) and a fresh 4-wire fault register, which stays clean and is
+   freed); `B_j(p)` (j > 4)
    returns `qreg.concat B_{j−1}(p) B_{j−1}(p + 2^{j−1})`. Every type is static and the cost is
    2^(A_s−4) region calls. The register is bound as an extra `in` region `s0:region[A_s,8]`.
 3. **Replay.** The wrapper prologue (§16.2) calls the runtimes function
@@ -2289,26 +2298,29 @@ compute the same fault code, so code(F_B) is one function of the inputs.
 
 - **k = 1** (every output fits 128 bits in one register): the invocation is `oracle_call @W_0
   tk (ins..) tgt fault (mem..) (args..)`.
-- **k > 1**: the invocation is an `action_call` of the permutation action `@wide` generated per
-  shape, with `mut` = the k slice bundles and the fault register, `in` = the `ins` bundles,
-  `mem` = the regions and `args` = the classical arguments, whose body is, for j = k − 1, …, 1:
+- **k > 1** (the `wide` event, §18.2): the caller's tier issues, for j = k − 1, …, 1, with
+  slice j at bits [lo_j, lo_j + w_j) of output register o_j:
 
   ```
-  t_j = qalloc any w_j ; f_j = qalloc any 4
+  t_j = qreg.new any w_j ; f_j = qreg.new any 4
   oracle_call @W_j tk (ins..) t_j f_j (mem..) (args..)
-  qxor t_j slice_j
+  s_j = qreg.slice o_j lo_j w_j
+  action_call @xor<w_j> (s_j) (t_j) () ()
   oracle_call @W_j tk (ins..) t_j f_j (mem..) (args..)
-  qfree f_j ; qfree t_j
+  qreg.free f_j ; qreg.free t_j
   ```
 
-  followed by `oracle_call @W_0 tk (ins..) slice_0 fault (mem..) (args..)`.
+  followed by `s_0 = qreg.slice o_0 lo_0 w_0` and `oracle_call @W_0 tk (ins..) s_0 fault (mem..)
+  (args..)`. `@xor<w>` is the permutation action `(mut s:wire[w]) (in t:wire[w]) () ()` with body
+  `qxor t s`; each slice view is the operand of exactly one region call (ISA §3.3).
 
   Each copy-out pair computes slice j into fresh wires, XORs it into the target and uncomputes it
-  by the identical self-adjoint call, whose inputs no instruction in between modifies, so `t_j`
-  and `f_j` are clean (ISA §6.2, §6.4 realisation `reverse`); slice 0 and the fault code are
-  delivered by the last call. The action's effect is exactly NS's F_B with a wide payload:
-  slice_j ⊕= payload_j(F_B(x)) for every j and fault ⊕= code(F_B(x)). Cost: 2k − 1 oracle
-  calls (efficiency item G-15, §25.3).
+  by the identical self-adjoint call, whose inputs no call in between modifies, so `t_j` and `f_j`
+  are clean when freed (ISA §5.2 involution; the ISA §3.3 cleanliness check of `qreg.free`);
+  slice 0 and the fault code are delivered by the last call. The effect is exactly NS's F_B with a
+  wide payload: slice_j ⊕= payload_j(F_B(x)) for every j and fault ⊕= code(F_B(x)). Cost: 2k − 1
+  oracle calls (efficiency item G-15, §25.3). Under a `ctrl` every region call is `ctl`-prefixed
+  (§18.2).
 
 ### 8.7 In-place updates
 
@@ -2488,7 +2500,7 @@ define void @top(i1 %quantum_b, i64 %bval) {
 ```
 
 A 160-bit output (an `OUT` buffer of 20 bytes) has k = 2 slices, [0, 128) and [128, 160) of the
-`OUT` register, so the invocation is the `@wide` action with 2k − 1 = 3 oracle calls (§8.6):
+`OUT` register, so each invocation is the `wide` event with 2k − 1 = 3 oracle calls (§8.6):
 
 ```llvm example=oracle-wide-out verdict=accept candidates=fill20 shapes=1
 define internal void @fill20(ptr %out, i8 %x) {
@@ -2835,15 +2847,37 @@ define internal i8 @inc8(i8 %x) {
   ret i8 %r
 }
 
-define void @run(i64 %n) {
+define void @run() {
+entry:
   %d = alloca [64 x i8], align 8
   %b = alloca [40 x i8], align 8
+  %c = call ptr @__bennett_qalloc(i64 0, i64 64)
+  br label %coin
+
+coin:
+  %i = phi i64 [ 0, %entry ], [ %i2, %next ]
+  %acc = phi i64 [ 0, %entry ], [ %acc2, %next ]
+  call void @__bennett_gate(i32 2, ptr %c, i64 %i)
+  %m = call i1 @__bennett_measure(ptr %c, i64 %i)
+  %mz = zext i1 %m to i64
+  %sh = shl i64 %mz, %i
+  %acc2 = or i64 %acc, %sh
+  br i1 %m, label %reset, label %next
+
+reset:
+  call void @__bennett_gate(i32 1, ptr %c, i64 %i)
+  br label %next
+
+next:
+  %i2 = add i64 %i, 1
+  %more = icmp ult i64 %i2, 64
+  br i1 %more, label %coin, label %go
+
+go:
+  %steps = add i64 %acc2, 5
   %x = call ptr @__bennett_qalloc(i64 0, i64 8)
   %t = call ptr @__bennett_qalloc(i64 0, i64 8)
   %f = call ptr @__bennett_qalloc(i64 0, i64 4)
-  %m = call i1 @__bennett_measure(ptr %x, i64 0)
-  %extra = select i1 %m, i64 %n, i64 0
-  %steps = add i64 %extra, 5
   store i64 %steps, ptr %b, align 8
   %b1 = getelementptr i8, ptr %b, i64 8
   store <2 x i64> <i64 -1, i64 -1>, ptr %b1, align 8
@@ -2863,21 +2897,25 @@ define void @run(i64 %n) {
   %p0v = getelementptr i8, ptr %d, i64 48
   store <2 x i64> zeroinitializer, ptr %p0v, align 8
   call void @__bennett_oracle(ptr @inc8, ptr %b, ptr %d)
+  call void @__bennett_oracle(ptr @inc8, ptr %b, ptr %d)
   call void @__bennett_qfree(ptr %f)
   call void @__bennett_qfree(ptr %t)
   call void @__bennett_qfree(ptr %x)
+  call void @__bennett_qfree(ptr %c)
   ret void
 }
 ```
 
 ```text blocker=budget-device-computed
-BD-B-ISA1 @run call @__bennett_oracle(@inc8): budget field steps = 5 + select(measure, %n, 0) is computed on the device; ISA 0.8 mints tokens only at launch; BLK-2 (ISA-1) CC tk = budget.mint @region s h st d
+BD-B-ISA1 @run call @__bennett_oracle(@inc8): budget field steps = 5 + a 64-bit value assembled from 64 measurement outcomes (value set TOP); ISA 0.8 mints tokens only at launch; BLK-2 (ISA-1) CC tk = budget.mint @region s h st d
 ```
 
-*(non-normative)* In `budget-device-computed` the oracle's budget depends on a measurement
-outcome: NS §4.2 "run-time budgets come from the host or from measurement results". The value
-set of `%steps` is ⊤ (it contains `%n`), so it is neither static nor a bitwise copy of a launch
-argument.
+*(non-normative)* In `budget-device-computed` the oracle's budget depends on measurement outcomes:
+NS §4.2 "run-time budgets come from the host or from measurement results". `%acc2` is a loop phi
+over 64 measured bits, so its value set is ⊤ (it has 2^64 possible values, beyond K = 4096 atoms);
+it is neither static nor a bitwise copy of a launch argument, and no launch-time set of tokens
+covers it. Each wire of `%c` measured 1 is reset by an `x`, so `%c` is clean at its `qfree`
+(ISA §3.3).
 
 ## 10. Taint-driven lifting under control (tdl 0.2)
 
@@ -6006,7 +6044,7 @@ whole-program entry on the materialised module over a state Σ = (C, Q, H, G, K,
   the arena (TDL-4);
 - **Q**, the quantum state of the ISA formal model (ISA §14.2): a unit vector over the live wires
   in allocation order, including the arena's wires (TDL-4);
-- **H**, the handle table: for each register id, its wires, whether it is live, and the
+- **H**, the handle table: for each handle, its wires, whether it is live, and the
   generation it was allocated in, if any;
 - **G**, a stack of **recorders**, one per active generation (§18.4);
 - **K**, the coherence states of the object instances (TDL-2);
