@@ -41,7 +41,26 @@ def loop_facts(text, major=None):
     return facts
 
 
+def setjmp_reentry(f,site):
+    """Conservative §6.5 default: continuation can reach the allocation site."""
+    nodes={};succ={};labels={lab:(lab,0) for lab,_ in f.blocks};continuations=[];target=None
+    for lab,blk in f.blocks:
+        for k,ins in enumerate(blk):
+            node=(lab,k);nodes[node]=ins
+            succ[node]=[(lab,k+1)] if k+1<len(blk) else [labels[x] for x in re.findall(r'label %([-\w.$]+)',ins.text)]
+            if ins is site:target=node
+            if ins.op=='call' and re.search(r'@(?:setjmp|_setjmp|sigsetjmp|__sigsetjmp|__bennett_rt_setjmp)\(',ins.text):continuations.extend(succ[node])
+    stack=continuations;seen=set()
+    while stack:
+        node=stack.pop()
+        if node==target:return True
+        if node in seen:continue
+        seen.add(node);stack.extend(succ[node])
+    return False
+
+
 def self_disjoint(a,f,site):
+    if setjmp_reentry(f,site):return False
     root=f.name+site.res
     allocas={f.name+i.res for i in f.instrs() if i.op=='alloca'}
     objects={o for (o,_,_),ats in a.memory.items() if ('R',root) in ats}
@@ -92,7 +111,9 @@ def instance_rules(a):
     a.instance_bounds={}
     nontrivial=[]
     for f,ins,in_r in sites:
-        if self_disjoint(a,f,ins):a.instance_bounds[f.name+ins.res]=1
+        if setjmp_reentry(f,ins):
+            a.blockers.append(('BD-B-ISA12' if in_r else 'BD-B-ISA4',('BLK-4 §7.5(b)' if in_r else 'BLK-1 §6.5')+' setjmp continuation re-entry: '+ins.text))
+        elif self_disjoint(a,f,ins):a.instance_bounds[f.name+ins.res]=1
         else:nontrivial.append((f,ins,in_r))
     if not nontrivial:return
     facts=loop_facts(a.m.text,getattr(a,'major',None))

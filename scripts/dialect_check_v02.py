@@ -269,6 +269,22 @@ class Analysis02(Flow, d.Analysis):
         return set()
 
 
+def r_entry_rules(a,rmode=None):
+    generating=set()
+    for f in a.funcs():
+        for ins,c,mk in a.marker_calls(f):
+            if mk in ('ctrl','adj','compute'):
+                for k in d.REGION_OPS[mk]:
+                    for name in a.cands[id(ins),k]:generating |= a.closure(name)
+    for f in a.funcs():
+        for ins,c,mk in a.marker_calls(f):
+            if mk=='reversible' and f.name not in generating:
+                for name in sorted(a.cands[id(ins),0]):
+                    a.blockers.append(('BD-B-ISA7','BLK-5 (ISA-7) R entry @'+name+' includes pre-instruction budget fault 1'))
+    if rmode:
+        a.blockers.append(('BD-B-ISA7','BLK-5 (ISA-7) whole-program R entry '+rmode+' includes pre-instruction budget fault 1'))
+
+
 def recognise(text, **options):
     a = Analysis02(d.Module(expanded_types(text)), materialised=options.get("materialised", False))
     a.major=options.get('major')
@@ -279,12 +295,14 @@ def recognise(text, **options):
                 raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.3; actual " + version)
         a.analyse()
         a.region_rules()
+        if options.get("rmode"):a.reversible |= a.closure(options["rmode"].lstrip("@"))
         a.handle_rules()
         a.operand_rules()
         a.descriptor_rules()
         a.tdl_rules()
         a.instance_rules()
         verify_inplace02(a)
+        r_entry_rules(a,options.get("rmode"))
         return ('blocked:' + a.blockers[0][0] if a.blockers else 'accept'), a
     except d.Reject as e:
         return 'reject:' + e.code, e
@@ -460,7 +478,7 @@ class Runner:
 
     def blocker(self,b):
         ident=b['attrs']['blocker'];source=self.block('example',ident)
-        got,info=recognise(d.with_decls(source['body']), materialised=self.materialised(source))
+        got,info=recognise(d.with_decls(source['body']), materialised=self.materialised(source),rmode=source['attrs'].get('rmode'))
         equal(ident,'§25.1 verdict',source['attrs']['verdict'],got)
         expected_code=b['body'].split()[0]
         equal(ident,'§25.1 report code',expected_code,got.split(':',1)[1])

@@ -160,8 +160,9 @@ def frontend(runner,block,major):
     command([runner.tc[major]/'opt','-passes=lto<O3>','-S',bc,'-o',ll])
     verdict,info=recognise(ll.read_text(),rmode=block['attrs'].get('rmode'),major=major)
     equal(ident+'/clang'+major,'§1.5 frontend verdict',block['attrs']['verdict'],verdict)
-    if ident in runner.by_tag['cc-run']:
-        cc=runner.by_tag['cc-run'][ident]['body'];m=re.search(r'native: exit status (\d+)',cc)
+    run_ident=ident[:-3] if ident.endswith('-cc') else ident
+    if run_ident in runner.by_tag['cc-run']:
+        cc=runner.by_tag['cc-run'][run_ident]['body'];m=re.search(r'native: exit status (\d+)',cc)
         if m and major in ('18','23'):
             exe=directory/('native-'+major)
             command([runner.frontends[major]/'clang','-O2',src,'-o',exe])

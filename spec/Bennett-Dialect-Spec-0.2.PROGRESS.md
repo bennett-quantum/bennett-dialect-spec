@@ -474,3 +474,11 @@ Tracking b-dialect-spec-1zy; draft/full norm 0.2.3, ISA 0.8.
 | BD3-3 | resolved | action lifecycle group |
 | REG-MUSE-7.7 | resolved | action lifecycle group |
 | BD3-6 | resolved | action lifecycle group |
+| BD3-4 | resolved | instance bounds and R classification |
+| BD3-5 | resolved | instance bounds and R classification |
+| E-MUSE-TERM | resolved | instance bounds and R classification |
+| E-MUSE-7.7 | resolved | instance bounds and R classification |
+
+Group receipts: f868741 (vectors/materialisation/memory), 2fa3460 (action lifetimes).
+BD3-5 uses the explicitly permitted conservative default, optional finite-bound refinement
+b-dialect-spec-egm; external typed R semantics remain b-dialect-spec-bz6. No declines/partials.

@@ -11,8 +11,8 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.3: markers 0.2, handles 0.2, regions 0.2.1, oracle-abi 0.2.1, tdl 0.2.1,
-effects 0.2.1, norm 0.2.3, map 0.2.1, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+**Versioning.** Dialect 0.2.3: markers 0.2, handles 0.2.3, regions 0.2.3, oracle-abi 0.2.3, tdl 0.2.3,
+effects 0.2.3, norm 0.2.3, map 0.2.3, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
 The **full version string** (`0.2.3`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
@@ -224,8 +224,7 @@ a verdict.
 - **Driver mode**: one of the invocation modes of §19.2–§19.7. **Platform profile**: §20.
 - **Materialised module**: the module after normalisation (§12). **Reference object**: the ISA
   object the map produces for one oracle shape (§16.2); its oracle `@ref` defines F_B.
-- **Blocker**: a capability with no ISA 0.8 realisation in a stated case (§25.1), BLK-1 to
-  BLK-4.
+- **Blocker**: a capability with no ISA 0.8 realisation in a stated case (§25.1), BLK-1, BLK-2, BLK-4 and BLK-5 (BLK-3 retired, §25.1).
 
 ## 3. The marker ABI (markers 0.2)
 
@@ -340,7 +339,7 @@ freezes (§21.2, bd `-566`).
   classically before entry" (NS §4.2, §8 rung 4) reaches a register (§8.5, §17.4); one `gate`
   per set bit would need about 1.3·10^8 marker calls for the rung-4 image.
 - `observe(p, len)`: a computational-basis measurement of the classical bytes [p, p + len)
-  whose coherence state is Co (§10, TDL-11); afterwards they are Cl and hold the outcome. It is
+  whose coherence state is Co (§10, TDL-11); partial observation retains authoritative basis cells in Co until full coverage permits Cl. It is
   the only way superposed classical memory reaches classical code (NS §4.2: "outputs leave
   through measurement after exit"). On Cl bytes it does nothing.
 - the effect markers: one per ISA device-model operation (ISA §7.3), realised per tier by §11.
@@ -1089,7 +1088,7 @@ INT(3) and, through the store of `%n2`, INT(4), INT(5), … until it exceeds K a
 holds no `ROOT` atom, and the arithmetic on it is legal (audit B-27: 0.1 gave the load offset `*`
 and rejected this program).
 
-## 6. Handles (handles 0.2)
+## 6. Handles (handles 0.2.3)
 
 ### 6.1 Representation
 
@@ -1176,6 +1175,14 @@ realises each allocation site s (a `qalloc` or `qborrow` call) in one of two way
 
 **Reference instance bound** of a site s in function F with a static register file:
 
+Before rules 1–2, account for N29 re-entry. The reference default is conservative:
+if F contains a setjmp site whose continuation can reach s by CFG edges, s is not
+self-disjoint and E(s)=∞. This includes the materialised __bennett_rt_setjmp continuation.
+Apply this rule also to §7.5(b) R hoisting. A normal return-edge/call-graph-only count
+is unsound: longjmp re-enters the continuation without a call of F. Such a site uses
+BLK-1 (R hoisting: BLK-4), with the bounded static-file fallback, not a rejection.
+This reference default deliberately does not claim N(s)=2 for the witness below.
+
 1. s is **self-disjoint** iff the only memory its `ROOT(s)` atom reaches is allocas of F whose
    address does not escape F (it is not stored, returned, or passed to a call other than a marker
    call, which includes the `env` of a region-entry marker), and every CFG path of F from s to a `ret`, to s again, or to a call
@@ -1194,6 +1201,55 @@ realises each allocation site s (a `qalloc` or `qborrow` call) in one of two way
 
 A width with VS = ⊤ is BLK-1 likewise (§3.4). In R code, which cannot allocate registers on ISA
 0.8, §7.5(b) applies.
+
+**Setjmp re-entry witness.** The first h remains live across g's longjmp; the
+second execution of the same allocation site produces a distinct h. The simple reference
+default gives N=∞ and BLK-1, not N=1. The bounded file of 64 runs these two allocations
+without a trap; each register is flipped twice then freed clean. Native setjmp execution
+checks the two distinct live instance ids and balanced release.
+
+```llvm example=handle-setjmp-reentry verdict=blocked:BD-B-ISA4
+declare i32 @setjmp(ptr)
+declare void @longjmp(ptr, i32)
+@jb = global [256 x i8] zeroinitializer
+define internal void @g() {
+entry:
+  call void @longjmp(ptr @jb, i32 1)
+  ret void
+}
+define void @F() {
+entry:
+  %slot0 = alloca ptr
+  %slot1 = alloca ptr
+  %r = call i32 @setjmp(ptr @jb)
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c = icmp eq i32 %r, 0
+  %slot = select i1 %c, ptr %slot0, ptr %slot1
+  store ptr %h, ptr %slot
+  br i1 %c, label %first, label %done
+first:
+  call void @g()
+  br label %done
+done:
+  %a = load ptr, ptr %slot0
+  %b = load ptr, ptr %slot1
+  call void @__bennett_gate(i32 1, ptr %a, i64 0)
+  call void @__bennett_gate(i32 1, ptr %b, i64 0)
+  call void @__bennett_gate(i32 1, ptr %a, i64 0)
+  call void @__bennett_gate(i32 1, ptr %b, i64 0)
+  call void @__bennett_qfree(ptr %a)
+  call void @__bennett_qfree(ptr %b)
+  ret void
+}
+```
+
+```text blocker=handle-setjmp-reentry
+BD-B-ISA4 @F qalloc: setjmp continuation re-entry; BLK-1 (ISA-4); requires dynamic qreg.id/from_id register naming for memory-reaching sites with no finite reference bound
+```
+
+```text state=handle-setjmp-reentry at=0
+{"instances":2,"distinct":true,"live_after":0,"trap":0,"verdict":"blocked:BD-B-ISA4"}
+```
 
 ### 6.6 Host–device boundary
 
@@ -1613,7 +1669,7 @@ define void @top() {
 }
 ```
 
-## 7. Regions (regions 0.2.1)
+## 7. Regions (regions 0.2.3)
 
 ### 7.1 Region-entry markers and region kinds
 
@@ -2122,7 +2178,7 @@ define void @top() {
 }
 ```
 
-```llvm example=region-reversible-marker verdict=accept candidates=body
+```llvm example=region-reversible-marker verdict=blocked:BD-B-ISA7 candidates=body
 define internal void @body(ptr %e) {
   %h = load ptr, ptr %e
   call void @__bennett_gate(i32 1, ptr %h, i64 0)
@@ -2137,6 +2193,10 @@ define void @top() {
   call void @__bennett_qfree(ptr %h)
   ret void
 }
+```
+
+```text blocker=region-reversible-marker
+BD-B-ISA7 R entry: BLK-5 (ISA-7); mandatory pre-instruction typed fault 1 requires ISA 0.9 K5 fault C, exact terminal code, no subsequent effects, preserved reversible prefix
 ```
 
 ```llvm example=region-reversible-measure verdict=reject:BD-E-REVERSIBLE-MEASURE
@@ -2160,7 +2220,7 @@ A register allocated in R and freed before the next allocation is hoisted to the
 (self-disjoint, N = 1); one allocated per activation of a recursion whose depth comes from host
 data has no bound and is BLK-4 (the same function in CC is realised directly, §6.5):
 
-```llvm example=region-reversible-qalloc-static verdict=accept candidates=body
+```llvm example=region-reversible-qalloc-static verdict=blocked:BD-B-ISA7 candidates=body
 define internal void @body(ptr %e) {
   %h = call ptr @__bennett_qalloc(i64 0, i64 1)
   call void @__bennett_gate(i32 1, ptr %h, i64 0)
@@ -2174,6 +2234,10 @@ define void @top() {
   call void @__bennett_reversible(ptr @body, ptr null, ptr %e)
   ret void
 }
+```
+
+```text blocker=region-reversible-qalloc-static
+BD-B-ISA7 R entry: BLK-5 (ISA-7); mandatory pre-instruction typed fault 1 requires ISA 0.9 K5 fault C, exact terminal code, no subsequent effects, preserved reversible prefix
 ```
 
 ```llvm example=region-reversible-qalloc-dynamic verdict=blocked:BD-B-ISA12
@@ -2213,7 +2277,7 @@ define void @top(i64 %n) {
 BD-B-ISA12 @rec %h: qalloc in a reversible closure with no instance bound (recursive, live across the recursive call: E = infinity); cannot be hoisted to the CC caller; ISA 0.8 qreg.new is CC only; BLK-4 (new ISA-12) qreg.* in R
 ```
 
-## 8. The oracle interface (oracle-abi 0.2.1)
+## 8. The oracle interface (oracle-abi 0.2.3)
 
 `__bennett_oracle(f, budget, desc)` applies the lifted oracle of region function f, under the
 budget of §9, to the registers and classical values that the **descriptor** `desc` binds to f's
@@ -3046,7 +3110,7 @@ it is neither static nor a bitwise copy of a launch argument, and no launch-time
 covers it. Each wire of `%c` measured 1 is reset by an `x`, so `%c` is clean at its `qfree`
 (ISA §3.3).
 
-## 10. Taint-driven lifting under control (tdl 0.2.1)
+## 10. Taint-driven lifting under control (tdl 0.2.3)
 
 NS §0: "a way to condition a region on a qubit. Everything else is inferred"; NS §3.1 taint row:
 a context-sensitive interprocedural analysis "over data dependence, control dependence and
@@ -3339,7 +3403,7 @@ genuine host calls have `fault 8` and a trapped coverage line. Release of outliv
 requires clean/restored state, not unconditional fault 8. Oracle device state stays private
 under §11.3, with declared outputs under §8.6.
 
-## 11. Effects and device models per tier (effects 0.2.1)
+## 11. Effects and device models per tier (effects 0.2.3)
 
 ### 11.1 Tier table
 
@@ -3413,7 +3477,18 @@ ISA 0.8 does not specify which code a CC trap reports. `__bennett_nz_fault(C)` i
 CC lowers to `hostcall bennett.fault` with a payload holding C, then `trap`; the service
 records C in the run's fault statistics. A host call is forbidden in R and a generic R trap
 cannot preserve arbitrary C. Typed R faults therefore have dependency blocker BLK-5 =
-ISA-7 (§25.1), verdict blocked:BD-B-ISA7 at affected points. Required operation: R fault C
+ISA-7 (§25.1).
+
+On ISA 0.8 a module has verdict blocked:BD-B-ISA7 if its device program contains
+an R-tier variant reached as an R entry: a reversible region candidate invoked outside
+generation, or the §19.2 whole-program R entry. Every such variant has the §17.6 budget
+check, regardless of supplied run-time limits. A reversible call treated as a direct call
+under §7.4 is not an R entry and does not by itself block. Other rejection/blocker
+precedence remains §1.6. The R blocker trap is generic ISA trap with no hostcall, reached
+only on executions that would report a typed fault (budget exhaustion, F(C), nz_fault(C));
+all other executions are unaffected. This fallback does not implement typed reporting.
+
+ Required operation: R fault C
 terminates with fault record code C, performs no subsequent source effect and preserves
 reversible prefix history. No ISA 0.8 generic-trap path is claimed to implement this contract.
 
@@ -3422,13 +3497,17 @@ reversible prefix history. No ISA 0.8 generic-trap path is claimed to implement 
 The R-tier console: a whole program in the reversible tier writes three bytes and returns 0;
 the tape holds one `console.write`; whole-run reversal restores the entry state:
 
-```llvm example=effect-console-r verdict=accept
+```llvm example=effect-console-r verdict=blocked:BD-B-ISA7 rmode=@main
 @msg = private unnamed_addr constant [3 x i8] c"hi\0A"
 
 define i32 @main() {
   call void @__bennett_effect_console_write(ptr @msg, i64 3)
   ret i32 0
 }
+```
+
+```text blocker=effect-console-r
+BD-B-ISA7 R entry: BLK-5 (ISA-7); mandatory pre-instruction typed fault 1 requires ISA 0.9 K5 fault C, exact terminal code, no subsequent effects, preserved reversible prefix
 ```
 
 ```text cc-run=effect-console-r
@@ -5448,7 +5527,7 @@ eh(2) = 0; eh(3) = 1; eh(-5) = 1 (input built with clang++ and a C++ may_throw t
 A `longjmp` across two frames, as a whole program in the R tier; the expected status is the
 native one:
 
-```c example=sjlj-two-frames verdict=accept rmode=@main
+```c example=sjlj-two-frames verdict=blocked:BD-B-ISA7 rmode=@main
 #include <setjmp.h>
 
 static jmp_buf jb;
@@ -5466,6 +5545,32 @@ static int try_deep(int n) {
 }
 
 int main(void) { return try_deep(2) + 10 * try_deep(0); }
+```
+
+The same source as a whole-program CC entry has no R entry and is an accepted N29/N30 witness; native success is checked against the same cc-run result.
+
+```c example=sjlj-two-frames-cc verdict=accept tier=CC entry=@main
+#include <setjmp.h>
+
+static jmp_buf jb;
+
+static void deep(int n) {
+  if (n == 0) longjmp(jb, 7);
+  deep(n - 1);
+}
+
+static int try_deep(int n) {
+  int r = setjmp(jb);
+  if (r) return r;
+  deep(n);
+  return 0;
+}
+
+int main(void) { return try_deep(2) + 10 * try_deep(0); }
+```
+
+```text blocker=sjlj-two-frames
+BD-B-ISA7 R entry: BLK-5 (ISA-7); mandatory pre-instruction typed fault 1 requires ISA 0.9 K5 fault C, exact terminal code, no subsequent effects, preserved reversible prefix
 ```
 
 ```text cc-run=sjlj-two-frames
@@ -5497,7 +5602,7 @@ A `swapcontext` ping-pong in the R tier: the main fiber logs 0, 1, 2 and the sec
 101, 102, alternately; the status encodes the order (digits 0 0 1 1 2 2 give 1122, and 1122 mod
 256 = 98):
 
-```c example=fiber-pingpong verdict=accept rmode=@main
+```c example=fiber-pingpong verdict=blocked:BD-B-ISA7 rmode=@main
 #include <ucontext.h>
 
 static ucontext_t main_ctx, fiber_ctx;
@@ -5527,6 +5632,42 @@ int main(void) {
 }
 ```
 
+The same source as a whole-program CC entry has no R entry and is an accepted N29/N30 witness; native success is checked against the same cc-run result.
+
+```c example=fiber-pingpong-cc verdict=accept tier=CC entry=@main
+#include <ucontext.h>
+
+static ucontext_t main_ctx, fiber_ctx;
+static int trace[6], n;
+static char fiber_stack[16384];
+
+static void fiber(void) {
+  for (int i = 0; i < 3; i++) {
+    trace[n++] = 100 + i;
+    swapcontext(&fiber_ctx, &main_ctx);
+  }
+}
+
+int main(void) {
+  getcontext(&fiber_ctx);
+  fiber_ctx.uc_stack.ss_sp = fiber_stack;
+  fiber_ctx.uc_stack.ss_size = sizeof fiber_stack;
+  fiber_ctx.uc_link = &main_ctx;
+  makecontext(&fiber_ctx, fiber, 0);
+  for (int i = 0; i < 3; i++) {
+    trace[n++] = i;
+    swapcontext(&main_ctx, &fiber_ctx);
+  }
+  int s = 0;
+  for (int i = 0; i < n; i++) s = s * 10 + trace[i] % 10;
+  return s % 256;
+}
+```
+
+```text blocker=fiber-pingpong
+BD-B-ISA7 R entry: BLK-5 (ISA-7); mandatory pre-instruction typed fault 1 requires ISA 0.9 K5 fault C, exact terminal code, no subsequent effects, preserved reversible prefix
+```
+
 ```text cc-run=fiber-pingpong
 driver: --bennett-tier=reversible --bennett-entry=main
 run: status=COMPLETED results=[INT(32):98] faults=[]
@@ -5546,12 +5687,16 @@ reverse: status=REVERSED memory=entry
   host stub calls `_Exit(s)`. Elsewhere (inside an oracle in the plain marker form, inside an
   action) it is unwinding out of the region: code 4.
 
-```c example=exit-status verdict=accept rmode=@main
+```c example=exit-status verdict=blocked:BD-B-ISA7 rmode=@main
 #include <stdlib.h>
 
 int main(void) {
   exit(3);
 }
+```
+
+```text blocker=exit-status
+BD-B-ISA7 R entry: BLK-5 (ISA-7); mandatory pre-instruction typed fault 1 requires ISA 0.9 K5 fault C, exact terminal code, no subsequent effects, preserved reversible prefix
 ```
 
 ```text cc-run=exit-status
@@ -5674,13 +5819,13 @@ define internal i64 @w(i64 %fd, i64 %a) {
 declare i64 @__bennett_rt_syscall(i64, i64, i64, i64, i64, i64, i64)
 ```
 
-## 16. The lifting map (map 0.2.1)
+## 16. The lifting map (map 0.2.3)
 
 The lifting map turns a materialised region function, a binding shape (§8.4) and the link
 layout (§19.5) into the **reference object** of that shape: the ISA object whose oracle `@ref`
 defines F_B and the budget unit by the reference interpreter (ISA §4.2 "Reference body and
 binding", §14.1). It is a function of its inputs alone, so two plugins on the same LLVM version
-and pipeline produce byte-identical reference objects. Its version (`map 0.2.1`) is the
+and pipeline produce byte-identical reference objects. Its version (`map 0.2.3`) is the
 certificate's `dialect_mapping_version` (ISA §12.3). The plugin's device objects (§17.4) are
 plugin-defined; they MUST be extensionally equal to the reference objects (ISA §5.7, T6; §18.7).
 
@@ -7571,6 +7716,9 @@ other device code the run ends `FAILED` with that fault record (ISA §10); CC re
 §11.5; for R code the required typed record depends on BLK-5/ISA-7 (§25.1);
 ISA-8 (§25.2) separately governs status delivery and reverse eligibility.
 
+The R-entry classification of §11.5 applies to all §17.6 counters and §17.5 typed
+fault points; successful-path execution examples below retain their results.
+
 ### 17.6 The R tier
 
 - The R lowering inserts a **step counter**. Before each counted materialised LLVM
@@ -7845,7 +7993,7 @@ adj-body allocation/write-Co/free/realloc fails at free before any reused read.
 ```
 
 ```text state=fault-output-lifetime at=0
-{"branch_probability":0.5,"fault":1,"after_invocation":[[0,0,0],[1,1,1]],"program_end_probability":0.5,"remaining_after_end":0,"trap":0}
+{"budget_fault":null,"branch_probability":0.5,"fault":1,"after_invocation":[[0,0,0],[1,1,1]],"program_end_probability":0.5,"remaining_after_end":0,"trap":0}
 ```
 
 ```text state=co-loop-adjoint at=0
@@ -8524,7 +8672,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.3 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -8646,7 +8794,7 @@ major (NS §3.2).
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
-pipeline, normaliser_version: "0.2.3"}` and `bindings.dialect_mapping_version = "0.2.1"`; the coverage
+pipeline, normaliser_version: "0.2.3"}` and `bindings.dialect_mapping_version = "0.2.3"`; the coverage
 report (ISA §13), whose `source` field is `dialect-0.2.3:<rule id>` (e.g. `dialect-0.2.3:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
@@ -8909,12 +9057,16 @@ input newer than M -> reject:BD-E-VERSION
 
 **`platform-uart-write` (§20).** At the profile UART transmit window 0x10000000, N35 routes the volatile byte store to the model before N9. It appends x (hex 78) to the console tape without a raw unallocated store. With sufficient budgets and no pending interrupt, reverse restores the entry device/CSR state and empty tape. This is a successful platform path; no typed R fault is assumed available in ISA 0.8.
 
-```llvm example=platform-uart-write verdict=accept rmode=@main
+```llvm example=platform-uart-write verdict=blocked:BD-B-ISA7 rmode=@main
 define i32 @main() {
   %p = inttoptr i64 268435456 to ptr
   store volatile i8 120, ptr %p, align 1
   ret i32 0
 }
+```
+
+```text blocker=platform-uart-write
+BD-B-ISA7 R entry: BLK-5 (ISA-7); mandatory pre-instruction typed fault 1 requires ISA 0.9 K5 fault C, exact terminal code, no subsequent effects, preserved reversible prefix
 ```
 
 ```text state=platform-uart-write at=0
@@ -9061,11 +9213,11 @@ warning never changes a verdict.
 - The **full version string** of this document (`0.2.3`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
-- `norm` (§12–§15; the certificate's `normaliser_version`) is revised to `0.2.3` for
-  the V10 correction. Unchanged sub-artefacts keep their versions: `markers` (§3),
-  `handles` (§6), `asm` (§15) and `corpus` (§21) at `0.2`; `regions` (§7), `oracle-abi`
-  (§8), `tdl` (§10), `effects` (§11), `map` (§16; the certificate's
-  `dialect_mapping_version`), `platform` (§20) and `driver` (§19) at `0.2.1`.
+- Round-2 semantic corrections revise `norm`, `handles`, `regions`, `oracle-abi`,
+  `tdl`, `effects` and `map` to `0.2.3`; unchanged marker/header, asm and corpus ABIs
+  remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
+  again; unchanged ISA-0.8 interface signatures retain their hashes. The map version
+  is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
 - Every semantic change bumps the version; the reference objects and hashes of §16 depend on the
   ISA version string, the map and the layout, and change with any of them (0.1's hashes changed
   with the wrapper form of §16.2).
@@ -9110,7 +9262,7 @@ The maintainer ruled
 |---|---|---|---|---|---|
 | **BLK-1** = ISA-4 | `BD-B-ISA4` | NS §3.1 handle tables; §4.1, §4.2 dynamic allocation ("real allocation"); Bennett.jl vectors of qubits; adjoints of generations whose register set is known only at run time | allocation sites whose handles reach memory with no finite instance bound (§6.5); register widths with value set ⊤ (§3.4); a Co width with an unbounded value set (TDL-10) | direct `qreg` values for handles that stay out of memory; static register files with dispatch for bounded sites (§6.5) | (i) a dynamic-width type `qreg[*]`; `q = qreg.new cls n` with n an `i64` value yields `qreg[*]`; `w = qreg.width q`. (ii) Binding a `qreg[*]` to a `wire[n]` or `region[A,W]` slot checks the width at the call: CC trap, R fault `FAULT_UB_TRAP`, on a mismatch. (iii) `id = qreg.id q` (non-consuming; the §10 launch id) and `q = qreg.from_id id` (yields `qreg[*]`; a trap if the id is not live, is viewed or is consumed). History frames: `qreg.id` is pure; `qreg.from_id` records the handle reference |
 | **BLK-2** = ISA-1 | `BD-B-ISA1` | NS §4.2 "run-time budgets come from the host or from measurement results" | budget fields computed on the device (§9.5 case 3) | pre-minted finite sets; stub-minted copies of launch arguments (§9.5) | a CC instruction `tk = budget.mint @region s h st d` (`i64` operands) with the ISA §5.4 validation of `bennett_budget` as a CC trap; the token is scoped to the run; an impure history frame recording the token |
-| **BLK-5** = ISA-7 | `BD-B-ISA7` | NS §4.2 named fault outcomes and R reversible prefixes | typed R faults, including budget codes 1/2/3 and explicit __bennett_nz_fault(C) | CC hostcall reports C; generic R trap stops execution but does not satisfy typed reporting | R `fault C`: terminate with fault record code C, no later source effect, retain reversible prefix history; specify the implicit trap-cause-to-code table (div0 5, overflow 6, memory 7, trap 4, allocation failure 2) |
+| **BLK-5** = ISA-7 | `BD-B-ISA7` | NS §4.2 named fault outcomes and R reversible prefixes | every R entry (§11.5), including mandatory budget codes 1/2/3 and explicit __bennett_nz_fault(C); direct calls under §7.4 excluded | CC hostcall reports C; generic R trap stops execution but does not satisfy typed reporting | R `fault C`: terminate with fault record code C, no later source effect, retain reversible prefix history; specify the implicit trap-cause-to-code table (div0 5, overflow 6, memory 7, trap 4, allocation failure 2) |
 | **BLK-4** = new ISA-12 (audit B-38) | `BD-B-ISA12` | NS §4.2 quantum allocation inside reversible-tier code | `qalloc`/`qborrow`/`qfree` in an R closure with no finite instance bound (§7.5b); entry-state transfer from R code (§8.5) | hoisting to the CC caller with a static count (§7.5b) | permit `qreg.new`, `qreg.free`, `qreg.slice` and `qreg.concat` in R; the R history records them; the reversal of `qreg.new` is `qreg.free` with the cleanliness obligation (simulator check; hardware per ISA §17 item 14); the reversal of `qreg.free` is `qreg.new` (clean); `measure` stays CC-only |
 
 BLK-5's checked witnesses are `r-fault-code` (explicit code 2) and
@@ -9119,14 +9271,24 @@ BLK-5's checked witnesses are `r-fault-code` (explicit code 2) and
 specified in the ISA 0.9 draft, commit `61550b4` (section 0.2 K5 and section
 4.1 `fault C`); its presence in that draft does not change this draft's ISA target.
 
+On ISA 0.8 a module has verdict blocked:BD-B-ISA7 if its device program contains
+an R-tier variant reached as an R entry: a reversible region candidate invoked outside
+generation, or the §19.2 whole-program R entry. Every such variant has the §17.6 budget
+check, regardless of supplied run-time limits. A reversible call treated as a direct call
+under §7.4 is not an R entry and does not by itself block. Other rejection/blocker
+precedence remains §1.6. The R blocker trap is generic ISA trap with no hostcall, reached
+only on executions that would report a typed fault (budget exhaustion, F(C), nz_fault(C));
+all other executions are unaffected. This fallback does not implement typed reporting.
+
 **Blocker report** (one line per blocker point, in processing order, in the outputs, §19.9):
 `<code> <function> <value or call>: <reason>; <ISA 0.8 constraint>; <BLK id> (<ISA item>) <change>`.
 
 **Blocker trap.** A blocked program is compiled (§1.6) with each blocker point lowered to the ISA
 0.8 realisation that exists for the bounded cases (the static file of §6.5 with D29's size, the
 pre-minted budgets of the value set, the specialised pairs) and, on an execution that falls
-outside them, `hostcall bennett.fault` with code 4 and the blocker's code as payload, then
-`trap` (§11.5). So only the executions the blocker affects fail, and they fail loud.
+outside them, CC uses `hostcall bennett.fault` with code 4 and the blocker's code as payload, then
+`trap` (§11.5). R uses generic `trap` without hostcall, with the static blocker report naming
+the dependency; exact typed R reporting requires ISA 0.9 K5. So only the executions the blocker affects fail, and they fail loud.
 
 ### 25.2 Wording items
 
@@ -9285,19 +9447,15 @@ compute expected artefacts only (P-3).
 
 | `r-budget-prefix`, `r-fault-code` (+ blocker and state) | N34, BLK-5, §17.6 | parse, recognise, blocker, state | ISA-0.8 dependency verdict; ISA-0.9 result specified alongside |
 
-**Execution status of the former 35 omissions.** Every obligation above now has
-a concrete witness and an index row. Index discovery alone is not P-2 execution.
-The frozen checker cannot execute five normalisation transforms, five binding/
-indirectbr maps, or seven driver/platform state scenarios; its seven driver/
-platform coverage rows are hard-coded to fail. Two validator negative cases
-remain red as missed rejections. The V10 conflict (`b-dialect-spec-7u1`) is
-resolved in §12.4: bit-exact extended-format forms accept; residual arithmetic
-rejects. The other gaps remain loud failures, tracked by
-`b-dialect-spec-1jb` and the verification table in the companion progress file.
-The R-budget state retains its BLK-5 verdict and expected ISA-0.9 result; the
-frozen state dispatcher still executes the ISA-0.8 probe instead of routing
-the named dependency verdict to the blocker family (`b-dialect-spec-bz6`).
-No example or coverage obligation is removed or weakened to make this green.
+**Execution status of the former 35 omissions.** The historical frozen-checker
+failures are superseded by the 2311/2311 round-2 receipt (spec 976e4bb, checker
+642e265; scripts/dialect_check.LAST-RUN.json identifies the dependency). All
+normalisation, binding/indirectbr and driver/platform adapters execute. The current
+round-2-fixes receipt and family counts are in the progress files and response.
+Index discovery alone is not P-2 execution. A green example count establishes the
+checks identified by its receipt, not equivalence of every hand-written object to
+every source rule. R budget/fault dependencies are passing BLK-5 verdict checks,
+with the ISA-0.9 obligation recorded and explicitly not executed on ISA 0.8.
 
 | `n-bitcast-lanes`, `n-bitcast-scalar`, `n-vp-merge`, `n-vp-select`, `n-vp-product` | N21 | parse, normalise, native | LLVM; clang |
 | `validator-v4-false-residue`, `n-defined-zero` | V4, N12, N27 | parse, recognise, normalise | LLVM; validator |
@@ -9305,6 +9463,11 @@ No example or coverage obligation is removed or weakened to make this green.
 | `entry-allocation-only`, `arena-logical-bounds` | §8.5, TDL-4, §16.2–§16.4 | state | native seed; Rust lifted helper |
 
 | `generation-cancel`, `nested-cl-view`, `fault-output-lifetime`, `co-loop-adjoint`, `deferred-channel-adj`, `co-store-release` | TDL-2, TDL-7–TDL-11, §18.2–§18.4 | state | native lifecycle; Rust run-action |
+
+| `handle-setjmp-reentry` (+ blocker/state) | §6.5, BLK-1 | parse, recognise, blocker, state | LLVM; reference bound; native setjmp |
+| `region-reversible-marker`, `region-reversible-qalloc-static`, `effect-console-r`, `sjlj-two-frames`, `fiber-pingpong`, `exit-status`, `platform-uart-write` (+ blocker) | BLK-5 | recognise, blocker; existing success execution | ISA-0.8 classification, ISA-0.9 K5 dependency |
+
+| `sjlj-two-frames-cc`, `fiber-pingpong-cc` | N29, N30 | frontend, native status | clang 18/20/23 and native 18/23 |
 
 ## Appendix C. Generic intrinsics of LLVM 18, 20 and 23
 

@@ -16,6 +16,21 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round2_r_entry_classification(self):
+        for name in ('region-reversible-marker','region-reversible-qalloc-static','effect-console-r'):
+            with self.subTest(example=name):self.assertEqual(v.recognise(d.with_decls(self.block('example',name)['body']),rmode=self.block('example',name)['attrs'].get('rmode'))[0],'blocked:BD-B-ISA7')
+        direct=self.block('example','region-reversible-in-action')
+        self.assertEqual(v.recognise(d.with_decls(direct['body']))[0],'accept')
+        self.assertEqual(v.recognise('define i32 @main() {\n ret i32 0\n}\n',rmode='@main')[0],'blocked:BD-B-ISA7')
+
+    def test_round2_setjmp_instances(self):
+        from dialect_bounds import setjmp_reentry
+        b=self.block('example','handle-setjmp-reentry')
+        verdict,a=v.recognise(d.with_decls(b['body']))
+        self.assertEqual(verdict,'blocked:BD-B-ISA4')
+        f=a.m.funcs['F'];site=next(i for i in f.instrs() if '@__bennett_qalloc' in i.text)
+        self.assertTrue(setjmp_reentry(f,site))
+
     def test_round2_action_lifetimes(self):
         from dialect_round2 import check_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -23,7 +38,15 @@ class ContractTests(unittest.TestCase):
             for name in ('generation-cancel','nested-cl-view','fault-output-lifetime','co-loop-adjoint','deferred-channel-adj','co-store-release'):
                 with self.subTest(example=name):
                     b=self.block('state',name);check_state(runner,b)
-                    with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body']+'invalid'))
+                    import json
+                    wrong=json.loads(b['body'])
+                    field={'generation-cancel':'results','nested-cl-view':'results','fault-output-lifetime':'program_end_probability','co-loop-adjoint':'after_compute','deferred-channel-adj':'probabilities','co-store-release':'store_code'}[name]
+                    value=wrong[field]
+                    if isinstance(value,list):
+                        if isinstance(value[0],list):value[0][0]+=1
+                        else:value[0]+=1
+                    else:wrong[field]+=1
+                    with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
 
     def test_round2_memory_contracts(self):
         from dialect_round2 import check_state
@@ -32,7 +55,7 @@ class ContractTests(unittest.TestCase):
             for name in ('entry-allocation-only','arena-logical-bounds'):
                 b=self.block('state',name)
                 check_state(runner,b)
-                with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body'].replace('4112','4096').replace('513','514')+'\ninvalid'))
+                with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body'].replace('4112','4096').replace('513','514')))
 
     def test_round2_materialisation_boundaries(self):
         for intrinsic in ('abs','ctlz','cttz'):
@@ -54,7 +77,7 @@ class ContractTests(unittest.TestCase):
         b = self.block('example', 'effect-console-write') if any(
             x['attrs'].get('example') == 'effect-console-write' for x in self.blocks
         ) else self.block('example', 'effect-console-r')
-        self.assertEqual(v.recognise(d.with_decls(b['body']))[0], 'accept')
+        self.assertEqual(v.recognise(d.with_decls(b['body']),rmode=b['attrs'].get('rmode'))[0], b['attrs']['verdict'])
 
     def test_first_region_candidates(self):
         b = self.block('example', 'region-reversible-in-action')

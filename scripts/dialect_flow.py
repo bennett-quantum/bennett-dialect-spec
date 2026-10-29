@@ -402,9 +402,16 @@ class Flow:
     def region_rules(self):
         deferred='!"bennett.measure_in_unitary", !"defer"' in self.m.text
         self.reversible=set()
+        generating=set()
+        for caller in self.funcs():
+            for call,_,marker in self.marker_calls(caller):
+                if marker in ('ctrl','adj','compute'):
+                    for operand in d.REGION_OPS[marker]:
+                        for name in self.cands[id(call),operand]:generating |= self.closure(name)
         for f in self.funcs():
             for ins,c,mk in self.marker_calls(f):
                 for k,kind in d.REGION_OPS.get(mk,{}).items():
+                    if kind=='reversible' and f.name in generating:kind='action'
                     cs=self.cands[id(ins),k]
                     for name in cs:
                         g=self.m.funcs[name]

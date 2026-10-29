@@ -6,14 +6,20 @@ from dialect_state import run_native
 from dialect_tdl import object_text, Session, assert_view, add_constant, oracle
 import math
 
-STATES={'entry-allocation-only','arena-logical-bounds','generation-cancel','nested-cl-view','fault-output-lifetime','co-loop-adjoint','deferred-channel-adj','co-store-release'}
+STATES={'handle-setjmp-reentry','entry-allocation-only','arena-logical-bounds','generation-cancel','nested-cl-view','fault-output-lifetime','co-loop-adjoint','deferred-channel-adj','co-store-release'}
 
 
 def check_state(runner,block):
     name=block['attrs']['state']
     try:v=json.loads(block['body'])
     except ValueError as e:raise d.Fail('round-2 witness must be one JSON object') from e
-    if name=='entry-allocation-only':
+    if name=='handle-setjmp-reentry':
+        from dialect_check_v02 import recognise
+        verdict,a=recognise(d.with_decls(runner.block('example',name)['body']))
+        equal(name,'reference instance verdict',v['verdict'],verdict)
+        src='#include <setjmp.h>\nstatic jmp_buf jb;\nstatic unsigned slots[2],live[64],next;\nstatic unsigned allocate(void){unsigned id=++next;live[id]=1;return id;}\nstatic void g(void){longjmp(jb,1);}\nint main(void){int r=setjmp(jb);unsigned h=allocate();slots[r]=h;if(!r)g();\nunsigned distinct=slots[0]!=slots[1];live[slots[0]]=0;live[slots[1]]=0;unsigned total=0;for(unsigned i=0;i<64;i++)total+=live[i];\nprintf("[%u,%u,%u,%u]\\n",next,distinct,total,0);return 0;}\n'
+        run_native(runner,name,'',src,[[v['instances'],int(v['distinct']),v['live_after'],v['trap']]])
+    elif name=='entry-allocation-only':
         sizes=v['caller_sizes'];base=v['base'];req=v['request']
         # Runtime replay uses the independent C allocator, with no byte reads.
         src='''#include <stdint.h>
@@ -84,6 +90,8 @@ int main(void){unsigned char x=1;int a=valid(0,1,0,1,0);int b=valid(2,1,0,1,1);i
         q=Session(runner,name);q.alloc('c',1);q.alloc('t',8);q.alloc('f',4);q.alloc('Phi',4)
         q.apply(['h c[0]']);q.controlled(['oracle_call @slice tk () t f () ()'],('c[0]',),oracle=oracle('nine'),token=True,budget=0)
         q.apply(['qxor f Phi'])
+        equal(name,'null fault field',None,v['budget_fault'])
+        if abs(v['branch_probability']-0.5)>1e-7:raise d.Fail('Hadamard branch probability must be 0.5')
         expected={tuple(row[:1]+[0]+row[1:]):1/math.sqrt(2) for row in v['after_invocation']}
         assert_view(q,['c','t','f','Phi'],expected)
         prob=sum(abs(amp)**2 for (key,_),amp in q.view(['c','f','Phi']).items() if key[2]==v['fault'])

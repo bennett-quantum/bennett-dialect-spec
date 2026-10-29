@@ -455,3 +455,11 @@ Six absent state witnesses reproduced red; all now execute with native generatio
 coherence runtime and Rust controlled actions, slice budget faults, Co-loop inverse,
 compute flag cleanup, deferred adj/compute channels and clean post-outcome release.
 New JSON witnesses reject malformed or changed expectations. Original TDL examples retained.
+
+## Round-2 instance bounds and R classification
+
+R-entry classification and setjmp reference bound tests failed red before implementation.
+All 36 unit tests passed after implementation. Targeted recognise/blocker/coverage/frontend
+gate passes 295/295. N29/N30 accepted CC companions preserve P-1 after R sources become
+BLK-5; all successful R execution expectations remain. Added numeric wrong-expectation
+mutations for every new action/memory adapter; all are rejected.
