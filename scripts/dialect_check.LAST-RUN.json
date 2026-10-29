@@ -1,8 +1,10 @@
 {
-  "spec_commit": "976e4bb83feafe3d6fcb2b9ef25118a2aeb350de",
-  "dialect_version": "0.2.2",
-  "interpreter_commit": "667e494320b7abcab5fcb82c1ceb5b2340e09b04",
-  "interpreter_source_sha256": "e40c9867bc8c5865de8dc49112d839ecba7fab659a104f06ca555d07dcd72501",
+  "spec_commit": "5ba4b27427fefda4bde84218e9dbba0e2a7475f8",
+  "checker_commit": "5ba4b27427fefda4bde84218e9dbba0e2a7475f8",
+  "spec_sha256": "110c07deae4bf44cce7564f2149d9ad742c8135bd2ce8c788c12d4db74c0df0c",
+  "dialect_version": "0.2.3",
+  "interpreter_commit": "b7014019b2be1fed73b146823d08d7120baae23b",
+  "interpreter_source_sha256": "d2d8bfe19d97410f37b65125942d2db23852c4d7434ed0f84dda8fb88ddaa7c6",
   "counts": {
     "asm": {
       "passed": 1,
@@ -10,7 +12,7 @@
       "blocked": 0
     },
     "blocker": {
-      "passed": 7,
+      "passed": 15,
       "failed": 0,
       "blocked": 0
     },
@@ -40,7 +42,7 @@
       "blocked": 0
     },
     "frontend": {
-      "passed": 15,
+      "passed": 21,
       "failed": 0,
       "blocked": 0
     },
@@ -60,22 +62,22 @@
       "blocked": 0
     },
     "native": {
-      "passed": 13,
+      "passed": 19,
       "failed": 0,
       "blocked": 0
     },
     "normalise": {
-      "passed": 24,
+      "passed": 29,
       "failed": 0,
       "blocked": 0
     },
     "parse": {
-      "passed": 570,
+      "passed": 606,
       "failed": 0,
       "blocked": 0
     },
     "recognise": {
-      "passed": 125,
+      "passed": 127,
       "failed": 0,
       "blocked": 0
     },
@@ -95,7 +97,7 @@
       "blocked": 0
     },
     "state": {
-      "passed": 35,
+      "passed": 44,
       "failed": 0,
       "blocked": 0
     },
@@ -105,7 +107,7 @@
       "blocked": 0
     },
     "tdl": {
-      "passed": 9,
+      "passed": 10,
       "failed": 0,
       "blocked": 0
     },
@@ -115,39 +117,16 @@
       "blocked": 0
     },
     "xrefs": {
-      "passed": 1310,
+      "passed": 1327,
       "failed": 0,
       "blocked": 0
     }
   },
-  "total": 2311,
-  "passed": 2311,
-  "failures": [],
-  "blocked_verdict_evidence": [
-    {
-      "verdict": "blocked:BD-B-ISA7",
-      "bead": "b-dialect-spec-bz6",
-      "executed": false,
-      "execution_target": "ISA 0.8",
-      "requires": "ISA 0.9 fault C, 61550b4 \u00a70.2 K5 / \u00a74.1",
-      "required_isa09": {
-        "status": "FAILED",
-        "fault": 1,
-        "console_hex": "",
-        "tape": [],
-        "terminal_records": [
-          {
-            "code": 1
-          }
-        ],
-        "host_requests": [],
-        "reversible_prefix_retained": true
-      },
-      "source_obligation": "source R body: console.write(\"x\"); return; steps=0\nISA 0.8 status=blocked:BD-B-ISA7 (BLK-5); generic trap is not equivalent\nrequired under ISA 0.9: fault code=1 before first counted instruction; console=empty; tape prefix=empty\nrequired under ISA 0.9: run=FAILED; exactly one terminal record, code=1; no host request; reversible prefix history retained\n"
-    }
-  ],
-  "command": "env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/implementation-final-freeze.json",
-  "checker_regressions_passed": 31,
-  "runtime_regressions_passed": 4,
-  "version_manifest_followup": "b-dialect-spec-bvy (SPEC_VERSIONS.toml is outside owned paths)"
+  "total": 2401,
+  "failed": 0,
+  "blocked": 0,
+  "checker_unit_tests": 36,
+  "legacy_runtime_tests": 4,
+  "report": "scripts/.tmp/round2-fixes-freeze.json",
+  "notes": "BLK-5 verdict checks pass; typed R fault execution remains an ISA-0.9 dependency. BD3-5 uses the council-permitted conservative reference bound; optional finite-bound follow-up egm."
 }

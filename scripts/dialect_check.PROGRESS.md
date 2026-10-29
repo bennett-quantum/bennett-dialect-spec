@@ -1,6 +1,56 @@
 # Dialect 0.2 pre-flight checker progress
 
-## Current freeze status — supersedes historical milestones below
+## Round-2 final freeze — 2026-10-29
+
+**2401/2401 passed; 0 failed; 0 blocked/unavailable.** Version 0.2.3,
+ISA grading target 0.8. Tested spec/checker snapshot 5ba4b27427fefda4bde84218e9dbba0e2a7475f8.
+Spec SHA-256 110c07deae4bf44cce7564f2149d9ad742c8135bd2ce8c788c12d4db74c0df0c.
+Independent interpreter b7014019b2be1fed73b146823d08d7120baae23b, source fingerprint d2d8bfe19d97410f37b65125942d2db23852c4d7434ed0f84dda8fb88ddaa7c6.
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 15 | 0 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 15 | 0 | 0 |
+| coverage | 125 | 0 | 0 |
+| driver | 1 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 21 | 0 | 0 |
+| hash | 5 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 14 | 0 | 0 |
+| native | 19 | 0 | 0 |
+| normalise | 29 | 0 | 0 |
+| parse | 606 | 0 | 0 |
+| recognise | 127 | 0 | 0 |
+| run-oracle | 15 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 44 | 0 | 0 |
+| step-check | 6 | 0 | 0 |
+| tdl | 10 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1327 | 0 | 0 |
+| **Total** | **2401** | **0** | **0** |
+
+
+Exact headless freeze command (absolute paths):
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/round2-fixes-freeze.json
+```
+
+36 checker unit tests pass via the repository unittest runner; pytest is not installed.
+4 legacy runtime tests pass. No expectation weakened, no ISA source edited, no push.
+Program-end fault release executes fresh-copy measurement and conditional correction/free
+through Rust run-cc; superposed statistics and loop/deferred-channel checkpoints execute
+through run-action. BLK-5 is a passing dependency verdict, not typed-fault execution on 0.8.
+BD3-5 uses the explicitly permitted conservative default, not a claimed N=2 proof;
+optional finite-bound refinement is b-dialect-spec-egm. No declines or partial resolutions.
+
+
+## Previous freeze status — 0.2.2 (historical)
 
 **2311/2311 passed; 0 failed; 0 unavailable.** Normative spec commit 976e4bb,
 dialect/norm 0.2.2. Editor-owned V10 reconciliation and its carrier witness are

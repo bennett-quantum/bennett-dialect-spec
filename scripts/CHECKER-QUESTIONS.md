@@ -168,3 +168,16 @@ not establish a definition. Following the user's clarification, V10 was validate
 only after the editor committed 976e4bb (full dialect/norm 0.2.2), including its
 new carrier witness. Checker version handling follows that commit. Manifest
 integration remains the other owner's b-dialect-spec-bvy task.
+
+## Q16 — round-2 resolved contract readings
+
+Round-2 0.2.3 reconciles the spec and executable witnesses in one ownership pass.
+N12 totalisation does not retain N27 intrinsics; abs uses canonical scalar rows.
+Allocator metadata is independent of the byte read set; arena validation uses logical
+objects as well as physical storage. G failure cancels provisional invocation state.
+Fault outputs use program-end copy measurement and correction/free; deferred records
+keep their channel on adjoint paths. Co loops use structured adjoints with declared
+controls. Setjmp continuation reachability invokes the conservative reference bound.
+Every R entry is BLK-5, direct generation calls excluded. Full final receipt is in
+dialect_check.LAST-RUN.json; optional finite-bound refinement egm and ISA-7 bz6 remain
+external follow-ups, not red gate checks or partial council resolutions.
