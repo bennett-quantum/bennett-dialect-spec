@@ -1,0 +1,2 @@
+("/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/emission/julia/ir_staticcompiler", "/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/emission/julia/ir_staticcompiler/kS.o")
+static_llvm FAIL: UndefVarError: `static_llvm` not defined in `StaticCompiler`

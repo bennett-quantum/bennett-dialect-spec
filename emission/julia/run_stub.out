@@ -1,0 +1,11 @@
+A alloc -> Ptr{Nothing}(0x0000000000001000)
+B alloc -> Ptr{Nothing}(0x0000000000001000)
+D alloc (llvmcall) -> Ptr{Nothing}(0x0000000000001000)
+measure A,B,D = true true true
+qalloc 0 4
+qalloc 0 2
+qalloc 0 3
+ctrl
+gate 1 3
+ctrl
+gate 1 3

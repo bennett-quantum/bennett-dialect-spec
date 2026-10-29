@@ -1,0 +1,1 @@
+syntax: more arguments than types for ccall
