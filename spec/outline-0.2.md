@@ -122,9 +122,13 @@ Sections keep 0.1's numbering where they correspond. New material is inserted as
 - **§3.2 The marker list.** Every marker is a declared external function with the 0.1 legality
   requirement (0.1 §3.6). The list:
   - **Unchanged from 0.1:** `qalloc`, `qborrow`, `qfree`, `gate`, `gate2`, `gate3`, `rot`,
-    `measure`, `qload`, `qstore`, `adj(f, env)`, `compute(f, use, env)`.
-  - **Changed: the budget operand is a budget record (§9).** One signature change per marker:
+    `measure`, `qload`, `qstore`.
+  - **Changed: every region-entry marker takes a budget record (§9).** One signature change per
+    marker:
     - `ctrl(ptr q, i64 qi, ptr f, ptr budget, ptr env)`;
+    - `adj(ptr f, ptr budget, ptr env)` and `compute(ptr f, ptr use, ptr budget, ptr env)`.
+      They are new operands: coherent slices of adjoint and compute bodies need budgets and a
+      fault register too (§10, TDL-8/9). Open question E12;
     - `reversible(ptr f, ptr budget, ptr env)`;
     - `oracle(ptr f, ptr budget, ptr desc)`, where `desc` is the descriptor of §8 and replaces
       0.1's `x, tgt, fault`;
@@ -526,10 +530,14 @@ trap.
 
 **Content:**
 
-- **§9.1 The budget record.** `struct bennett_budget { u64 steps, heap, stack, depth; }` (ISA
-  §5.4: steps; heap bytes; lifted stack cells; call depth). A field equal to
-  `BENNETT_BUDGET_TABLE` (all ones) takes its value from §9.2. A null record means all four
-  come from the table.
+- **§9.1 The budget record.** `struct bennett_budget { u64 steps, heap, stack, depth;
+  bennett_q fault; }`.
+  - The first four fields are ISA §5.4's: steps; heap bytes; lifted stack cells; call depth.
+  - A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from §9.2.
+  - `fault` is meaningful only for action regions. It names the caller's fault register (F = 4
+    wires) that receives the combined fault of the region's coherent slices (TDL-8), or null.
+  - A null record means all four budget fields come from the table and `fault` is null.
+  - For `oracle`/`inplace`, `fault` is ignored: the descriptor names it.
 - **§9.2 Out-of-band budget table** (driver input, `--bennett-budgets=<file>`, JCS JSON):
   - Entries are keyed by region identity (§7.3 hash, or region key) or by a symbol-name
     pattern, which the driver resolves to identities and records.
@@ -539,7 +547,7 @@ trap.
   - The table hash is recorded in the certificate.
 - **§9.3 Which budget governs what:**
   - oracle and in-place: the token (ISA §5.4, §10 `bennett_budget`);
-  - `ctrl`: every coherent slice's token (§10.7);
+  - `ctrl`, `adj`, `compute`: every coherent slice's token (TDL-9);
   - `reversible`: an R-tier step, heap and depth counter (§17.6);
   - device CC code outside regions: unbudgeted (classical control is "genuinely dynamic",
     NS §4.2).
@@ -636,15 +644,19 @@ anchors.
   - Displaced Co contents (case c), per-slice fault wires and dead Co temporaries live in
     declared mutable wires of the invocation.
   - They are freed by the scheduler (NS §3.1 garbage row) inside the window of ISA §6.2.
-- **TDL-8 Faults.** A combine oracle XORs the first nonzero per-slice code into the region's
-  fault register, when the action declares one. An action with no fault register cannot
-  observe slice faults (NS §4.2: "a quantum action has no fault outcome of its own: any
-  fallible computation it needs is a lifted oracle it calls, whose fault register it declares
-  among its outputs"). The plugin therefore gives every `ctrl`/`adj`/`compute` with fallible
-  slices an implicit fault output. `env` field `__bennett_fault` (descriptor-style, optional)
-  names the caller register. Without it, the fault wires are a plugin-allocated register
-  returned to the caller's context and reported in the certificate's fault rate.
-- **TDL-9 Budget.** Each O_k token is the `ctrl` record, or the table entry (§9). Exhaustion is
+- **TDL-8 Faults.** NS §4.2: "a quantum action has no fault outcome of its own: any fallible
+  computation it needs is a lifted oracle it calls, whose fault register it declares among its
+  outputs". So:
+  - A combine oracle XORs the first nonzero per-slice code into the action's declared fault
+    register: the `fault` field of the budget record (§9.1).
+  - When that field is null and the body has fallible slices, the plugin allocates the
+    register itself.
+    - It is retained like TDL-7 history.
+    - It is released at program end by `measure` in a final CC epilogue, which also records
+      the outcome into the run's fault statistics.
+    - Its rate is reported in the certificate (`fault_rate`, ISA §12.3).
+    - A nonzero rate is a reported quantity (NS §4.2), not an error.
+- **TDL-9 Budget.** Each O_k token comes from the region-entry marker's budget record, or from the table entry (§9). Exhaustion is
   that slice's `FAULT_BUDGET_*` and reaches TDL-8. Open question E2 asks whether the budget is
   per slice or a total.
 - **TDL-10 Co control of quantum operations.**
@@ -1284,3 +1296,428 @@ programs affected, the ISA 0.8 realisation that does exist, the exact ISA change
 affected (none).
 
 **Closes:** `.3`, `.19`, `.20`, `.32` (blocker parts).
+
+---
+
+# Part B. Mechanism decisions
+
+One paragraph per decision. Each says what the outline commits to, the alternatives
+considered, and why they were rejected.
+
+**B1. The lifted subset is all of materialised LLVM.**
+
+*Decision.* Nothing is outside the subset. Normalisation (§12) legalises every construct into
+integer SSA, memory, calls and branches. The map (§16) gives every such construct an ISA 0.8
+row:
+
+| Construct | ISA realisation |
+|---|---|
+| memory | `lift.boundscheck` plus `lift.load`/`lift.store` in pieces of at most 128 bits |
+| globals | data images and `lift.addr` |
+| heap | the runtimes allocator over `lift.alloc`/`lift.free`, with heap budget faults (ISA §4.2, §7.2) |
+| allocas | the shadow stack (B16) |
+| direct calls and recursion | `lift.call`/`lift.ret` lprocs, with depth and stack faults (ISA §3.7) |
+| indirect calls | B3 |
+| integer intrinsics | fixed expansions (N27) |
+| memcpy family | runtime lprocs (N26) |
+| FP | soft-float lprocs (§13); `half`/`bfloat` via binary32; `x86_fp80`/`fp128` via arith; transcendentals via the runtimes libm, so the same code runs in both builds |
+| vectors | per-lane scalarisation (N21) |
+| integers wider than 128 bits | limbs (N22) |
+| aggregates | per-field locations |
+| varargs | memory blocks with a forced-memory-path `va_list` (N23) |
+| `switch` | a balanced compare tree (§16.4) |
+
+The budget unit stays one reference-interpreter row of the reference body.
+
+*Alternatives rejected:*
+
+- **Keep a subset and extend it per rung.** That is what 0.1 D4 did, and it was rejected. It
+  makes the checker the scope.
+- **Lift through an ISA interpreter of LLVM IR** (one generic "LLVM step" lproc). It gives an
+  index space independent of the program, but multiplies B by about 100 and removes the
+  structure the specialiser recovers (SQLite §7).
+- **Inline-expand memcpy and switch.** Rejected for the reference body. A runtime call keeps
+  the reference body and its hash small and deterministic, and executors may inline
+  extensionally (ISA §5.7, T6).
+- **lift.alloc per stack frame.** Rejected: storage is never reclaimed (ISA §7.1), so
+  cumulative heap would grow with every call (SQLite: 3,176 calls per oracle call).
+
+**B2. The oracle interface descriptor.**
+
+*Decision.* The descriptor is an in-memory record built by the front end (constant stores; a C
+macro; Rust/Julia structs). It is passed as `__bennett_oracle(f, budget, desc)`. It binds every
+IR parameter of an arbitrary region function to one of:
+
+- `IN`: an input register, zero- or sign-extended;
+- `ARG`: a classical value;
+- `MEM_IN`: a `ptr` parameter that receives `lift.addr` of an `in` interface region bound to a
+  register;
+- `OUT`: a `ptr` parameter that receives a fresh zeroed buffer, XORed into a register at exit;
+- `INOUT`: the in-place register, `inplace` only.
+
+The descriptor also names:
+
+- device-model bindings: ENTROPY, BLOCK, CLOCK, CONSOLE (B6);
+- the result target (`tgt`), with a fault-on-dropped-bits check when it is narrower than the
+  result;
+- the fault register.
+
+Kinds are classical data. Their value sets (§5.3) select compiled signatures, and the finite
+kind domain bounds them in every case. Wide outputs use the k + 2 variant construction of §8.6.
+The oracle's view of classical memory is the caller's at entry (§8.5): constant globals are
+images; mutable reachable objects use entry-state transfer by allocation replay (O-07), or
+build-time snapshot images (§19.6).
+
+SQLite route A is then exactly:
+
+| Parameter | Binding |
+|---|---|
+| `img` | MEM_IN, `region[25,8]` |
+| `len` | ARG |
+| `rowid` | IN, 20 wires, ZEXT |
+| result | `tgt`, 1 wire |
+
+There is no entry state to transfer when the program does not initialise SQLite before the
+oracle. When it does, the 12 KB of mutable globals transfer (SQLite C′).
+
+*Alternatives rejected:*
+
+- **Fixed per-kind markers** (`oracle1`, `oracle2`, …). They cannot express arbitrary arity.
+- **Variadic marker.** Rejected: fixed signatures are the spike's evidence, the variadic probe
+  `ctrl_v` was dropped, and Julia `llvmcall` makes variadic calls awkward.
+- **Parameter attributes or annotations.** C cannot attach them to parameters reliably, and
+  passes may drop them.
+- **A constant-global interface table plus dynamic values passed separately.** It needs a
+  second operand list anyway.
+- **Packing every input into one register.** That is 0.1 D21, a narrowing.
+- **Separate per-oracle globals that do not see host mutations** ("cold globals"). Rejected:
+  this changes results relative to native whenever the host mutated state the oracle reads.
+
+**B3. Function addresses and indirect-call dispatch.**
+
+*Decision.* A(F) is F's address in the driver's comparison link (NS §3.2). It is the same in
+host, CC, R and lifted code and in every data image. Each tier maps A(F) to its own variant:
+
+- **Candidate sets:** the §5 value set, else exact-LLVM-function-type match over the
+  address-taken functions of the linked program. This is sound for defined C, C++ and Rust:
+  SQLite gives at most 99 candidates, typically 1 to 38.
+- **Dispatch:** a balanced compare tree over the sorted A(F_k), with leaves that make a static
+  call:
+  - CC/R: `icmp`/`br`/`call @F_k` (ISA §4.1);
+  - lifted: `lift.icmp.eq`/`qbranch`/`lift.call @F_k` (ISA §4.2). Cost: about 2⌈log₂k⌉ + 1
+    rows.
+- **No match:** F(4).
+- **Reuse:** the same tree serves region operands (decision 3, B17), `switch`, handle-id
+  dispatch and descriptor shapes.
+
+*Alternatives rejected:*
+
+- **A dense canonical function index** (0..k−1) as the encoding. It gives smaller compares,
+  but every `ptrtoint`, comparison, hash or store of a function pointer would differ from
+  native. Pointer values would then be layout-dependent outcomes everywhere (SQLite hashes and
+  compares function pointers).
+- **`qjumpr` across functions.** Illegal: ISA §4.2 limits `qjumpr` to the containing function.
+- **Linear compare chains.** O(k) rows per call.
+- **An ISA indirect-call row.** Efficiency item E3 for ISA 0.9, not needed.
+
+**B4. Taint-driven lifting under `ctrl` (TDL), and the store rule.**
+
+*Decision.* §10 TDL-1 to TDL-12. The audit's TDL-1 to TDL-10 are adopted with four
+refinements:
+
+1. **Coherence is per object instance and dynamic.** The CC generation keeps a Cl/Co bit, set
+   when a controlled event is *applied*. The static may-Co set only places objects in the
+   arena and selects variants.
+2. **The store rule (TDL-5) has four cases.** For stores to outliving objects:
+   - (a) old contents classical → masked XOR, with any Co value computed by a slice oracle and
+     uncomputed by re-running it on unchanged inputs: exact, no history;
+   - (b) old contents Co, and the update is a library bijection or declared pair → in place:
+     exact;
+   - (c) old contents Co, in the `f` part of `compute` → history, cleaned by adjoint(E_f);
+   - (d) otherwise `BD-E-COHERENT-OVERWRITE`. This is L, because NS §4.2 states exactly this
+     rule for classical code acting on quantum state that outlives a region.
+3. **Every action region has a fault output** (TDL-8): the budget record's `fault` field or a
+   plugin-allocated register.
+4. **After exit** (TDL-11), Co memory reaches classical code only through
+   `__bennett_observe`.
+
+This removes the semantic bug the audit found in 0.1, where classical stores of a `ctrl` body
+happened on both branches. It needs no ISA change: actions call oracles (ISA §5.3, §4.7).
+
+*Alternatives rejected:*
+
+- **0.1 generation-only semantics.** Wrong results under control.
+- **Always keep history (audit TDL-7 as written).** Silently entangles garbage with the
+  control, which degrades interference with no diagnostic. NS §4.2 forbids it outside
+  compute/uncompute. Open question E3 offers it only as an explicit opt-in.
+- **Lift the whole `ctrl` body as one oracle.** Actions are not oracles. Quantum operations
+  with classical structure inside the body (indices, op codes, loops) need generation (audit
+  §3.1).
+- **An implicit measurement when Co memory is read classically.** It would change semantics
+  silently.
+
+**B5. Budgets.**
+
+*Decision.* Four components (steps, heap, stack, depth) exactly as ISA §5.4. They come from an
+in-source **budget record** (`ptr` operand on every region-entry marker; a null record or
+all-ones fields mean "from the table"). The record also carries the action's fault register.
+They are completed from an **out-of-band table** keyed by region identity or symbol pattern,
+plus per-component project defaults (§9). The `ctrl`, `adj` and `compute` budgets govern every
+coherent slice. The `reversible` budget is enforced by an R step counter whose unit is defined
+on the materialised module, so it is plugin-independent. Run-time budgets work when they are
+finite value sets (pre-minted) or bitwise copies of launch arguments (stub-minted). Budgets
+computed on the device need BLK-2.
+
+*Alternatives rejected:*
+
+- **An `i64` steps operand plus table only** (0.1 shape). It cannot carry four components or
+  the action fault register in source (open question E1).
+- **Budgets per loop.** NS §3.1 says no per-loop annotation is ever required.
+- **Round run-time budgets up to pre-minted powers of two.** Changes F_B: inputs between B and
+  2^k steps would succeed instead of fault.
+
+**B6. Effects and device models per tier.**
+
+*Decision.*
+
+| Tier | Effects |
+|---|---|
+| R | effect markers lower to ISA `effect` on console, clock, entropy and block (ISA §7.3), taped and reversed |
+| L | the same markers' L variants operate on lifted state bound through the descriptor: console buffer, clock counter, ENTROPY and BLOCK `in` regions with a copy-on-write overlay |
+| CC | host functions are reached by `hostcall` with pointer-free argument blocks; pointer-rich sharing promotes code instead (B7) |
+| unmodelled | F(8), with a `trapped` coverage line, which NS permits |
+
+The runtimes musl, the Julia shim and the platform map their syscalls onto the effect markers.
+Programs are unmodified.
+
+*Alternatives rejected:*
+
+- **Effects as ordinary external calls resolved by name** (`write`, `getrandom`). Markers keep
+  the positive legality requirement and recognition by name, and libc names vary.
+- **Hostcall from R.** ISA §4.1 limits `hostcall` to CC, and it is not reversible.
+- **Coherent effects by fault only.** That narrows rungs 4, 7 and 8 (audit D11).
+
+**B7. Whole-program driver modes and placement.**
+
+*Decision.* The driver has these modes:
+
+- `--bennett-tier=reversible --bennett-entry=<sym>`: the whole program in R, with a CC stub
+  that fetches argv by `hostcall`. Un-run is ISA §10 whole-run reversal. Rungs 3, 5, 6.
+- `--bennett-oracle=<sym>`: a convenience that synthesises the quantum programmer's TU.
+- Placement by **promotion**: host functions that share pointer-rich memory with device code
+  become CC variants, down to a syscall proxy in the limit. Correct on ISA 0.8; ISA-11 is
+  efficiency only.
+- Build-time snapshots.
+
+*Alternatives rejected:*
+
+- **Copy-in/copy-out of pointer-rich host data.** Relocating pointers needs type information
+  the IR does not have.
+- **Wait for ISA-11.** Not needed for correctness.
+- **Run rung 6 kernels inside a device-compiled emulator** (QEMU in R). Rejected as the
+  primary route: the thesis is compiling the program, not interpreting it, and the budget
+  grows about 100×. It is kept as an optional independent cross-check for rung 6 console
+  output.
+
+**B8. Inline asm classification.**
+
+*Decision.* A normative per-architecture data table (`asm 0.2`) keyed by the normalised asm
+string and constraints, with classes lowered, shimmed and trapped (NS §3.3). Rows required now:
+
+- musl syscall asm for x86-64, aarch64 and riscv64;
+- the riscv64 platform rows (§20, from the platform spike).
+
+Module asm and `.S` symbols resolve as externals, to shims by symbol and hash. Target
+intrinsics use the same table.
+
+*Alternatives rejected:*
+
+- **Binary-lift asm to IR** (a remill-style lifter). Large, and per-instruction semantics would
+  then be unspecified by the dialect.
+- **Trap all asm.** Narrows rungs 3, 6 and 7.
+- **Require a source edit.** Forbidden: NS §0 "unmodified".
+
+**B9. Exceptions, setjmp/longjmp, fibers.**
+
+*Decision.* Three normaliser transforms valid in every tier and in the native comparison build:
+
+1. **Explicit propagation** (N28). An EH-state global; `invoke` becomes call, check, branch;
+   shim personalities for C++, Rust and C cleanup; unwinding out of a region is F(4), as NS
+   §3.1 states.
+2. **SjLj as propagation** (N29). longjmp is a pseudo-exception caught by the setjmp frame,
+   identified by its shadow-stack frame token. This covers every defined C use and Julia's
+   `jl_try`.
+3. **Rewindable frames** (N30, Asyncify-style), only for functions on paths to switch
+   primitives: swapcontext, Julia tasks, the kernel's `swtch`/`__switch_to` shims. Works on
+   ISA 0.8; G-16 is efficiency.
+
+*Alternatives rejected:*
+
+- **Use LLVM's `WinEH`/`SjLjEHPrepare` lowering.** Target-specific and not semantics-defining.
+- **A return-value unwind bit.** Overflows 128-bit results.
+- **A CPS conversion of the whole program.** Far more invasive than Asyncify for the same
+  capability.
+- **Wait for G-16.** Not needed for correctness.
+
+**B10. Polyvariant cloning.**
+
+*Decision.* A variant is keyed by (function, tier, coherence signature). Code is cloned; data
+never is (one classical memory). A(F) names every variant, and each tier's dispatch picks its
+own. This replaces `BD-E-DEVICE-ADDRESS` and makes SQLite usable classically (host builds the
+database) and coherently (the oracle) in one program.
+
+*Alternatives rejected:*
+
+- **Clone data per tier.** Divergent state, results that differ from native.
+- **Forbid dual use.** That is 0.1 B-16, a narrowing.
+
+**B11. Handle tables in memory, and what needs ISA-4.**
+
+*Decision.*
+
+- The dialect admits handles anywhere the points-to analysis tracks, except host-readable
+  slots (L), with register ids as the in-memory representation (§6).
+- On ISA 0.8, `qreg` values cannot be stored in memory (ISA §3.2–§3.3, §4.1). The plugin
+  therefore lowers to **static register files**: one CC `qreg` variable per (root, instance
+  index), threaded through device CC variants by register-environment passing, with
+  marker operands dispatched by comparing ids.
+- This realises every program whose allocation sites have a statically bounded number of
+  live instances, and widths with bounded value sets.
+- Run-time-unbounded instance counts (a `Vec` of handles pushed in a data-dependent loop) and
+  unbounded widths are **BLK-1 (ISA-4)**: the capability cannot be expressed on 0.8 because
+  dynamic SSA instances of a `qreg` name become unnameable and `qreg[n]` types are static.
+
+*Alternatives rejected:*
+
+- **A single pool register with run-time-offset slices.** Two simultaneous slices are illegal
+  (ISA-5), whether `lo` may be a run-time value is unclear, and the pool size is static anyway.
+- **A recursion spine holding one register per activation.** Unusable control structure.
+- **Rejecting** (0.1). A narrowing.
+
+**B12. REPL per-TU fast path.**
+
+*Decision.* An explicit closed-unit mode. The plugin processes one module plus the runtimes
+and arith bitcode exactly as a whole program, after a closedness check: callees are resolved,
+no device address escapes, and no function pointer enters through an entry. When the check
+fails, the driver falls back to whole-program mode instead of rejecting. Incrementality comes
+from content-addressed ISA objects and linking (ISA §9.2–§9.3).
+
+*Alternatives rejected:*
+
+- **Run in pre-link phases unconditionally.** Enzyme PR 3211: it breaks LTO semantics.
+- **A per-TU mode without the closedness check.** The semantics would then differ from
+  whole-program mode, against NS "with the same semantics".
+
+**B13. Mixed LLVM majors in one link.**
+
+*Decision.* Read up: every input is read with the newest major M in the envelope, linked and
+processed by plugin M. Runtimes and arith ship per-major bitcode. Datalayout and triple must
+agree. Inputs newer than M are a tool-version error. The envelope of tested pairs is
+published, with a cross-major corpus case.
+
+*Alternatives rejected:*
+
+- **Per-major partitions linked at the ISA level.** Taint and cloning need one module (NS §3.3).
+- **Downgrading bitcode.** Unsupported by LLVM.
+
+**B14. The oracle's entry state.**
+
+*Decision.* The reference semantics is "the region function runs on a private copy of the
+caller's classical memory". Its realisation on ISA 0.8:
+
+1. images for constant globals;
+2. **entry-state transfer**: the allocation-size replay reproduces CC heap addresses exactly
+   (identical `alloc` rules, ISA §4.2/§7.1), then a byte copy from a snapshot `in` region
+   filled by CC with 128-bit `args` chunks;
+3. **build-time snapshot images** where the snapshot is known at link time (rung 7).
+
+*Alternatives rejected:*
+
+- **Oracles see only static images.** Wrong results whenever the host mutated state (0.1
+  implicitly).
+- **Wait for G-12.** Efficiency only.
+
+**B15. One device analysis.**
+
+*Decision.* One field-sensitive inclusion-based points-to and value-set fixpoint (§5) answers
+every question that 0.1 answered with separate weaker analyses: handle provenance, region
+candidates, indirect candidates, descriptor kinds, op-code and width sets, may-Co objects,
+oracle read sets. Value sets are only a precision tool. Bounded domains fall back to the full
+domain, never to rejection.
+
+*Alternatives rejected:*
+
+- **Per-question analyses** (0.1). Each one's imprecision became a rejection: B-24, B-27, B-33.
+- **A context-sensitive (k-CFA) analysis.** Not needed for soundness, and costly at SQLite
+  scale (1,218 functions).
+
+**B16. The shadow stack.**
+
+*Decision.* Every alloca of a device variant lives on a runtimes shadow stack, in both builds
+(NS §3.2). The stack is one heap block per region or entry of `sstack` bytes, part of the heap
+budget. Overflow is F(2).
+
+*Alternatives rejected:*
+
+- **`lift.alloc` per frame.** No reclamation (B1).
+- **A dedicated layout global.** It needs a fifth budget component outside ISA §5.4 (open
+  question E7).
+- **Keep native stack allocas.** Layout-dependent results in device code.
+
+**B17. Region candidates.**
+
+*Decision.* Decision 3 with the type fallback: the candidate set is always bounded by the
+program. Ill-formed candidates are compiled as trap bodies (`T-REGION-INVALID`) unless they are
+the unique candidate. A region pointer with no matching function traps at run time.
+
+*Alternatives rejected:*
+
+- **Reject on ⊤** (0.1 C3/C4/C6). A narrowing: it covers callbacks, `std::function` and
+  host-supplied region pointers.
+- **Reject if any candidate is ill-formed.** Type-based sets are over-approximations, so this
+  would reject correct programs (open question E14).
+
+**B-BLK. Blockers and ISA items (the §25 list).**
+
+*Capability blockers:* the capability is fully specified in the dialect, but on ISA 0.8 the
+stated case has no realisation. No rung depends on any of them (part C).
+
+| Id | NS capability | Affected case | ISA 0.8 realisation that exists | Exact ISA change |
+|---|---|---|---|---|
+| **BLK-1** = ISA-4 | NS §3.1 handle tables; §4.1/§4.2 dynamic allocation, "real allocation"; Bennett.jl vectors of qubits; adj of generations whose register set is known only at run time | allocation sites with a run-time-unbounded count of live registers; register widths with unbounded value sets | static register files plus dispatch (B11) | (i) dynamic-width type `qreg[*]`; `q = qreg.new cls n` with n an `i64` value yields `qreg[*]`; `w = qreg.width q`. (ii) Binding a `qreg[*]` to `wire[n]`/`region[A,W]` slots checks the width at the call: CC trap / R fault `FAULT_UB_TRAP` on mismatch. (iii) `id = qreg.id q` (non-consuming; the §10 launch id) and `q = qreg.from_id id` (yields `qreg[*]`; trap if the id is not live, is viewed, or is consumed). Frames: `qreg.id` is pure; `qreg.from_id` records the handle reference. |
+| **BLK-2** = ISA-1 | NS §4.2 "run-time budgets come from the host or from measurement results" | budgets computed on the device (arithmetic on inputs, measurement-derived) | pre-minted finite sets; stub-minted copies of launch arguments | CC instruction `tk = budget.mint @region s h st d` (`i64` operands) with the ISA §5.4 validation (`bennett_budget`'s checks) as a CC trap; the token is scoped to the run; an impure frame recording the token. |
+| **BLK-3** = ISA-3 | NS §3.1/§4.2 parametrised in-place updates `x ← g(x; y, a)` from a user-declared `(g, ginv)` pair with quantum or unbounded classical parameters | `inplace` with `IN`/`MEM_IN` bindings or unbounded `ARG`s | `qinplace` without parameters; per-value specialisation for finite `ARG` sets; library bijections as permutation actions (TDL-5b) | `qinplace @g @ginv tk x (ins..) (mem..) (args..)`. The §4.5 macro passes the lists to both `oracle_call`s. The §6.1 transfer becomes `x: perm with S_x ∪ ins ∪ cells(mem) ∪ Π`. Certificate obligation: g∘ginv = id for every (ins, mem, args) class (exhaustive or library). |
+| **BLK-4** = new ISA-12 (audit B-38) | quantum allocation inside reversible-tier code | `qalloc`/`qfree` in an R closure when they cannot be hoisted to the CC caller (run-time count) | hoisting to CC with a static count | Permit `qreg.new`/`qreg.free`/`qreg.slice`/`qreg.concat` in R. The R history records them. Reversal of `qreg.new` is `qreg.free` with the cleanliness obligation (simulator check; hardware per ISA §17 item 14); reversal of `qreg.free` is `qreg.new` (clean). `measure` stays CC-only. |
+
+*Wording items* (no capability lost; two implementations could differ until fixed):
+
+- **ISA-7:** a table from CC/R trap cause to §5.4 code (div0 → 5, MIN/−1 → 6, memory → 7,
+  `trap` → 4, alloc failure → 2), plus a CC/R `fault C` instruction. The dialect uses the
+  `hostcall bennett.fault` workaround in CC meanwhile (§11.5).
+- **ISA-8:** an R call returns a fault status to its CC caller, and runs ending in an R fault
+  are reverse-eligible.
+- **ISA-3 editorial:** the JCS spelling of `args` types, using the §16.2 type spelling as JSON
+  strings.
+- **`qreg.slice`:** clarify whether `lo` may be a run-time value.
+- **ISA §5.4:** code 10's "(R only)" label versus `fault 10` in oracles (§11.3).
+
+*Efficiency items* (correct on ISA 0.8 by the stated construction; ISA 0.9 candidates on
+evidence only):
+
+| Item | Construction on ISA 0.8 |
+|---|---|
+| ISA-5 | per-wire registers, or a quantum-addressed gate |
+| ISA-9 | clean allocation for CC-spanning borrows |
+| ISA-11 | promotion (B7) |
+| G-12 | entry-state transfer (B14) |
+| G-13 | static arena |
+| G-14 | unrolled padded events, TDL-10 |
+| G-15 | k + 2 variants, §8.6 |
+| G-16 | rewindable frames, B9 |
+| SQLite E1–E5 | cell width, frame width, indirect-call row, block-copy row, classical-content hint |
+
+ISA-2 is not a gap (R instrumentation, §17.6). ISA-6 is not a gap. ISA-10 is settled by the
+vectors.
+
+*LLVM changes needed:* none. The legality findings' LLVM bugs (Attributor, IRNormalizer,
+unprepared structurizecfg) are outside the supported envelope (0.1 D20, L).
