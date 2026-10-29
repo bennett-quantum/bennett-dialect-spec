@@ -20,7 +20,18 @@ def values(text):
 def cases(ident,text):
     """Return C driver, independent expected stdout records, module variants."""
     out=[];expected=[];decl='';variants=('input','output')
-    if ident in ('n-shadow-stack','n-varargs','n-intrinsics','n-eh'):
+    if ident in ('n-bitcast-lanes','n-bitcast-scalar','n-vp-merge','n-vp-select','n-vp-product','n-defined-zero'):
+        if ident=='n-bitcast-lanes':
+            decl='extern uint16_t f(const void *);\n'
+            m=re.fullmatch(r'bytes=([0-9a-f]+) -> f=(\d+)',text.strip())
+            data=bytes.fromhex(m[1]);out=['uint8_t p[]={'+','.join(map(str,data))+'};', 'printf("%u\\n",f(p));'];expected=[int(m[2])]
+        elif ident=='n-defined-zero':
+            decl='extern uint8_t f(uint8_t);\n';variants=('output',)
+            for x,want in re.findall(r'f\((\d+)\)=(\d+)',text):
+                out.append(f'printf("%u\\n",f({x}));');expected.append(int(want))
+        else:
+            decl='extern uint32_t f(void);\n';out=['printf("%u\\n",f());'];expected=[int(re.fullmatch(r'f=(\d+)',text.strip())[1])]
+    elif ident in ('n-shadow-stack' ,'n-varargs','n-intrinsics','n-eh'):
         name={'n-shadow-stack':'a','n-varargs':'top','n-intrinsics':'k','n-eh':'eh'}[ident]
         ret='int64_t' if ident=='n-shadow-stack' else 'int32_t'
         count=2 if ident=='n-intrinsics' else 1
@@ -107,6 +118,11 @@ def check(runner,block):
                 if ident=='fp-aggregate':
                     text += '\ndefine i64 @packed(double %x) {\n %r = call {i8, i32} @p(double %x)\n %a = extractvalue {i8, i32} %r, 0\n %b = extractvalue {i8, i32} %r, 1\n %aa = zext i8 %a to i64\n %bb = zext i32 %b to i64\n %hi = shl i64 %bb, 8\n %v = or i64 %aa, %hi\n ret i64 %v\n}\n'
                 src.write_text(d.with_decls(text))
+            # LLVM 18 verifies VP selectors but its x86 backend cannot legalise
+            # them. LLVM 23 independently lowers the original VP module; both
+            # installed native majors execute our scalar output.
+            if ident.startswith('n-vp-') and variant=='input':clang=runner.frontends['23']/'clang'
+            else:clang=runner.frontends[major]/'clang'
             objects=[src,directory/'driver.c']
             compiler=clang
             if ident=='n-eh' and variant=='input':

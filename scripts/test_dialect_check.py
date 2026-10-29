@@ -9,12 +9,30 @@ import dialect_check_v02 as v
 class ContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.spec = v.command(['git','-C',d.ROOT,'show','HEAD:spec/Bennett-Dialect-Spec.md'])
+        cls.spec = d.SPEC.read_text()
         cls.blocks = d.extract_blocks(cls.spec)
         v.initialise(cls.blocks)
 
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
+
+    def test_round2_memory_contracts(self):
+        from dialect_round2 import check_state
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            for name in ('entry-allocation-only','arena-logical-bounds'):
+                b=self.block('state',name)
+                check_state(runner,b)
+                with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body'].replace('4112','4096').replace('513','514')+'\ninvalid'))
+
+    def test_round2_materialisation_boundaries(self):
+        for intrinsic in ('abs','ctlz','cttz'):
+            ir=f'declare i8 @llvm.{intrinsic}.i8(i8, i1 immarg)\ndefine i8 @f(i8 %x) {{\n %v = call i8 @llvm.{intrinsic}.i8(i8 %x, i1 false)\n ret i8 %v\n}}\n'
+            with self.subTest(intrinsic=intrinsic):
+                with self.assertRaisesRegex(d.Reject,'V4'):v.validate(ir)
+                self.assertIn('@__bennett_rt_'+intrinsic+'_i8',v.normalise(ir))
+        ir='define i32 @f() {\n %v = bitcast <2 x i16> <i16 1, i16 2> to i32\n ret i32 %v\n}\n'
+        self.assertNotIn('<2 x',v.normalise(ir).split('define')[1])
 
     def test_wrong_verdict_is_a_failure(self):
         body = self.block('example', 'operand-bad-code')['body']
@@ -60,9 +78,9 @@ class ContractTests(unittest.TestCase):
             with self.subTest(format=ty):
                 ir=f'define {ty} @f({ty} %x) {{\n %n = fneg {ty} %x\n ret {ty} %n\n}}\n'
                 self.assertEqual(v.validate(ir),'accept')
-        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.2"}\n'
+        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.3"}\n'
         self.assertEqual(v.recognise(good)[0],'accept')
-        self.assertEqual(v.recognise(good.replace('0.2.2','0.2.1'))[0],'reject:BD-E-VERSION')
+        self.assertEqual(v.recognise(good.replace('0.2.3','0.2.1'))[0],'reject:BD-E-VERSION')
 
     def test_v4_v12_residues_and_clean(self):
         for rule in ('v4','v12'):

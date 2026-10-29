@@ -79,3 +79,10 @@ uint64_t __bennett_seed_entry_stack(void) {
         __bennett_nz_fault(4);
     return 4096+(uint64_t)((unsigned char *)__bennett_nz_alloc(16)-heap);
 }
+
+uint8_t __bennett_rt_ctlz_i8(uint8_t x, _Bool flag) {
+  (void)flag; uint8_t n=0; while(n<8 && !(x&128)){++n; x<<=1;} return n;
+}
+uint8_t __bennett_rt_cttz_i8(uint8_t x, _Bool flag) {
+  (void)flag; uint8_t n=0; while(n<8 && !(x&1)){++n; x>>=1;} return n;
+}

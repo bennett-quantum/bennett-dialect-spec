@@ -275,8 +275,8 @@ def recognise(text, **options):
     try:
         a.s1()
         for version in re.findall(r'!"bennett.dialect", !"([^"\n]+)"', text):
-            if version != "0.2.2":
-                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.2; actual " + version)
+            if version != "0.2.3":
+                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.3; actual " + version)
         a.analyse()
         a.region_rules()
         a.handle_rules()
@@ -295,7 +295,7 @@ def recognise(text, **options):
 # exemption for arbitrary unresolved functions. Full L/R validation defaults to
 # an empty link environment.
 NORMALISATION_LINK={
-    '__bennett_rt_ss_push','__bennett_rt_ss_pop','__bennett_rt_memmove',
+    '__bennett_rt_ctlz_i8','__bennett_rt_cttz_i8','__bennett_rt_abs_i8','__bennett_rt_ss_push','__bennett_rt_ss_pop','__bennett_rt_memmove',
     '__bennett_rt_memset','__bennett_rt_ctpop_i32','__bennett_rt_eh_match',
     '__bennett_rt_syscall','__bennett_rt_poll','may_throw','exp','sinf',
     '__bennett_sf_cmp_f64','__bennett_sf_add_f64','__bennett_sf_mul_f64',
@@ -333,7 +333,7 @@ def validate(text,*,linked=()):
                 for attr in c['ret_attrs'] + c['fn_attrs'] + [x for a in c['args'] for x in a[1]]:
                     if d.attr_name(attr) in d.N4_PARAM | d.N4_FN: bad('V3',ins.text)
                 cal=c['callee']
-                if re.match(r'@llvm\.(abs|ctlz|cttz)\.',cal) and c['args'][-1][2] in ('true','1'):bad('V4',ins.text)
+                if re.match(r'@llvm\.(abs|ctlz|cttz)\.',cal):bad('V4',ins.text)
                 if cal.startswith('@') and not cal.startswith('@llvm.'):
                     target=m.resolve_alias(cal[1:])
                     if not m.defined(target) and target not in {'__bennett_nz_fault','__bennett_nz_alloc','__bennett_nz_free'} and target not in linked:
@@ -688,6 +688,8 @@ def action_object(isa,path,name,widths,rows):
 
 def state_check(runner,block):
     a=block['attrs'];ident=a['state'];at=int(a['at'])
+    from dialect_round2 import STATES, check_state
+    if ident in STATES:return check_state(runner,block)
     from dialect_driver import SCENARIOS, check_scenario
     if ident in SCENARIOS.values():return check_scenario(runner,block)
     from dialect_state import NATIVE_STATES, check_native_state

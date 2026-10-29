@@ -452,3 +452,17 @@ version synchronization to 0.2.2 is tracked as b-dialect-spec-bvy for their owne
 SPEC_VERSIONS.toml and scripts were not edited. The full freeze gate is not
 claimed green. Original finding 7u1 is resolved; no push. Beads export remains
 outside the commits; the orchestrator owns the session worklog.
+
+## Round-2 fixes
+
+Tracking b-dialect-spec-1zy; draft/full norm 0.2.3, ISA 0.8.
+
+| Item | Status | Commit group |
+|---|---|---|
+| SOL-R2-03 | resolved | packed vectors, materialisation and memory |
+| SOL-R2-04 | resolved | packed vectors, materialisation and memory |
+| R2-CODEX-04 | resolved | packed vectors, materialisation and memory |
+| REG-CODEX-N27 | resolved | packed vectors, materialisation and memory |
+| SOL-R2-02 | resolved | packed vectors, materialisation and memory |
+| R2-CODEX-02 | resolved | packed vectors, materialisation and memory |
+| R2-CODEX-01 | resolved | packed vectors, materialisation and memory |

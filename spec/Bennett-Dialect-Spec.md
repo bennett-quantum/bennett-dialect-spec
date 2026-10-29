@@ -1,6 +1,6 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.2
+# Bennett LLVM Dialect — Specification, draft 0.2.3
 
-**Date:** 2026-10-29. **Status:** draft 0.2.2 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
+**Date:** 2026-10-29. **Status:** draft 0.2.3 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
 2026-10-29 at its end) revised after council round 1 on 0.2; awaiting round 2. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
@@ -11,9 +11,9 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.2: markers 0.2, handles 0.2, regions 0.2.1, oracle-abi 0.2.1, tdl 0.2.1,
-effects 0.2.1, norm 0.2.2, map 0.2.1, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2.2`) is the compatibility unit (§23): drafts are not compatible
+**Versioning.** Dialect 0.2.3: markers 0.2, handles 0.2, regions 0.2.1, oracle-abi 0.2.1, tdl 0.2.1,
+effects 0.2.1, norm 0.2.3, map 0.2.1, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+The **full version string** (`0.2.3`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -1715,7 +1715,7 @@ Only the rules the north star requires:
   removal requires the complete instrument (outcomes and correlations included) to be
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). The coverage report has a
-  `lowered` entry with source `dialect-0.2.2:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.3:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -2313,17 +2313,23 @@ R includes a caller alloca/frame, include its live shadow-stack backing storage 
 bytes and addresses. If reachability is uncertain, include all live caller heap/stack backing
 allocations. Whenever the L closure uses the shadow stack, add its state globals to G and
 its block to Hb with current base, size and stack pointer, even without a source heap object.
-Only after these additions, if R is empty, no transfer runs and globals start at their images
+Allocator metadata is an independent entry-state dependency: allocation, deallocation,
+allocation-validity checks and observation of allocation-derived addresses read it even
+without an LLVM load. Replay the complete caller allocation history (sizes and live bits)
+whenever any can execute, including when the byte read set R is empty. Bytes are included
+only for byte dependencies; the sound default is the complete table, with a smaller proven
+dependency optional. Only when both byte and allocator-state dependencies are absent may
+transfer be omitted and globals start at their images
 (ISA §3.7), as in rung 4 route A (SQLite §5.2(i)). After replay heap_used, atop and stack-state
 values equal the caller's call-entry values.
 Otherwise the plugin emits an **entry-state transfer**:
 
 1. **Snapshot.** At the call the caller's tier forms the byte string
-   S = k ‖ (size_i ‖ live_i)_{i<k} ‖ G ‖ Hb, where k is the number of heap allocations in the
+   S = k ‖ (size_i ‖ live_i)_{i<k} ‖ G ‖ Hb, where k is an 8-byte little-endian count of heap allocations in the
    caller's allocation table (in allocation order, ISA §7.1), `size_i` and `live_i` are 8-byte
-   little-endian fields, G is the bytes of the mutable globals in R in `layout.globals` order,
+   little-endian fields (`live_i` is 0 or 1), G is the bytes of the mutable globals in R in `layout.globals` order,
    and Hb is the bytes of every live heap allocation in allocation order if R contains a heap
-   object or shadow-stack backing allocation (else empty). S is zero-padded to 2^A_s bytes, where A_s is the smallest exponent with
+   object or shadow-stack backing allocation (else empty); each live Hb segment has exactly size_i bytes, even for size_i=0. S is zero-padded to 2^A_s bytes, where A_s is the smallest exponent with
    2^A_s ≥ 8 + 16·N_alloc + Σ|G| + `heap_limit_max` (N_alloc the allocation-table capacity of
    the layout, §19.5); A_s is static.
    The snapshot bytes S are assembled in a plugin-added unnamed CC global of 2^A_s bytes,
@@ -2345,7 +2351,8 @@ Otherwise the plugin emits an **entry-state transfer**:
    sizes) and Hb into the replayed live allocations.
 4. **Release.** The snapshot register holds the basis state |S⟩ and is unentangled after every
    oracle call (an `in` region is unchanged on every basis configuration, ISA §5.2). The caller
-   keeps it for later calls while no store to an object of R has executed since it was built,
+   keeps it for later calls only while its dependent bytes and allocator metadata are unchanged. Relevant alloc/free
+   and shadow-stack push/pop/restore invalidate it as well as stores to R,
    and releases it by unpreparation: retain the classical S for the register's lifetime,
    take successive slice views of at most 128 bits, invoke the same @xor128 preparation
    oracle with the original two i64 arguments on each 128-bit chunk (one view per call),
@@ -2355,7 +2362,7 @@ Otherwise the plugin emits an **entry-state transfer**:
 The replay's rows, allocations and calls are part of the reference body and count against the
 budget (§9.4). Entry-state transfer from R-tier code needs registers allocated in R (BLK-4,
 §25.1); no rung uses it. **Build-time snapshots** (rung 7, §19.6) rewrite the initialisers of
-the mutable globals to snapshot values at link time, so R is empty and nothing is transferred.
+the mutable globals to snapshot values at link time, so byte transfer may be empty; allocator dependencies still require replay.
 Efficiency: G-12 (§25.3).
 
 ### 8.6 Oracle invocations and wide outputs
@@ -2846,7 +2853,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.2.
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.3.
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -3144,6 +3151,19 @@ content (TDL-3) and is never rejected for containing classical code.
   QRAM, NS §4.3), then `@xorargs` again to uncompute a_w and m_w. Objects at static offsets MAY
   use a static slice (`qreg.slice` with a literal `lo`) and X gates instead.
 
+The physical `coh` interface range is storage, not a logical allocation. Maintain
+(base, size, live) for every arena global and coherent heap object. Before every program
+memory access of n bytes at p, require the entire nonwrapping [p,p+n) to lie in one
+live logical allocation. Otherwise produce fault 7 before access, including event-producing
+stores, whose mutation is gated on success. The pinned ISA interface entry never satisfies
+this additional check. The default is an ordinary materialised runtime helper
+`__bennett_rt_coh_check(p,n,table)` over the metadata: visit entries in allocation order,
+OR their live-and-contained predicates, fault 7 when false, then access. All helper rows
+are charged. A statically proven contained access may omit the helper. Coherent alloc/free
+update the same table before subsequent access; snapshot/slice entry transfers metadata
+along with the corresponding arena view, using preserved `in` metadata for a slice.
+Superposed addresses use this same lifted helper, without classical inspection.
+
 **TDL-5 Stores to outliving objects (the store rule).** An object **outlives** an invocation if
 it is live after it: a global, an object reachable from `env`, or a heap object not freed in the
 invocation. A store `store v, ptr p` executed during a generation to an outliving object X is
@@ -3410,7 +3430,7 @@ hostcall: service=bennett.dev.console.write payload=6f6b0a reply=empty
 
 The ENTROPY-bound oracle of rung 8 is §16.8.
 
-## 12. Materialised normalisation (norm 0.2.2)
+## 12. Materialised normalisation (norm 0.2.3)
 
 ### 12.1 Scope, order and naming
 
@@ -3516,7 +3536,7 @@ entry:
 }
 ```
 
-**`n-defined-zero`.** N12 changes both zero-is-poison flags to false. At x=0 both counts are 8, so the sum is 16; at x=1 they are 7 and 0, so the sum is 7.
+**`n-defined-zero`.** N12 totalises the flags before N27. This does not exempt abs, ctlz or cttz from expansion: full materialised output contains no calls to these LLVM intrinsics, including false-flag calls. At x=0 both counts are 8, so the sum is 16; at x=1 they are 7 and 0, so the sum is 7.
 
 ```llvm normalise-in=n-defined-zero
 declare i8 @llvm.ctlz.i8(i8, i1 immarg)
@@ -3535,11 +3555,17 @@ declare i8 @llvm.ctlz.i8(i8, i1 immarg)
 declare i8 @llvm.cttz.i8(i8, i1 immarg)
 define i8 @f(i8 %x) {
 entry:
-  %a = call i8 @llvm.ctlz.i8(i8 %x, i1 false)
-  %b = call i8 @llvm.cttz.i8(i8 %x, i1 false)
+  %a = call i8 @__bennett_rt_ctlz_i8(i8 %x, i1 false)
+  %b = call i8 @__bennett_rt_cttz_i8(i8 %x, i1 false)
   %r = add i8 %a, %b
   ret i8 %r
 }
+declare i8 @__bennett_rt_ctlz_i8(i8, i1)
+declare i8 @__bennett_rt_cttz_i8(i8, i1)
+```
+
+```text native=n-defined-zero
+f(0)=16; f(1)=7
 ```
 
 **`n-dynamic-lane`.** N15 chooses zero when unsigned i >= 2; N21 selects lanes in order. Indices 0, 1, 2 and -1 therefore return 5, 9, 0 and 0. The scalar select chain retains the N15 guard.
@@ -3713,13 +3739,29 @@ define i8 @f(ptr nonnull %p) {
 }
 ```
 
-**V4.** ctlz with false is retained and defines ctlz(0)=8; true must be rejected.
+**V4.** Both true-flag and false-flag residual count intrinsics are rejected. The materialised runtime helper defines ctlz(0)=8.
 
 ```llvm example=validator-v4-clean verdict=accept mode=validate
-declare i8 @llvm.ctlz.i8(i8, i1 immarg)
 define i8 @f(i8 %x) {
-  %v = call i8 @llvm.ctlz.i8(i8 %x, i1 false)
+  %v = call i8 @__bennett_rt_ctlz_i8(i8 %x, i1 false)
   ret i8 %v
+}
+define i8 @__bennett_rt_ctlz_i8(i8 %x, i1 %flag) {
+entry:
+  br label %loop
+loop:
+  %n = phi i8 [0, %entry], [%next, %body]
+  %v = phi i8 [%x, %entry], [%shift, %body]
+  %end = icmp eq i8 %n, 8
+  %sign = icmp slt i8 %v, 0
+  %done = or i1 %end, %sign
+  br i1 %done, label %exit, label %body
+body:
+  %next = add i8 %n, 1
+  %shift = shl i8 %v, 1
+  br label %loop
+exit:
+  ret i8 %n
 }
 ```
 
@@ -3728,6 +3770,15 @@ declare i8 @llvm.ctlz.i8(i8, i1 immarg)
 define i8 @f(i8 %x) {
   %v = call i8 @llvm.ctlz.i8(i8 %x, i1 true)
   ret i8 %v
+}
+```
+
+```llvm example=validator-v4-false-residue verdict=reject:BD-E-RESIDUAL mode=validate
+declare i8 @llvm.ctlz.i8(i8, i1 immarg)
+define i8 @f(i8 %x) {
+entry:
+  %r = call i8 @llvm.ctlz.i8(i8 %x, i1 false)
+  ret i8 %r
 }
 ```
 
@@ -4001,6 +4052,12 @@ lane order k = 0, 1, …:
 - elementwise instructions (binary, bitwise, `icmp`, `fcmp`, casts, `select` with a vector or
   scalar condition, unary `fneg`, `freeze`, calls of elementwise intrinsics): one scalar
   instruction per lane, `%nz.l<k>.r = <op> T %nz.l<k>.a, %nz.l<k>.b`;
+- `bitcast` is elementwise only for equal lane geometries. Otherwise pack the source
+  bit string in datalayout order and resegment it into destination lanes or a scalar.
+  On supported little-endian targets lane 0 occupies the low bits. Zero-extend source
+  carriers to total width, shift by cumulative widths and OR in source-lane order;
+  extract by logical right shift and truncation in destination-lane order. Omit identity
+  casts and zero shifts; N22 legalises total widths above 128. Drop no source memory access.
 - `load <L x T>, ptr p` → `%nz.p<k>.r = getelementptr T, ptr p, i64 k` and `%nz.l<k>.r = load T,
   ptr %nz.p<k>.r` with alignment min(original, abi-align(T)); `store` likewise in lane order,
   except packed lanes: for `<L x iM>` with M not a multiple of 8, access the vector's packed
@@ -4014,6 +4071,11 @@ lane order k = 0, 1, …:
   lane1`, `%nz.f<k>.r = <op> %nz.f<k−1>.r, lane k`, the last named `%r`; the ordered `fadd`/`fmul`
   forms take the start value as the first operand. Exact for floating point once N2 has removed
   `reassoc`;
+- Selector/reduction exceptions take precedence over the next bullet. For `vp.select`
+  and `vp.merge`, the condition selects true/false operands within evl; false is not
+  inactivity. Outside evl, merge preserves on_false, select's poison becomes N7 zero.
+  VP reductions fold the start with active lanes only in increasing lane order;
+  inactive lanes contribute no zero (unless zero is the reduction identity).
 - `llvm.vp.*` (vector-predicated) and `llvm.masked.*`: lane k is active iff k < evl and mask[k];
   an active lane executes the scalar operation, an inactive lane yields the passthrough operand
   (masked loads) or 0 (N7: LangRef's poison), and a masked or predicated store, scatter or
@@ -4032,6 +4094,167 @@ lane order k = 0, 1, …:
   aggregate of L scalars in lane order; a vector that crosses an external boundary (a device
   entry's signature, a call of a function without a definition) is rebuilt with `insertelement`
   at that boundary, which only H code and the native build see.
+
+**`n-bitcast-lanes` (round-2).**
+
+```llvm normalise-in=n-bitcast-lanes
+define i16 @f(ptr %p) {
+entry:
+  %v = load <2 x i32>, ptr %p, align 1
+  %b = bitcast <2 x i32> %v to <4 x i16>
+  %r = extractelement <4 x i16> %b, i32 1
+  ret i16 %r
+}
+```
+
+```llvm normalise-out=n-bitcast-lanes
+define i16 @f(ptr %p) {
+entry:
+  %nz.p0.v = getelementptr i32, ptr %p, i64 0
+  %nz.l0.v = load i32, ptr %nz.p0.v, align 1
+  %nz.p1.v = getelementptr i32, ptr %p, i64 1
+  %nz.l1.v = load i32, ptr %nz.p1.v, align 1
+  %nz.pack0.b = zext i32 %nz.l0.v to i64
+  %nz.pack1.b = zext i32 %nz.l1.v to i64
+  %nz.ps1.b = shl i64 %nz.pack1.b, 32
+  %nz.or1.b = or i64 %nz.pack0.b, %nz.ps1.b
+  %nz.l0.b = trunc i64 %nz.or1.b to i16
+  %nz.bs1.b = lshr i64 %nz.or1.b, 16
+  %nz.l1.b = trunc i64 %nz.bs1.b to i16
+  %nz.bs2.b = lshr i64 %nz.or1.b, 32
+  %nz.l2.b = trunc i64 %nz.bs2.b to i16
+  %nz.bs3.b = lshr i64 %nz.or1.b, 48
+  %nz.l3.b = trunc i64 %nz.bs3.b to i16
+  ret i16 %nz.l1.b
+}
+```
+
+```text native=n-bitcast-lanes
+bytes=4433221188776655 -> f=4386
+```
+
+**`n-bitcast-scalar` (round-2).**
+
+```llvm normalise-in=n-bitcast-scalar
+define i32 @f() {
+entry:
+  %v = bitcast <2 x i16> <i16 1, i16 2> to i32
+  %b = bitcast i32 %v to <2 x i16>
+  %r = extractelement <2 x i16> %b, i32 1
+  %z = zext i16 %r to i32
+  ret i32 %z
+}
+```
+
+```llvm normalise-out=n-bitcast-scalar
+define i32 @f() {
+entry:
+  %nz.pack0.v = zext i16 1 to i32
+  %nz.pack1.v = zext i16 2 to i32
+  %nz.ps1.v = shl i32 %nz.pack1.v, 16
+  %nz.or1.v = or i32 %nz.pack0.v, %nz.ps1.v
+  %nz.l0.b = trunc i32 %nz.or1.v to i16
+  %nz.bs1.b = lshr i32 %nz.or1.v, 16
+  %nz.l1.b = trunc i32 %nz.bs1.b to i16
+  %z = zext i16 %nz.l1.b to i32
+  ret i32 %z
+}
+```
+
+```text native=n-bitcast-scalar
+f=2
+```
+
+**`n-vp-merge` (round-2).**
+
+```llvm normalise-in=n-vp-merge
+declare <2 x i32> @llvm.vp.merge.v2i32(<2 x i1>, <2 x i32>, <2 x i32>, i32)
+define i32 @f() {
+entry:
+  %v = call <2 x i32> @llvm.vp.merge.v2i32(<2 x i1> <i1 true, i1 false>, <2 x i32> <i32 5, i32 6>, <2 x i32> <i32 7, i32 9>, i32 2)
+  %r = extractelement <2 x i32> %v, i32 1
+  ret i32 %r
+}
+```
+
+```llvm normalise-out=n-vp-merge
+declare <2 x i32> @llvm.vp.merge.v2i32(<2 x i1>, <2 x i32>, <2 x i32>, i32)
+define i32 @f() {
+entry:
+  %nz.active0.v = icmp ult i32 0, 2
+  %nz.choice0.v = select i1 true, i32 5, i32 7
+  %nz.l0.v = select i1 %nz.active0.v, i32 %nz.choice0.v, i32 7
+  %nz.active1.v = icmp ult i32 1, 2
+  %nz.choice1.v = select i1 false, i32 6, i32 9
+  %nz.l1.v = select i1 %nz.active1.v, i32 %nz.choice1.v, i32 9
+  ret i32 %nz.l1.v
+}
+```
+
+```text native=n-vp-merge
+f=9
+```
+
+**`n-vp-select` (round-2).**
+
+```llvm normalise-in=n-vp-select
+declare <2 x i32> @llvm.vp.select.v2i32(<2 x i1>, <2 x i32>, <2 x i32>, i32)
+define i32 @f() {
+entry:
+  %v = call <2 x i32> @llvm.vp.select.v2i32(<2 x i1> <i1 true, i1 false>, <2 x i32> <i32 5, i32 6>, <2 x i32> <i32 7, i32 9>, i32 2)
+  %r = extractelement <2 x i32> %v, i32 1
+  ret i32 %r
+}
+```
+
+```llvm normalise-out=n-vp-select
+declare <2 x i32> @llvm.vp.select.v2i32(<2 x i1>, <2 x i32>, <2 x i32>, i32)
+define i32 @f() {
+entry:
+  %nz.active0.v = icmp ult i32 0, 2
+  %nz.choice0.v = select i1 true, i32 5, i32 7
+  %nz.l0.v = select i1 %nz.active0.v, i32 %nz.choice0.v, i32 0
+  %nz.active1.v = icmp ult i32 1, 2
+  %nz.choice1.v = select i1 false, i32 6, i32 9
+  %nz.l1.v = select i1 %nz.active1.v, i32 %nz.choice1.v, i32 0
+  ret i32 %nz.l1.v
+}
+```
+
+```text native=n-vp-select
+f=9
+```
+
+**`n-vp-product` (round-2).**
+
+```llvm normalise-in=n-vp-product
+declare i32 @llvm.vp.reduce.mul.v2i32(i32, <2 x i32>, <2 x i1>, i32)
+define i32 @f() {
+entry:
+  %r = call i32 @llvm.vp.reduce.mul.v2i32(i32 3, <2 x i32> <i32 5, i32 7>, <2 x i1> <i1 true, i1 false>, i32 2)
+  ret i32 %r
+}
+```
+
+```llvm normalise-out=n-vp-product
+declare i32 @llvm.vp.reduce.mul.v2i32(i32, <2 x i32>, <2 x i1>, i32)
+define i32 @f() {
+entry:
+  %nz.active0.r = icmp ult i32 0, 2
+  %nz.mask0.r = and i1 %nz.active0.r, true
+  %nz.fold0.r = mul i32 3, 5
+  %nz.acc0.r = select i1 %nz.mask0.r, i32 %nz.fold0.r, i32 3
+  %nz.active1.r = icmp ult i32 1, 2
+  %nz.mask1.r = and i1 %nz.active1.r, false
+  %nz.fold1.r = mul i32 %nz.acc0.r, 7
+  %r = select i1 %nz.mask1.r, i32 %nz.fold1.r, i32 %nz.acc0.r
+  ret i32 %r
+}
+```
+
+```text native=n-vp-product
+f=15
+```
 
 ### 12.7 Wide integers (N22)
 
@@ -5509,6 +5732,11 @@ with the parameters in order (`ptr` → `reg[pw]`; an aggregate parameter flatte
 parameter per field in field order), the result `r` of the return width (1 for `void`, whose
 `ret void` is `lift.ret r`), a `regs` line, and the blocks of §16.4.
 
+The entry-state dependency decision of §8.5 precedes every private allocation in the
+wrapper prologue (§16.2), including device buffers and ss_init. Replay allocates the
+caller's sizes in order, frees dead entries, and preserves bump/liveness even when no
+caller byte is read. No fresh allocator reset is permitted for an allocation-only closure.
+
 ### 16.3 Names and layout
 
 | LLVM entity | ISA name |
@@ -5544,6 +5772,12 @@ pre-entries than the device object faults at the same allocation); S_cells is th
 with 2^S_cells ≥ the largest `stack` of the budget table.
 
 ### 16.4 Rows
+
+Every row accessing program memory first performs TDL-4's logical validation if the
+address can be in coh, before the physical ISA boundscheck. Loads and stores, including
+slice/event producers, use the same helper and fault gating. Proved containment in a
+static arena global (as in arena-o1's one-byte @cnt load) discharges this check without
+extra rows; a physical coh entry alone is never such a proof.
 
 Rows of an instruction are emitted in instruction order within its block. Before the rows of an
 instruction, each of its **constant operands** that is a value operand (in operand order; not an
@@ -7540,6 +7774,21 @@ declared domain the comparison with the native comparison build (§17.7) has one
 
 ### 18.8 Worked examples
 
+**Round-2 memory witnesses.** With caller heap_base=4096 and a live 16-byte
+allocation, the next address is 4112; another caller allocation invalidates the cache
+and makes it 4128. A heap limit of 16 faults 2 before a private allocation. No invocation
+changes the caller table. Two one-byte arena globals at offsets 0 and 1 cannot contain
+a two-byte access: 01 02 is physically 513, but the logical access faults 7.
+
+```text state=entry-allocation-only at=0
+{"base":4096,"caller_sizes":[16],"request":16,"heap_limits":[64,16],"results":[[4112,0],[0,2]],"next_caller_size":16,"next_result":[4128,0],"caller_unchanged":true}
+```
+
+```text state=arena-logical-bounds at=0
+{"bytes":[1,2],"objects":[[0,1,1],[1,1,1]],"accesses":[[0,2],[0,1],[1,1]],"results":[[0,7],[1,0],[2,0]],"physical_i16":513,"padding_code":7,"freed_code":7,"store_unchanged":true}
+```
+
+
 **0.1 examples at ABI 0.2.** These programs are also legality cases in the corpus. The checker
 builds each with the trace runtime (`corpus/legality/runtime/`), whose `ctrl` and `adj` call the
 region once and whose `compute` calls `f`, `use`, `f`; it converts the trace into events by §18.3–
@@ -8304,14 +8553,14 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.2;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.3;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
-pipeline, normaliser_version: "0.2.2"}` and `bindings.dialect_mapping_version = "0.2.1"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.2:<rule id>` (e.g. `dialect-0.2.2:N33`); the
+pipeline, normaliser_version: "0.2.3"}` and `bindings.dialect_mapping_version = "0.2.1"`; the coverage
+report (ISA §13), whose `source` field is `dialect-0.2.3:<rule id>` (e.g. `dialect-0.2.3:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
 hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
@@ -8324,7 +8573,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.2"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.3"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`):
 
@@ -8722,10 +8971,10 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.2`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.3`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
-- `norm` (§12–§15; the certificate's `normaliser_version`) is revised to `0.2.2` for
+- `norm` (§12–§15; the certificate's `normaliser_version`) is revised to `0.2.3` for
   the V10 correction. Unchanged sub-artefacts keep their versions: `markers` (§3),
   `handles` (§6), `asm` (§15) and `corpus` (§21) at `0.2`; `regions` (§7), `oracle-abi`
   (§8), `tdl` (§10), `effects` (§11), `map` (§16; the certificate's
@@ -8962,6 +9211,11 @@ The R-budget state retains its BLK-5 verdict and expected ISA-0.9 result; the
 frozen state dispatcher still executes the ISA-0.8 probe instead of routing
 the named dependency verdict to the blocker family (`b-dialect-spec-bz6`).
 No example or coverage obligation is removed or weakened to make this green.
+
+| `n-bitcast-lanes`, `n-bitcast-scalar`, `n-vp-merge`, `n-vp-select`, `n-vp-product` | N21 | parse, normalise, native | LLVM; clang |
+| `validator-v4-false-residue`, `n-defined-zero` | V4, N12, N27 | parse, recognise, normalise | LLVM; validator |
+
+| `entry-allocation-only`, `arena-logical-bounds` | §8.5, TDL-4, §16.2–§16.4 | state | native seed; Rust lifted helper |
 
 ## Appendix C. Generic intrinsics of LLVM 18, 20 and 23
 

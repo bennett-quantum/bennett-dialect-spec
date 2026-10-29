@@ -144,6 +144,44 @@ class Normaliser:
             raise d.Fail('N21 vector source '+v)
         def go(f,i,r):
             b=i.text.split(' = ',1)[-1]
+            if i.op=='bitcast' and '<' in b:
+                src,dst=b[8:].rsplit(' to ',1);st,j=d.parse_type(src);dt=self.typ(dst);v=src[j:].strip()
+                ns,se=(st[1],st[2]) if st[0]=='vec' else (1,st)
+                nd,de=(dt[1],dt[2]) if dt[0]=='vec' else (1,dt)
+                sw=se[1];dw=de[1];total=ns*sw;out=[];acc=None
+                if total!=nd*dw:raise d.Fail('N21 unequal bitcast widths')
+                vals=get(v,ns,se) if st[0]=='vec' else [v]
+                for k,value in enumerate(vals):
+                    cur=value
+                    if sw!=total:cur=f'%nz.pack{k}.{r}';out.append(f'{cur} = zext i{sw} {value} to i{total}')
+                    if k:
+                        shifted=f'%nz.ps{k}.{r}';out.append(f'{shifted} = shl i{total} {cur}, {k*sw}');cur=shifted
+                    if acc is not None:
+                        joined=f'%nz.or{k}.{r}';out.append(f'{joined} = or i{total} {acc}, {cur}');cur=joined
+                    acc=cur
+                result=[]
+                for k in range(nd):
+                    cur=acc
+                    if k:cur=f'%nz.bs{k}.{r}';out.append(f'{cur} = lshr i{total} {acc}, {k*dw}')
+                    if dw!=total:
+                        lane=f'%nz.l{k}.{r}';out.append(f'{lane} = trunc i{total} {cur} to i{dw}');cur=lane
+                    result.append(cur)
+                if dt[0]=='vec':self.lanes[i.res]=result
+                else:self.replace(f,i.res,result[0])
+                return out
+            if i.op=='call' and re.search(r'@llvm.vp.(merge|select|reduce\.)',b):
+                c=d.parse_call(i);args=c['args'];op=c['callee'].split('.')[2];out=[]
+                if op in ('merge','select'):
+                    ty=args[1][0];n=ty[1];et=d.tstr(ty[2]);cond=get(args[0][2],n,('int',1));a=get(args[1][2],n,ty[2]);z=get(args[2][2],n,ty[2]);vals=[]
+                    for k in range(n):
+                        active=f'%nz.active{k}.{r}';choice=f'%nz.choice{k}.{r}';lane=f'%nz.l{k}.{r}'
+                        out += [f'{active} = icmp ult i32 {k}, {args[3][2]}',f'{choice} = select i1 {cond[k]}, {et} {a[k]}, {et} {z[k]}',f'{lane} = select i1 {active}, {et} {choice}, {et} '+(z[k] if op=='merge' else '0')];vals.append(lane)
+                    self.lanes[i.res]=vals;return out
+                op=c['callee'].split('.')[3];ty=args[1][0];n=ty[1];et=d.tstr(ty[2]);vals=get(args[1][2],n,ty[2]);masks=get(args[2][2],n,('int',1));acc=args[0][2]
+                for k in range(n):
+                    active=f'%nz.active{k}.{r}';mask=f'%nz.mask{k}.{r}';fold=f'%nz.fold{k}.{r}';res=i.res if k==n-1 else f'%nz.acc{k}.{r}'
+                    out += [f'{active} = icmp ult i32 {k}, {args[3][2]}',f'{mask} = and i1 {active}, {masks[k]}',f'{fold} = {op} {et} {acc}, {vals[k]}',f'{res} = select i1 {mask}, {et} {fold}, {et} {acc}'];acc=res
+                return out
             if i.op=='load' and re.search(r'<\d+ x ',b):
                 ps=d.split_top(b[5:]);t=d.parse_type(ps[0])[0];n=t[1];e=d.tstr(t[2]);p=d.typed_val(ps[1])
                 al=re.search(r', align (\d+)',b);align=min(int(al[1]),d.talign(t[2])) if al else d.talign(t[2])
@@ -284,7 +322,10 @@ class Normaliser:
                 a,b=[x[2] for x in c['args']];return [f'%nz.s.{r} = add {t} {a}, {b}',f'%nz.c.{r} = icmp ult {t} %nz.s.{r}, {a}',f'%nz.a.{r} = insertvalue {{ {t}, i1 }} zeroinitializer, {t} %nz.s.{r}, 0',f'{i.res} = insertvalue {{ {t}, i1 }} %nz.a.{r}, i1 %nz.c.{r}, 1']
             if cal.startswith('@llvm.ctpop.'):
                 name='__bennett_rt_ctpop_'+t;self.decl(name,t,[t]);return [f'{i.res} = call {t} @{name}({t} {c["args"][0][2]})']
-            if re.match(r'@llvm\.(abs|ctlz|cttz)\.',cal):i.text=i.text.replace('i1 true','i1 false')
+            if re.match(r'@llvm\.(abs|ctlz|cttz)\.',cal):
+                name='__bennett_rt_'+cal.split('.')[1]+'_'+t
+                self.decl(name,t,[t,'i1'])
+                return [f'{i.res} = call {t} @{name}({t} {c["args"][0][2]}, i1 false)']
         self.rewrite(go)
 
     def gc(self):

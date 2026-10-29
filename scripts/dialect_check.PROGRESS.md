@@ -438,3 +438,13 @@ own immutable snapshot rather than the old source alias. A real offline Rust
 fixture regression ran red, then passed after moving a temporary repository HEAD
 and proving the same Interpreter executes the new revision. No ISA repo edits.
 Re-running the final gate on this updated committed dependency.
+
+## Round-2 implementation: normalisation and memory
+
+Red-green boundary test reproduced false-flag V4 acceptance and retained vector bitcast.
+Added packed bitcast scalarisation, VP selectors/reductions, full N27 helper expansion,
+negative false-flag validation, native count seeds and 0.2.3 parsing.
+LLVM 18 cannot native-lower VP selectors; original VP uses LLVM 23, scalar output
+executes on 18/23, and all modules verify on 18/20/23. Memory microvectors execute
+allocator replay natively and logical arena validation via Rust lifted predicates.
+Pytest is absent; repository unittest runner is used. Full final receipt pending.
