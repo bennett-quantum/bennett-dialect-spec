@@ -237,6 +237,8 @@ changes, so version remains 0.2.1. ISA 0.9 draft 61550b4 is reference-only.
 
 | Finding | Change | Verification |
 |---|---|---|
+| BLK-5 / b-dialect-spec-bz6 | Preserve R-budget state, add materialised code-1 example/blocker and exact ISA-0.9 K5/fault-C result | blocked verdict cannot be routed by frozen checker; source and blocker misclassified as producer inputs |
+| V10 / b-dialect-spec-7u1 | Filed literal whitelist vs all-format retained fneg conflict; no normative edit | conflicting rules need full boundary reconciliation, so no semantic bump or narrowing |
 | P-1 / b-dialect-spec-1jb: driver/platform | Seven concrete input/state scenarios, eight LLVM modules, index rows | parse 564/564; all new recognition accepts; seven state adapters unavailable and seven coverage rows hard-coded False |
 | P-1 / b-dialect-spec-1jb: bindings/transfer/indirectbr | Six hand-derived objects, LLVM/linkmap/run companions and index rows | all six object checks and run blocks pass; replay maps exactly; five maps fail |
 | P-1 / b-dialect-spec-1jb: V2–V16/PT12 | 15 clean/residual validator pairs and qalloc ROOT return witness, all indexed | parse 522/522; recognise 112/115; V4/V10/V12 missed rejections |
@@ -296,3 +298,32 @@ rewrite, closed-unit fallback, mixed-major link, and the platform UART path.
 None can be executed by current families just by adding a tag. In addition,
 coverage unconditionally sets all seven section obligations False, irrespective
 of Appendix B rows. Recorded on 1jb and Q12; never weakened or removed.
+
+| BLK-5 | selected parse,recognise,blocker,state,coverage,xrefs | 2142 pass / 12 fail / 8 blocked (2162); parse 567/567, blocker 5/6 |
+
+Report: `scripts/.tmp/coverage-blk5.json`. ISA 0.9 draft commit 61550b4,
+section 0.2 K5 and section 4.1 fault row were read: literal C < 2^64, zero
+effectively 4, exact nonzero terminal record, FAILED, no successor effects,
+reversible prefix retained. The expected under-0.9 budget result is code 1,
+empty console/tape, exactly one terminal record with no host request; it still
+requires dialect counter instrumentation, not host fuel. Section 25.1 already
+had BLK-5 in the same table form as BLK-1/2/4; added witness/draft-reference
+paragraph, without changing the ISA-0.8 grading target.
+
+Both materialised code-1 witness and blocker report carry blocked:BD-B-ISA7.
+The original state check is retained, with the same verdict and required 0.9
+result alongside. Frozen recognition and blocker methods allow materialised
+reserved primitives only when id == r-fault-code, so the new r-budget-prefix
+example/report wrongly produce BD-E-MARKER-UNKNOWN; state dispatch ignores the
+verdict and still probes host fuel. It cannot pass as a blocker-family verdict
+without a checker change. This is recorded on bz6, 1jb and Q13, not hidden by
+renaming to the special-cased example or removing the original state obligation.
+
+New normative finding b-dialect-spec-7u1 quotes V10's extended-format exception
+list and the conflicting section 13.1/16.4 retained-fneg contract. The literal
+V10 negative is retained to expose the conflict. The earlier “missed rejection”
+classification for V10 is superseded: unlike V4/V12 this is not simply a checker
+fix. The intended complete exception boundary also includes retained FP
+intrinsics and carrier interfaces, so a complete semantic fix is not uniquely
+specified by this coverage task. No normative rule was changed; version 0.2.1
+remains appropriate under README.

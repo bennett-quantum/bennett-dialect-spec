@@ -127,3 +127,19 @@ derive the seven coverage rows from executable evidence: current coverage()
 unconditionally sets each False. Do not remove rows or count parsing as driver
 execution. Selected gate: 2139 pass / 10 fail / 8 blocked, including preexisting
 R-budget state and three newly exposed validator misses. Tracked on 1jb.
+
+## Q13 — BLK-5 routing and V10 conflict (editor)
+
+Preserved state=r-budget-prefix, now verdict=blocked:BD-B-ISA7 with explicit
+ISA-0.9 result. Added llvm example and text blocker=r-budget-prefix for the
+materialised pre-instruction fault 1. Both must use materialised recognition,
+as r-fault-code does. Current code special-cases only that older id; new example
+and report instead reject reserved primitive names. State dispatcher ignores
+blocked verdict and still invokes ISA-0.8 host-fuel probe. Route named ISA gaps
+to blocker verdicts without removing the expected state/result obligation.
+ISA-0.9 draft 61550b4 section 0.2 K5 / 4.1 fault C is the exact dependency.
+
+Correction to Q10: V10 half fneg exposes normative conflict b-dialect-spec-7u1
+(V10 excludes it; 13.1 retains it; 16.4 maps all formats), not an unambiguous
+missed rejection. The literal V10 expectation remains visible pending full
+boundary reconciliation. No normative semantic edit or version bump made.

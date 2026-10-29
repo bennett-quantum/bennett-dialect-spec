@@ -3816,7 +3816,13 @@ define double @f(double %x) {
 }
 ```
 
-**V10.** An extended-format load and bitcast are allowed; half fneg is outside the V10 whitelist even though V9 permits fneg in general.
+**V10.** An extended-format load and bitcast are allowed. The negative follows
+the literal V10 whitelist, which excludes half fneg. This conflicts with the
+retained-operation contract of §13.1 and the all-format map of §16.4;
+`b-dialect-spec-7u1` records the conflict. The expected rejection below exposes
+that literal rule, not a decision to remove extended-format fneg support.
+Reconciliation of the full V10 boundary remains open; neither rule is silently
+changed by this witness.
 
 ```llvm example=validator-v10-clean verdict=accept mode=validate
 define i16 @f(ptr %p) {
@@ -7298,10 +7304,41 @@ ISA-8 (§25.2) separately governs status delivery and reverse eligibility.
 - R faults end the run (ISA §4.1); §25.2 records ISA-8 (fault status to the CC caller,
   reverse-eligibility of faulted runs).
 
-```text state=r-budget-prefix at=0
-source R body: console.write("x"); return; steps=0
-fault code=1 before first counted instruction; console=empty; tape prefix=empty
+The zero-step example has the same named ISA dependency verdict as the explicit
+typed-fault example below: `blocked:BD-B-ISA7` (BLK-5). This is a verdict on
+ISA 0.8, not a claim that host execution fuel is the dialect's R step counter.
+The materialised boundary after the failing pre-instruction check is:
+
+```llvm example=r-budget-prefix verdict=blocked:BD-B-ISA7
+define internal void @budgeted(ptr %e) {
+  call void @__bennett_nz_fault(i64 1)
+  unreachable
+}
+define void @top() {
+  call void @__bennett_reversible(ptr @budgeted, ptr null, ptr null)
+  ret void
+}
 ```
+
+```text blocker=r-budget-prefix
+BD-B-ISA7 @budgeted pre-instruction step check: BLK-5 (ISA-7); ISA 0.8 cannot report typed R fault 1; requires ISA 0.9 fault C with exact terminal record code C, no later source effect, reversible prefix history retained
+```
+
+```text state=r-budget-prefix at=0 verdict=blocked:BD-B-ISA7
+source R body: console.write("x"); return; steps=0
+ISA 0.8 status=blocked:BD-B-ISA7 (BLK-5); generic trap is not equivalent
+required under ISA 0.9: fault code=1 before first counted instruction; console=empty; tape prefix=empty
+required under ISA 0.9: run=FAILED; exactly one terminal record, code=1; no host request; reversible prefix history retained
+```
+
+The exact dependency is specified in the read-only ISA 0.9 draft at commit
+`61550b4`, section 0.2 row K5 and section 4.1 row `fault`: CC/R `fault C` takes
+a literal 0 ≤ C < 2^64, records the exact nonzero C (zero means code 4), ends
+FAILED without a successor, and preserves prefix history for reversal. The
+implicit cause table remains part of BLK-5. The expected zero-step result above
+requires the dialect's per-instruction counter lowered to `fault 1`; ISA 0.9
+does not turn the interpreter's host-fuel option into that counter. Both this
+example and `r-fault-code` are runtime/materialised IR, not producer inputs.
 
 The next module is runtime/materialised IR (reserved primitives are not producer inputs).
 
@@ -7323,6 +7360,7 @@ BD-B-ISA7 @fail call @__bennett_nz_fault(2): ISA 0.8 generic R trap cannot prese
 ```text state=r-fault-code at=1
 required code=2; no subsequent source effect; prefix history intact
 ISA 0.8 status=blocked:BD-B-ISA7; generic trap code is not claimed equivalent
+ISA 0.9 expected: run=FAILED; exactly one terminal record code=2; no host request; no later effects; prefix history retained
 ```
 
 ### 17.7 The native comparison build
@@ -8720,6 +8758,12 @@ The maintainer ruled
 | **BLK-5** = ISA-7 | `BD-B-ISA7` | NS §4.2 named fault outcomes and R reversible prefixes | typed R faults, including budget codes 1/2/3 and explicit __bennett_nz_fault(C) | CC hostcall reports C; generic R trap stops execution but does not satisfy typed reporting | R `fault C`: terminate with fault record code C, no later source effect, retain reversible prefix history; specify the implicit trap-cause-to-code table (div0 5, overflow 6, memory 7, trap 4, allocation failure 2) |
 | **BLK-4** = new ISA-12 (audit B-38) | `BD-B-ISA12` | NS §4.2 quantum allocation inside reversible-tier code | `qalloc`/`qborrow`/`qfree` in an R closure with no finite instance bound (§7.5b); entry-state transfer from R code (§8.5) | hoisting to the CC caller with a static count (§7.5b) | permit `qreg.new`, `qreg.free`, `qreg.slice` and `qreg.concat` in R; the R history records them; the reversal of `qreg.new` is `qreg.free` with the cleanliness obligation (simulator check; hardware per ISA §17 item 14); the reversal of `qreg.free` is `qreg.new` (clean); `measure` stays CC-only |
 
+BLK-5's checked witnesses are `r-fault-code` (explicit code 2) and
+`r-budget-prefix` (the pre-instruction code 1 boundary). Their verdict is
+`blocked:BD-B-ISA7` when grading against ISA 0.8. The exact change is now
+specified in the ISA 0.9 draft, commit `61550b4` (section 0.2 K5 and section
+4.1 `fault C`); its presence in that draft does not change this draft's ISA target.
+
 **Blocker report** (one line per blocker point, in processing order, in the outputs, §19.9):
 `<code> <function> <value or call>: <reason>; <ISA 0.8 constraint>; <BLK id> (<ISA item>) <change>`.
 
@@ -8884,11 +8928,20 @@ compute expected artefacts only (P-3).
 | `driver-mixed-majors` | §19.8 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
 | `platform-uart-write` | §20 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
 
-**Rule ids without an example yet** (the check fails on them, P-1, until examples land): N0, N12,
-N15, N25, N34, N35; V2–V16; PT12; the `OUT` binding's object (`oracle-wide-out` is recognised
-only), the BLOCK, CLOCK and CONSOLE device bindings, entry-state transfer (§8.5), `indirectbr`
-(§14.9), §19.3–§19.8 (driver modes beyond §19.2), §20 (platform). Each is a task for the next
-editing round (bd).
+| `r-budget-prefix`, `r-fault-code` (+ blocker and state) | N34, BLK-5, §17.6 | parse, recognise, blocker, state | ISA-0.8 dependency verdict; ISA-0.9 result specified alongside |
+
+**Execution status of the former 35 omissions.** Every obligation above now has
+a concrete witness and an index row. Index discovery alone is not P-2 execution.
+The frozen checker cannot execute five normalisation transforms, five binding/
+indirectbr maps, or seven driver/platform state scenarios; its seven driver/
+platform coverage rows are hard-coded to fail. Three validator negative cases
+also remain red: two missed rejections and the V10 normative conflict
+(`b-dialect-spec-7u1`). These remain loud failures, tracked by
+`b-dialect-spec-1jb` and the verification table in the companion progress file.
+The R-budget state retains its BLK-5 verdict and expected ISA-0.9 result; the
+frozen state dispatcher still executes the ISA-0.8 probe instead of routing
+the named dependency verdict to the blocker family (`b-dialect-spec-bz6`).
+No example or coverage obligation is removed or weakened to make this green.
 
 ## Appendix C. Generic intrinsics of LLVM 18, 20 and 23
 
