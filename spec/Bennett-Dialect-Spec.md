@@ -3411,6 +3411,10 @@ With limbs a_k, b_k (k = 0 … L − 1, i64, the top limb of width N − 64(L �
 | `bswap`, `bitreverse`, `ctpop`, `ctlz`, `cttz`, `fshl`, `fshr`, `sshl.sat`, `ushl.sat`, `smul.fix`, `umul.fix`, `smul.fix.sat`, `umul.fix.sat`, `sdiv.fix`, `udiv.fix`, `sdiv.fix.sat`, `udiv.fix.sat`, `pdep`, `pext`, `clmul` | `%r = call iW @__bennett_rt_<name>_i<W>(…)` with the same operands (`<name>` with `.` replaced by `_`), defined by `bennett-runtimes` with the LangRef semantics (division by zero in the `.fix` forms: `__bennett_nz_fault(5)`) |
 | `read_register`, `read_volatile_register`, `write_register`, `write_volatile_register` (named register) | a load or store of the runtimes global `__bennett_rt_reg_<name>` (the platform register file, §20.1); the name `sp` (and its target spellings) reads the shadow-stack pointer (§17.3) |
 | `thread.pointer` | the address of the runtimes global `__bennett_rt_tls` (one thread) |
+| `stackguard`, `stackprotector(g, slot)` | a load of the runtimes global `__stack_chk_guard`; a store of g into slot |
+| `set.loop.iterations(n)`, `start.loop.iterations(n)`, `test.set.loop.iterations(n)`, `test.start.loop.iterations(n)`, `loop.decrement(k)`, `loop.decrement.reg(c, k)` (hardware loops; only the code generator's HardwareLoops pass emits them) | the counter in a shadow-frame slot of the function: `set`/`start` store n (`start` also returns n); the `test` forms also return n ≠ 0; `loop.decrement(k)` stores counter − k and returns counter − k ≠ 0; `loop.decrement.reg(c, k)` returns c − k |
+| `preserve.array.access.index`, `preserve.struct.access.index`, `preserve.union.access.index`, `preserve.static.offset` (BPF CO-RE) | the `getelementptr` they describe (the union form and `preserve.static.offset` return their pointer operand) |
+| `ptrauth.resign.load.relative(p, k1, d1, k2, d2, add)` (i64 values) | p + sext(the i32 loaded at p + add), as `load.relative`, with signing and authentication the identity of N5 |
 | `ptrauth.blend(a, d)` | `(a & 0xFFFFFFFFFFFF) | (d << 48)` in i64 |
 | `ptrauth.sign.generic(v, d)` | `0` |
 | `objc.*` | `llvm.objc.<name>` becomes a call of the Objective-C runtime function `objc_<name>` with the same operands (resolved by §4.5); `objc.clang.arc.use`, `objc.clang.arc.noop.use` and `objc.arc.annotation.*` are deleted |
@@ -5878,8 +5882,8 @@ budget=18,0,32,1 -> status=ok cases=256 input_and_memory_bits=8
 *(non-normative)* x = 1 takes `lift.call` (1), `^b0` (3), `^b0.s1` (3), `^b1` (3), `lift.ret` (1)
 and `lift.retval` (1): 12 steps; x = 40 visits `^b0`, `^b0.s2`, `^b0.s4`, `^b0.s5` and `^b2`:
 1 + 3 + 3 + 3 + 3 + 3 + 1 + 1 = 18, the most, so B = 18 suffices for all 256 inputs. The 0.1
-linear chain needed up to 5 compares; the tree needs at most 4 on this table, and ⌈log₂ k⌉ + 2 in
-general.
+linear chain needed up to 5 compares; the tree needs at most 4 on this table (the `ult` at the
+root and up to 3 `eq`), and O(log k) for k cases.
 
 ## 17. Device classical code: memory model, lowering, faults
 
@@ -7167,4 +7171,118 @@ ISA-2 is not a gap (the R step counter, §17.6). ISA-6 is not a gap (`measure` a
 §18.3). ISA-10 is settled by the ISA's test vectors. **LLVM changes needed**: none; the legality
 findings' LLVM bugs are outside the envelope (§21.1).
 
-<!-- APPEND -->
+## Appendix A. Changes from the ratified outline
+
+The text follows `spec/outline-0.2.md` and its rulings. Where it departs, the reason is below;
+every departure keeps or widens the capability the outline gives.
+
+| # | Outline | This text | Reason |
+|---|---|---|---|
+| A1 | §8.6: k + 2 calls, cleaning each slice's fault bundle by `qxor` from a copy computed by a separate variant W_c | 2k − 1 calls: a copy-out pair per extra slice (§8.6) | the outline's `qxor` cleanup is neither `reverse` nor `recompute` of the bundle's own computing sequence (ISA §6.2, §6.4), so the action would be ill-formed; the copy-out pair is `reverse` |
+| A2 | §8.5: the snapshot register's release unspecified | released by `measure` (an unentangled basis state), kept while unchanged (§8.5) | a `qreg.free` needs a clean register and no ISA 0.8 instruction un-concatenates; the measurement is deterministic and disturbs nothing |
+| A3 | §6.5: every root in a static register file; unbounded instance counts are BLK-1 | a handle that never reaches memory is a direct CC `qreg` value with no bound; BLK-1 only for memory-reaching sites without a reference bound (§6.5) | ISA 0.8's dynamic SSA instances already name unboundedly many registers; the blocker's case shrinks to what ISA 0.8 truly lacks |
+| A4 | §6.5, §7.5(b): "statically bounded number of live instances", "static count" | an exact reference instance bound (self-disjoint sites, constant trip counts) (§6.5) | verdicts must not depend on a plugin's analysis precision |
+| A5 | TDL-2: states Cl, Co | Cl, M (materialised, both copies valid), Co (§10) | materialising an object before a slice reads it would otherwise make it Co, and later classical reads would trap (`T-TAINT-HOST`) on classical data |
+| A6 | TDL-3: slices outlined; stores in slices | slices never contain outliving stores or markers (those are events); each slice keeps a classical twin selected dynamically | the event forms of TDL-5 need the stores as events; the twin avoids slice cost when the data is classical at run time |
+| A7 | TDL-5(a), Co value: XOR v, then `xmask c`, then uncompute | one XOR of the mask c ⊕ v (c a classical argument of the slice) | equal effect, one event fewer |
+| A8 | TDL-5(a)/§18: "the uncompute is valid (ISA §6.2)" | events are applied as CC-level region calls with dynamic cleanliness checks; a static ISA action only when it satisfies ISA §6 (§18.2) | ISA §6.1 makes an oracle's value depend on every cell of a region it reads, so a static action cannot uncompute a slice after writing any arena cell; at CC level the uncompute is exact because the slice does not read the written cells |
+| A9 | TDL-8: combine into Φ; plugin register when null | per-slice fault registers retained and combined by `@firstfault`; in `compute`, copied between E_f and E_use (TDL-8) | the uncomputing call XORs the code out again, and in `compute` adjoint(E_f) would erase f's faults |
+| A10 | TDL-12: Co effects follow §11.3, else F(8) | every effect in an action region is `fault 8` (TDL-12) | action regions have no descriptor, so no device model is bound to them; an effect in G under control is the same coherence problem as a store |
+| A11 | TDL-7: history freed by the scheduler | history that cannot be cleaned inside the invocation is a declared output, reported (`BD-W-COHERENT-HISTORY`) and measured at the epilogue | an action must return workspace clean (ISA §5.3); NS §4.2's padded unitary on declared wires |
+| A12 | §3.1: primitive `__bennett_nz_fault` | also `__bennett_nz_alloc`, `__bennett_nz_free`; reserved-name rules apply to producer inputs (§3.1) | the runtimes allocator must reach `lift.alloc`/`alloc`; runtimes bitcode uses reserved names |
+| A13 | §3.8: a `@cfunction` constant "resolves whenever the body is in the link" | it is dispatched by value and traps unless it equals some A(F) (§3.8, §5.2) | A(F) is fixed by the comparison link after the analysis, and a Julia-process address never equals it; Bennett.jl's `ptr @f` route keeps the capability (audit B-14) |
+| A14 | §7.2: thunk resolution as 0.1 C1 (a cycle is `BD-E-REGION-THUNK`) | a thunk on a cycle resolves to itself; the code is deleted | a rejection with no NS clause behind it |
+| A15 | §12.2: N1–N35 | adds N0 (LLVM's own lowering passes for coroutines, matrices, type tests, profiling, alloc tokens, guards) and extends N10, N11 | the completeness obligation: those families are defined by LLVM through those passes |
+| A16 | §12.2 N34: "point marks only" | marks are `!bennett.rstep` metadata, exempt from N3 and V2 | a mark must survive normalisation |
+| A17 | §16: the wrapper form | `@ref` always calls the region function's lproc; every reference object has a layout; layout rules of §16.3 (closure-reachable globals; A_tab so that table overflow never precedes heap exhaustion) | recursion of the region function itself, and an identity that does not change with unrelated globals |
+| A18 | §16.4: compare-tree blocks | names `^b<i>.s<j>` in creation order and `^b<i>.q<q>c<k>`/`d`/`r` for indirect calls | deterministic text and hashes |
+| A19 | – | §14.9 `blockaddress`/`indirectbr`, §13.1 all seven formats in one table, §14.7 `exit` from a CC device entry by `hostcall bennett.exit`, §8.7 B_min and `T-BUDGET` | outline B1 ("all of materialised LLVM") and run-time budgets for in-place pairs |
+| A20 | §25: wording items | adds certificate fields (build record, budget table, deferred measurement) and ISA §12.2 domains with a fixed classical region | NS §0, §5.1 require them in the certificate; NS §8 rung 4(a) is such a domain |
+| A21 | §20.1 `__bennett_platform_ram` | `__bennett_rt_platform_ram` | the reserved-prefix rule of §3.1 |
+| A22 | §21: corpus cases for the changed signatures | `spec-sem2-*` added beside the 0.1-ABI `spec-sem-*` | the trace runtime is still at ABI v0 (bd `-566`); the old cases stay valid legality cases |
+
+## Appendix B. Example index
+
+Every checked example, the rules it exercises, and the checker capability (§1.5) and executor it
+needs. "isa-ref" is the Rust ISA reference interpreter `bennett-isa-ref` (`check`, `hash`,
+`run-oracle`, `step-check` exist; `run-cc`, `reverse`, `run-action`, `run-program` are requested,
+bd `b-isa-spec-xam`); "trace" needs the trace runtime at ABI 0.2 (bd `-566`); Python capabilities
+compute expected artefacts only (P-3).
+
+| Examples | Rules | Capability | Executor |
+|---|---|---|---|
+| `markers-ir`, `markers-c` | §3.2, §3.3 | parse, header | LLVM 18/20/23, clang 18/20/23 |
+| `operand-phi-codes`, `operand-code-table`, `operand-runtime-op`, `operand-bad-code`, `operand-class`, `operand-width-masked`, `operand-width-host` (+ blocker) | §3.4, §5.3, PT5, PT6, BLK-1 | parse, recognise | LLVM; Python recogniser |
+| `recog-*` (8) | §3.1, §3.5 | parse, recognise | LLVM; Python |
+| `attr-*` (4) | §3.6 | parse, recognise | LLVM; Python |
+| `unwind-invoke` | §3.7 | parse, recognise | LLVM; Python |
+| `julia-jlplt`, `effect-lie` | §3.8 | parse, recognise | LLVM; Python |
+| `pt-variable-index` | §5.1, PT1, PT2, PT6, PT7 | parse, recognise | LLVM; Python |
+| `handle-*` (20, incl. 1 blocker) | §6.2–§6.6, PT3, PT4, PT8–PT11, BLK-1 | parse, recognise | LLVM; Python |
+| `qstore-twice` | §6.7 | parse, recognise | LLVM; Python |
+| `region-*` (18, incl. 1 blocker) | §7.1–§7.5, BLK-4 | parse, recognise | LLVM; Python |
+| `oracle-inc8`, `oracle-two-in`, `oracle-two-shapes`, `oracle-wide-out`, `budget-launch-arg`, `budget-device-computed` (+ blocker) | §8.1–§8.6, §9.1, §9.5, BLK-2 | parse, recognise | LLVM; Python |
+| `inplace-*` (4, incl. 1 blocker) | §8.7, BLK-3 | parse, recognise, run-oracle | LLVM; Python; isa-ref `run-oracle` (verification) |
+| `budget-table=rung4-mini` | §9.2 | driver | Python |
+| `tdl`, `tdl-overwrite`, `tdl-effect`, `tdl-angle` with `tdl=` and `state=` blocks | TDL-1–TDL-12, §18.2–§18.4 | parse, recognise, tdl, run-action | LLVM; Python TDL; isa-ref `run-action` (requested) |
+| `effect-console-r`, `effect-console-cc` | §11.1, §11.2 | parse, recognise, run-cc, reverse | isa-ref `run-cc`, `reverse` (requested) |
+| `n-flags`, `n-shift`, `n-undef`, `n-query`, `n-trap` | N1–N8, N10, N11, N14 | parse, normalise | LLVM; Python normaliser |
+| `n-vector`, `n-wideint`, `n-shadow-stack`, `n-memintrinsics`, `n-intrinsics`, `n-atomic` with `native=` | N9, N21, N22, N24, N26, N27 | parse, normalise, native | LLVM; Python; clang + seeds |
+| `residual-nsw`, `residual-clean` | §12.4 V1 | validate | Python |
+| `n-fmuladd` (+ `native=`), `n-fp80`, `n-libm` | N16, N32, N33, §13 | parse, normalise, native | LLVM; Python; clang + seeds |
+| `indirect-table`, `indirect-host-pointer` | §14.2 | parse, recognise | LLVM; Python |
+| `n-varargs` (+ `native=`) | N23, §14.3, N24 | parse, normalise, native | LLVM; Python; clang + seeds |
+| `n-eh` (+ `native=`) | N28, §14.4 | parse, normalise, native | LLVM; Python; clang++ and clang + seeds |
+| `sjlj-two-frames`, `fiber-pingpong`, `exit-status` with `cc-run=` | N29, N30, §14.5–§14.7, §19.2 | frontend, run-cc, reverse | clang; isa-ref `run-cc`, `reverse` (requested); native status computed |
+| `asm-musl-syscall`, `n-asm` | N31, §15.5 | parse, recognise, normalise | LLVM; Python |
+| `inc8`, `add2`, `rung4-mini`, `rung8-mini`, `listsum`, `switch5`: `lift=`, `linkmap=`, `object=`, `hash=`, `run=`, `step-check=` | §16.1–§16.5, §8.2 (IN, ARG, MEM_IN), §8.3 (ENTROPY), §9.4, §11.3, §14.2, §16.4 rows (memory, calls, recursion, alloc/free, phis, dispatch, switch) | map, check, hash, run-oracle, step-check | Python map; isa-ref `check`, `hash`, `run-oracle`, `step-check` |
+| `rung4-minidb`, `rung4-grover-tu` (+ `native=rung4-mini`) | §3.3, §8, §16.7 | frontend, recognise, native | clang 18/20/23; Python; clang native |
+| `sem2-ctrl`, `sem2-adj`, `sem2-compute` with `events=`, `state=` | §18.3, §18.4 | trace, run-action | trace runtime (ABI 0.2 needed for `adj` and `compute`); isa-ref `run-action` (requested) |
+| `version-flag` | §19.9 | parse, recognise | LLVM; Python |
+
+**Rule ids without an example yet** (the check fails on them, P-1, until examples land): N0, N12,
+N15, N25, N34, N35; V2–V16; PT12; the `OUT` binding's object (`oracle-wide-out` is recognised
+only), the BLOCK, CLOCK and CONSOLE device bindings, entry-state transfer (§8.5), `indirectbr`
+(§14.9), §19.3–§19.8 (driver modes beyond §19.2), §20 (platform). Each is a task for the next
+editing round (bd).
+
+## Appendix C. Generic intrinsics of LLVM 18, 20 and 23
+
+The completeness obligation of §12.2: every generic (target-independent) intrinsic name that
+LLVM 18, 20 or 23 defines (546 names, from each major's `IntrinsicEnums.inc`, with the target
+families `aarch64 amdgcn arm bpf dx hexagon loongarch mips nvvm ppc r600 riscv s390 spv ve wasm
+x86 xcore` excluded; those are §15.4), with the rule that removes or realises it. A name defined
+only by some majors carries them in brackets. None is `trapped`.
+
+| Rule | Count | Intrinsics |
+|---|---|---|
+| N0: the coroutine passes | 38 | `coro.align`, `coro.alloc`, `coro.alloca.alloc`, `coro.alloca.free`, `coro.alloca.get`, `coro.async.context.alloc`, `coro.async.context.dealloc`, `coro.async.resume`, `coro.async.size.replace`, `coro.await.suspend.bool`[20,23], `coro.await.suspend.handle`[20,23], `coro.await.suspend.void`[20,23], `coro.begin`, `coro.begin.custom.abi`[20,23], `coro.dead`[23], `coro.destroy`, `coro.done`, `coro.end`, `coro.end.async`, `coro.end.results`, `coro.frame`, `coro.free`, `coro.id`, `coro.id.async`, `coro.id.retcon`, `coro.id.retcon.once`, `coro.is_in_ramp`[23], `coro.noop`, `coro.prepare.async`, `coro.prepare.retcon`, `coro.promise`, `coro.resume`, `coro.save`, `coro.size`, `coro.subfn.addr`, `coro.suspend`, `coro.suspend.async`, `coro.suspend.retcon` |
+| N0: `lower-matrix-intrinsics` | 4 | `matrix.column.major.load`, `matrix.column.major.store`, `matrix.multiply`, `matrix.transpose` |
+| N0: `lowertypetests` | 5 | `icall.branch.funnel`, `public.type.test`, `type.checked.load`, `type.checked.load.relative`, `type.test` |
+| N0: `instrprof` | 9 | `instrprof.callsite`[20,23], `instrprof.cover`, `instrprof.increment`, `instrprof.increment.step`, `instrprof.mcdc.condbitmap.update`[18], `instrprof.mcdc.parameters`, `instrprof.mcdc.tvbitmap.update`, `instrprof.timestamp`, `instrprof.value.profile` |
+| N0: `alloc-token` | 1 | `alloc.token.id`[23] |
+| N0: `lower-guard-intrinsic`, `lower-widenable-condition` | 2 | `experimental.guard`, `experimental.widenable.condition` |
+| N5: deleted | 32 | `asan.check.memaccess`, `assume`, `clear_cache`, `codeview.annotation`, `dbg.assign`, `dbg.declare`, `dbg.label`, `dbg.value`, `donothing`, `eh.unwind.init`, `experimental.convergence.anchor`, `experimental.convergence.entry`, `experimental.convergence.loop`, `experimental.noalias.scope.decl`, `experimental.stackmap`, `fake.use`[20,23], `hwasan.check.memaccess`, `hwasan.check.memaccess.fixedshadow`[20,23], `hwasan.check.memaccess.shortgranules`, `hwasan.check.memaccess.shortgranules.fixedshadow`[20,23], `pcmarker`, `prefetch`, `pseudoprobe`, `reloc.none`[23], `seh.scope.begin`, `seh.scope.end`, `seh.try.begin`, `seh.try.end`, `sideeffect`, `var.annotation`, `xray.customevent`, `xray.typedevent` |
+| N5: operand 0 | 15 | `annotation`, `arithmetic.fence`, `expect`, `expect.with.probability`, `launder.invariant.group`, `protected.field.ptr`[23], `ptr.annotation`, `ptrauth.auth`, `ptrauth.auth.with.pc.and.resign`[23], `ptrauth.resign`, `ptrauth.sign`, `ptrauth.strip`, `ssa.copy`, `strip.invariant.group`, `threadlocal.address` |
+| N6: deleted | 4 | `invariant.end`, `invariant.start`, `lifetime.end`, `lifetime.start` |
+| N10: a constant | 10 | `allow.runtime.check`[20,23], `allow.sanitize.address`[23], `allow.sanitize.hwaddress`[23], `allow.sanitize.memory`[23], `allow.sanitize.thread`[23], `allow.ubsan.check`[20,23], `get.dynamic.area.offset`, `is.constant`, `objectsize`, `vscale` |
+| N11 | 5 | `cond.loop`[23], `debugtrap`, `looptrap`[23], `trap`, `ubsantrap` |
+| N16, then N32 | 1 | `fmuladd` |
+| N21 (§12.6), then N27/N32 per lane | 161 | `experimental.cttz.elts`, `experimental.get.vector.length`, `experimental.stepvector`[18], `experimental.vector.compress`[20,23], `experimental.vector.deinterleave2`[18], `experimental.vector.extract.last.active`[20,23], `experimental.vector.histogram.add`[20,23], `experimental.vector.histogram.uadd.sat`[23], `experimental.vector.histogram.umax`[23], `experimental.vector.histogram.umin`[23], `experimental.vector.interleave2`[18], `experimental.vector.match`[20,23], `experimental.vector.partial.reduce.add`[20], `experimental.vector.reverse`[18], `experimental.vector.splice`[18], `experimental.vp.reverse`, `experimental.vp.splat`[20], `experimental.vp.splice`, `experimental.vp.strided.load`, `experimental.vp.strided.store`, `get.active.lane.mask`, `loop.dependence.raw.mask`[23], `loop.dependence.war.mask`[23], `masked.compressstore`, `masked.expandload`, `masked.gather`, `masked.load`, `masked.scatter`, `masked.sdiv`[23], `masked.srem`[23], `masked.store`, `masked.udiv`[23], `masked.urem`[23], `stepvector`[20,23], `vector.deinterleave2`[20,23], `vector.deinterleave3`[23], `vector.deinterleave4`[23], `vector.deinterleave5`[23], `vector.deinterleave6`[23], `vector.deinterleave7`[23], `vector.deinterleave8`[23], `vector.extract`, `vector.insert`, `vector.interleave2`[20,23], `vector.interleave3`[23], `vector.interleave4`[23], `vector.interleave5`[23], `vector.interleave6`[23], `vector.interleave7`[23], `vector.interleave8`[23], `vector.partial.reduce.add`[23], `vector.partial.reduce.fadd`[23], `vector.reduce.add`, `vector.reduce.and`, `vector.reduce.fadd`, `vector.reduce.fmax`, `vector.reduce.fmaximum`, `vector.reduce.fmin`, `vector.reduce.fminimum`, `vector.reduce.fmul`, `vector.reduce.mul`, `vector.reduce.or`, `vector.reduce.smax`, `vector.reduce.smin`, `vector.reduce.umax`, `vector.reduce.umin`, `vector.reduce.xor`, `vector.reverse`[20,23], `vector.splice`[20], `vector.splice.left`[23], `vector.splice.right`[23], `vp.abs`, `vp.add`, `vp.and`, `vp.ashr`, `vp.bitreverse`, `vp.bswap`, `vp.ceil`, `vp.copysign`, `vp.ctlz`, `vp.ctpop`, `vp.cttz`, `vp.cttz.elts`[20,23], `vp.fabs`, `vp.fadd`, `vp.fcmp`, `vp.fdiv`, `vp.floor`, `vp.fma`, `vp.fmul`, `vp.fmuladd`, `vp.fneg`, `vp.fpext`, `vp.fptosi`, `vp.fptoui`, `vp.fptrunc`, `vp.frem`, `vp.fshl`, `vp.fshr`, `vp.fsub`, `vp.gather`, `vp.icmp`, `vp.inttoptr`, `vp.is.fpclass`, `vp.llrint`[20,23], `vp.load`, `vp.load.ff`[23], `vp.lrint`[20,23], `vp.lshr`, `vp.maximum`, `vp.maxnum`, `vp.merge`, `vp.minimum`, `vp.minnum`, `vp.mul`, `vp.nearbyint`, `vp.or`, `vp.ptrtoint`, `vp.reduce.add`, `vp.reduce.and`, `vp.reduce.fadd`, `vp.reduce.fmax`, `vp.reduce.fmaximum`[20,23], `vp.reduce.fmin`, `vp.reduce.fminimum`[20,23], `vp.reduce.fmul`, `vp.reduce.mul`, `vp.reduce.or`, `vp.reduce.smax`, `vp.reduce.smin`, `vp.reduce.umax`, `vp.reduce.umin`, `vp.reduce.xor`, `vp.rint`, `vp.round`, `vp.roundeven`, `vp.roundtozero`, `vp.sadd.sat`[20,23], `vp.scatter`, `vp.sdiv`, `vp.select`, `vp.sext`, `vp.shl`, `vp.sitofp`, `vp.smax`, `vp.smin`, `vp.sqrt`, `vp.srem`, `vp.ssub.sat`[20,23], `vp.store`, `vp.sub`, `vp.trunc`, `vp.uadd.sat`[20,23], `vp.udiv`, `vp.uitofp`, `vp.umax`, `vp.umin`, `vp.urem`, `vp.usub.sat`[20,23], `vp.xor`, `vp.zext` |
+| N23 (§14.3) | 3 | `va_copy`, `va_end`, `va_start` |
+| N24 (§17.3) | 14 | `addressofreturnaddress`, `eh.dwarf.cfa`, `eh.recoverfp`, `frameaddress`, `localaddress`, `localescape`, `localrecover`, `returnaddress`, `sponentry`, `stackaddress`[23], `stackrestore`, `stacksave`, `structured.alloca`[23], `swift.async.context.addr` |
+| N25 | 3 | `call.preallocated.arg`, `call.preallocated.setup`, `call.preallocated.teardown` |
+| N26 | 9 | `experimental.memset.pattern`[20,23], `memcpy`, `memcpy.element.unordered.atomic`, `memcpy.inline`, `memmove`, `memmove.element.unordered.atomic`, `memset`, `memset.element.unordered.atomic`, `memset.inline` |
+| N27 (§12.8) | 105 | `abs`, `adjust.trampoline`, `bitreverse`, `bswap`, `clmul`[23], `ctlz`, `ctpop`, `cttz`, `experimental.deoptimize`, `experimental.gc.get.pointer.base`, `experimental.gc.get.pointer.offset`, `experimental.gc.relocate`, `experimental.gc.result`, `experimental.gc.statepoint`, `experimental.patchpoint`[20,23], `experimental.patchpoint.i64`[18], `experimental.patchpoint.void`, `fshl`, `fshr`, `gcread`, `gcroot`, `gcwrite`, `init.trampoline`, `load.relative`, `loop.decrement`, `loop.decrement.reg`, `objc.arc.annotation.bottomup.bbend`, `objc.arc.annotation.bottomup.bbstart`, `objc.arc.annotation.topdown.bbend`, `objc.arc.annotation.topdown.bbstart`, `objc.autorelease`, `objc.autoreleasePoolPop`, `objc.autoreleasePoolPush`, `objc.autoreleaseReturnValue`, `objc.claimAutoreleasedReturnValue`[23], `objc.clang.arc.noop.use`, `objc.clang.arc.use`, `objc.copyWeak`, `objc.destroyWeak`, `objc.initWeak`, `objc.loadWeak`, `objc.loadWeakRetained`, `objc.moveWeak`, `objc.release`, `objc.retain`, `objc.retain.autorelease`, `objc.retainAutorelease`, `objc.retainAutoreleasedReturnValue`, `objc.retainAutoreleaseReturnValue`, `objc.retainBlock`, `objc.retainedObject`, `objc.storeStrong`, `objc.storeWeak`, `objc.sync.enter`, `objc.sync.exit`, `objc.unretainedObject`, `objc.unretainedPointer`, `objc.unsafeClaimAutoreleasedReturnValue`, `pdep`[23], `pext`[23], `preserve.array.access.index`, `preserve.static.offset`, `preserve.struct.access.index`, `preserve.union.access.index`, `ptrauth.blend`, `ptrauth.resign.load.relative`[23], `ptrauth.sign.generic`, `ptrmask`, `read_register`, `read_volatile_register`, `sadd.sat`, `sadd.with.overflow`, `scmp`[20,23], `sdiv.fix`, `sdiv.fix.sat`, `set.loop.iterations`, `smax`, `smin`, `smul.fix`, `smul.fix.sat`, `smul.with.overflow`, `sshl.sat`, `ssub.sat`, `ssub.with.overflow`, `stackguard`, `stackprotector`, `start.loop.iterations`, `test.set.loop.iterations`, `test.start.loop.iterations`, `thread.pointer`, `uadd.sat`, `uadd.with.overflow`, `ucmp`[20,23], `udiv.fix`, `udiv.fix.sat`, `umax`, `umin`, `umul.fix`, `umul.fix.sat`, `umul.with.overflow`, `ushl.sat`, `usub.sat`, `usub.with.overflow`, `write_register`, `write_volatile_register`[23] |
+| N28 (§14.4) | 5 | `eh.exceptioncode`, `eh.exceptionpointer`, `eh.return.i32`, `eh.return.i64`, `eh.typeid.for` |
+| N29 (§14.5) | 6 | `eh.sjlj.callsite`, `eh.sjlj.functioncontext`, `eh.sjlj.longjmp`, `eh.sjlj.lsda`, `eh.sjlj.setjmp`, `eh.sjlj.setup.dispatch` |
+| N31 (§15.2) | 1 | `callbr.landingpad` |
+| N31 (§15.2): the clock model | 2 | `readcyclecounter`, `readsteadycounter`[20,23] |
+| N33 (§13.4): runtimes libm | 21 | `acos`[20,23], `asin`[20,23], `atan`[20,23], `atan2`[20,23], `cos`, `cosh`[20,23], `exp`, `exp10`, `exp2`, `log`, `log10`, `log2`, `modf`[23], `pow`, `powi`, `sin`, `sincos`[20,23], `sincospi`[23], `sinh`[20,23], `tan`[20,23], `tanh`[20,23] |
+| N33 (§13.5) | 49 | `experimental.constrained.acos`[20,23], `experimental.constrained.asin`[20,23], `experimental.constrained.atan`[20,23], `experimental.constrained.atan2`[20,23], `experimental.constrained.ceil`, `experimental.constrained.cos`, `experimental.constrained.cosh`[20,23], `experimental.constrained.exp`, `experimental.constrained.exp2`, `experimental.constrained.fadd`, `experimental.constrained.fcmp`, `experimental.constrained.fcmps`, `experimental.constrained.fdiv`, `experimental.constrained.floor`, `experimental.constrained.fma`, `experimental.constrained.fmul`, `experimental.constrained.fmuladd`, `experimental.constrained.fpext`, `experimental.constrained.fptosi`, `experimental.constrained.fptoui`, `experimental.constrained.fptrunc`, `experimental.constrained.frem`, `experimental.constrained.fsub`, `experimental.constrained.ldexp`, `experimental.constrained.llrint`, `experimental.constrained.llround`, `experimental.constrained.log`, `experimental.constrained.log10`, `experimental.constrained.log2`, `experimental.constrained.lrint`, `experimental.constrained.lround`, `experimental.constrained.maximum`, `experimental.constrained.maxnum`, `experimental.constrained.minimum`, `experimental.constrained.minnum`, `experimental.constrained.nearbyint`, `experimental.constrained.pow`, `experimental.constrained.powi`, `experimental.constrained.rint`, `experimental.constrained.round`, `experimental.constrained.roundeven`, `experimental.constrained.sin`, `experimental.constrained.sinh`[20,23], `experimental.constrained.sitofp`, `experimental.constrained.sqrt`, `experimental.constrained.tan`[20,23], `experimental.constrained.tanh`[20,23], `experimental.constrained.trunc`, `experimental.constrained.uitofp` |
+| N33 (§13.5): the fenv state | 8 | `get.fpenv`, `get.fpmode`, `get.rounding`, `reset.fpenv`, `reset.fpmode`, `set.fpenv`, `set.fpmode`, `set.rounding` |
+| §13.1: bit-exact, unchanged | 2 | `copysign`, `fabs` |
+| N32 (§13.1): soft-float | 30 | `canonicalize`, `ceil`, `convert.from.arbitrary.fp`[23], `convert.from.fp16`[18,20], `convert.to.arbitrary.fp`[23], `convert.to.fp16`[18,20], `floor`, `fma`, `fptosi.sat`, `fptoui.sat`, `fptrunc.round`, `frexp`, `is.fpclass`, `ldexp`, `llrint`, `llround`, `lrint`, `lround`, `maximum`, `maximumnum`[20,23], `maxnum`, `minimum`, `minimumnum`[20,23], `minnum`, `nearbyint`, `rint`, `round`, `roundeven`, `sqrt`, `trunc` |
+| §16.4: `getelementptr` | 1 | `structured.gep`[23] |
+
+Total: 546 names (the `llvm.` prefix is omitted above).
