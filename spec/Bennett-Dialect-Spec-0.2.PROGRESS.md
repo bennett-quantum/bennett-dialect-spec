@@ -181,3 +181,14 @@ Version 0.2.1 per spec/README.md; ISA 0.8 unchanged. No push.
 | D02-16 | resolved | this group commit (see git log) |
 | D02-17 | resolved | this group commit (see git log) |
 | BD2-6 | resolved | this group commit (see git log) |
+| BD2-1 | resolved | this TDL group commit (see git log) |
+| BD2-2 | resolved | this TDL group commit (see git log) |
+| D02-02 | resolved | this TDL group commit (see git log) |
+| BD2-4 | resolved | this TDL group commit (see git log) |
+| D02-03 | resolved | this TDL group commit (see git log) |
+| D02-04 | resolved | this TDL group commit (see git log) |
+| D02-05 | resolved | this TDL group commit (see git log) |
+| D02-06 | resolved | this TDL group commit (see git log) |
+| D02-07 | resolved | this TDL group commit (see git log) |
+| D02-08 | resolved | this TDL group commit (see git log) |
+| B1 | resolved | this TDL group commit (see git log) |

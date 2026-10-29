@@ -1690,9 +1690,12 @@ Only the rules the north star requires:
   !"bennett.measure_in_unitary", !"defer"}` (NS §3.1: "or, when the front end asks for it,
   deferred by the deferred-measurement principle, which the certificate states"). Then a
   `measure(h, i)` inside a generation becomes a `qcopy` of `h.i` onto a fresh wire w (ISA §4.5),
-  the call's `i1` result is a Co value whose wire is w (§10, TDL-2 seed), and w is released by
-  `quncopy` after its last use while its window is open (ISA §4.5, §6.2), else it is retained
-  history (TDL-7). The coverage report has a
+  the call's `i1` result is a Co value whose wire is w (§10, TDL-2 seed). Retain this
+  intentional outcome record until the first permitted CC measurement boundary after the
+  outermost action returns, and measure it there before the next source operation. Earlier
+  removal requires the complete instrument (outcomes and correlations included) to be
+  unchanged; an open window alone never justifies quncopy. These channel outputs are
+  separate from clean workspace (TDL-7). The coverage report has a
   `lowered` entry with source `dialect-0.2:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
@@ -2943,7 +2946,9 @@ content (TDL-3) and is never rejected for containing classical code.
   Cl. Transitions: Cl → M by **materialisation** (an uncontrolled XOR of the shadow into the
   arena cells, TDL-4); M → Cl by the same XOR (dematerialisation, before a CC store to X); M or
   Cl → Co when an event is applied (§18.2) that writes X's cells with a non-empty control set or
-  with a Co value; Co → Cl by `__bennett_observe` of all of X's bytes (TDL-11) or by its release
+  with a Co value; Co → Cl by `__bennett_observe` of all of X's bytes (TDL-11); partial observe leaves
+  K=Co and the observed cells in their measured basis state. Coverage is tracked since each
+  byte's last write; writes invalidate coverage. Co → Cl also by its release
   (free, end of lifetime).
 - **Value state.** During a generation (§18.4) every executed SSA value instance is Cl or Co:
   Co iff it is a deferred measurement result (§7.5a), a load of a byte whose **view** (below) is
@@ -2952,7 +2957,10 @@ content (TDL-3) and is never rejected for containing classical code.
   Co if K(X) = Co, or if the generation's recorder (or a recorder of an enclosing generation of
   the same invocation) holds an event that writes it with a non-empty control set or with a Co
   value; otherwise its view is Cl and its value is the shadow updated by the recorder's own
-  classical events. *(non-normative)* Inside `ctrl(q, f)` the body's own stores are recorded
+  classical events. For `compute`, retain gen(f)'s recorder after it ends: it is visible
+  to gen(use) and adjoint(E_f) construction as part of the same invocation. Its classical
+  events update use's Cl view; its predicated or Co-valued writes give use a Co view.
+  *(non-normative)* Inside `ctrl(q, f)` the body's own stores are recorded
   without q (q is added when the generation ends, TDL-6), so f sees its own writes classically,
   as the q = 1 branch must; an inner `ctrl(q2, g)` records g's writes with q2, so f's later reads
   of them are Co.
@@ -2966,9 +2974,10 @@ content (TDL-3) and is never rejected for containing classical code.
     inner control, may store a may-Co value, or may be control-dependent on a may-Co branch;
   - MC3: `__bennett_observe(p, len)` removes an object X when AV(p) = {(X, 0)} and len is a
     constant ≥ size(X); otherwise no change;
-  - MC4: a value may be Co if an operand may be Co, it is a load whose AV(p) contains a may-Co
-    object, or it is control-dependent on a may-Co branch; an object that a may-Co value is
-    stored into is may-Co after the store;
+  - MC4: an instruction is may-Co if an operand may be Co, it is a load whose AV(p)
+    contains a may-Co object, or it is control-dependent on a may-Co branch (stores and
+    calls included). A value is may-Co if its instruction is; an object written by a
+    may-Co store is may-Co after the store;
   - MC5: calls bind the coherence signature of the callee (which parameters may be Co, and the
     may-Co set at entry); every distinct signature is a variant (§4.3).
 - **Interprocedural and context-sensitive** by coherence signature (MC5; NS §3.1).
@@ -2993,8 +3002,13 @@ content (TDL-3) and is never rejected for containing classical code.
 - **Stores to outliving objects** and **marker calls** are never inside slices: they become
   events (TDL-5, TDL-10). A store or marker call that is control-dependent on a Co branch is
   recorded under the branch's condition wire (TDL-10). A Co branch is if-converted: the
-  generation executes both arms (each arm's Cl instructions classically, its events predicated on
-  the condition or its negation) and the join's `phi`s become slice-computed selects.
+  generation constructs both arms from separate copies of the pre-branch view. Within
+  each arm its own classical updates are interpreted conditional on that arm being taken;
+  the other arm's recorder is invisible. Only instructions not control-dependent on the Co
+  branch run classically (none in a plain diamond); all others run in slices or as predicated
+  events. Views merge only at the join, whose `phi`s become slice-computed selects. May-Co
+  stores to non-outliving workspace and subsequent dependent reads stay together inside the
+  slice's private memory through the join.
 
 **TDL-4 Coherent arena.**
 
@@ -3038,7 +3052,9 @@ realised by cases on the view of the bytes it writes:
   `IN` binding of a slice output); k MUST NOT depend on X's written bytes. The event is the
   `bennett-arith` permutation action for op on the arena cells X+o with k as `in` or `args`
   (ISA §4.7), preceded by the slice invocation that computes a Co k and followed by its
-  uncomputation. Exact.
+  uncomputation. The complete predicated update MUST be a total bijection on the
+  declared mutable interface, with bounded inverse and clean non-fault workspace. A
+  bijective op alone is insufficient when its condition depends on the changed bytes.
 - **(c) View Co, inside the `f` part of `compute(f, use, budget, env)`**: history. A slice
   invocation computes the new bytes into a fresh register t; the event `xchg coh a t` exchanges t
   with the cells (`qexchm`); t now holds the displaced bytes and is kept until adjoint(E_f)
@@ -3052,7 +3068,8 @@ realised by cases on the view of the bytes it writes:
   and the object.
 
 Stores to objects that do not outlive the invocation are workspace: G runs them on the
-generation's view; slices run them in their private memory (§8.5); at exit the objects are
+generation's view only when Cl; may-Co workspace stores and dependent reads run in slices
+in their private memory (§8.5); at exit the objects are
 released. Allocation in a generation is unconditional, like every allocation in the ISA (ISA
 §3.5); the release of an object that outlives the invocation is TDL-12.
 
@@ -3062,16 +3079,15 @@ released. Allocation in a generation is unconditional, like every allocation in 
 adjoint of the event list; `compute` reuses the recording E_f for its uncompute, so masks and
 history match exactly.
 
-**TDL-7 History.** The registers an invocation keeps beyond its own events (displaced bytes of
-case (c), the condition flags of a Co loop (TDL-10), Co values whose computing slice cannot be
-replayed before the invocation ends because an intervening event wrote something it read, and
-the per-slice fault registers of TDL-8) are **declared mutable outputs** of the invocation (NS
-§4.2: an action with coherent internal control is its padded unitary on its declared wires).
-Inside `compute`'s f they are released by adjoint(E_f). Otherwise the plugin allocates them,
-reports them in the certificate's frame descriptor (ISA §9.4 "retained history") and with the
-warning `BD-W-COHERENT-HISTORY`, and releases them by `measure` in the CC epilogue of the run.
-Every other Co value register is cleaned right after its last use by replaying its computing
-slice invocation.
+**TDL-7 Workspace and declared outcomes.** Non-fault workspace, including Co conditions,
+loop flags and slice data, MUST be cleaned by the adjoint of its exact computing sequence
+before the invocation returns; `compute` f may retain it only until adjoint(E_f). It is
+never implicitly made an output or measured. Predicate and parameter computation are part
+of TDL-5(b)'s total-bijection check. An uncleanable non-bijective coherent overwrite follows
+TDL-5(d), as ratified E3 requires; an out-of-place oracle or compute/use/uncompute retains
+that computation. Per-slice codes and Φ are explicit declared fault outputs (TDL-8), not
+incidental workspace. Intentional deferred-measurement records (§7.5a) are separate channel
+outputs retained until their declared observation boundary, never a cleanup substitute.
 
 **TDL-8 Faults.** NS §4.2: "a quantum action has no fault outcome of its own: any fallible
 computation it needs is a lifted oracle it calls, whose fault register it declares among its
@@ -3083,10 +3099,22 @@ f_1, …, f_K in invocation order into the action's **declared fault register** 
 record's `fault` field (§9.1), or, when that is null, a register the plugin allocates and
 retains (TDL-7); the CC epilogue's `measure` of a plugin-allocated Φ records the outcome in the
 run's fault statistics, and the certificate reports the rate (`fault_rate`, ISA §12.3). On a
-faulting basis input a slice's payload is the canonical 0 (ISA §5.2), so the events it feeds
-leave the arena unchanged there. A nonzero rate is a reported quantity (NS §4.2), not an error.
+faulting basis input a slice's payload is the canonical 0 (ISA §5.2). Every event
+consuming a fallible slice result is additionally predicated on that slice's code being zero;
+if multiple results are required, all their codes must be zero. This includes xchg, negative
+branch predicates and dependent slices: failure selects neither arm. Success flags are
+computed reversibly from retained codes, kept until their last dependent use, then
+uncomputed. These predicates do not gate the producing slice's compute/uncompute or fault
+collection. Thus failed results leave dependent arena writes and gates unchanged. A nonzero rate is a reported quantity (NS §4.2), not an error.
 
-**TDL-9 Budget.** Every slice invocation's token comes from the region-entry marker's budget
+**TDL-9 Budget.** Generation G receives its own full region budget. Before each executed
+materialised LLVM instruction other than phi/debug/mark it checks and consumes one step;
+heap and depth are checked before mutation. Exhaustion stops the generation and emits the
+corresponding fault event under the invocation/path controls; no further source instruction
+executes. Nested G execution consumes the enclosing remaining generation limits as well as
+its own limits, so nesting cannot evade a finite bound. Classical twins charge their executed
+instructions. Compilation never runs G to completion to discover an event list: G is a
+bounded CC routine executed at invocation. Every slice invocation's token comes from the region-entry marker's budget
 record, each field completed from the budget table (§9); each slice gets the full record
 (outline E2). Exhaustion is that slice's `FAULT_BUDGET_*` and reaches TDL-8.
 
@@ -3118,23 +3146,35 @@ record, each field completed from the budget table (§9); each slice gets the fu
   level traps (`T-TAINT-HOST`, fault code 4), and statically the plugin warns
   (`BD-W-TAINT-HOST`, naming `__bennett_observe`): NS §4.2, classical outputs of coherent memory
   leave only through measurement.
-- `__bennett_observe(p, len)` makes bytes Cl by measurement. On ISA 0.8 `measure` consumes a
-  whole live non-view register (ISA §3.3), so it lowers to: an action that `qload`-copies the
-  addressed cells into a fresh register r of 8·len wires; `measure r`, which collapses the arena
-  cells identically (a computational-basis measurement of a CNOT copy equals one of the source);
-  the outcome written to the shadow; an `xmask` of the outcome out of the arena cells, returning
-  them to |0⟩; K := Cl for every object whose bytes are all observed. Bytes whose state is Cl or M
-  are left as they are (an M object is dematerialised).
+- `__bennett_observe(p, len)` observes successive chunks of at most sixteen bytes:
+  copy each chunk's cells into a fresh non-view register of at most 128 wires and ISA
+  `measure` it. Sequential basis measurements preserve the joint distribution. No whole
+  arena register or slice view is measured. Write the outcome into the shadow. For partial
+  observation of X leave its observed cells in |m⟩ and K(X)=Co: the arena stays authoritative.
+  When every byte of X is covered since its last write, XOR the whole measured X out of the
+  arena and set K(X)=Cl. Cl bytes are read from the shadow; M objects are dematerialised
+  first. len=0 changes nothing.
 
-**TDL-12 Effects in action regions.** An action region is coherent (NS §4.2: "closed and
-effect-free"). An effect marker, a host call (§11.4), or the release of an object that outlives
-the invocation, reached in the generation of an action region (in G or in a slice), cannot be
-recorded as a unitary event. On the executions that reach it the effect does not occur and the
-event `fault 8` (`FAULT_EFFECT_UNMODELLED`) is recorded: at application it XORs 8 into a fresh
-retained fault register f_k under the event's control set, which TDL-8 combines into Φ like a
-slice's (NS §4.2: "an effect the device cannot virtualise is a fault code on the executions
-that reach it"). The coverage report has a
-`trapped` line for it. Effects inside oracle regions are §11.3.
+**TDL-12 Effects in action regions.** Generations inherit the run's virtual device bindings,
+established by the CC launch stub from `--bennett-dev` (§19.9) using §8.3 model codes and
+widths; nested generations inherit the same bindings. Marker signatures stay unchanged.
+The build/launch record includes bindings, initial images, capacities and state registers.
+Mutable model state (console buffer/length, clock counter, entropy cursor, block overlay and
+presence bits) is a declared mutable action interface, allocated in the arena at run entry
+and shared across invocations; entropy/disk images are preserved `in` registers. The model's
+bounded undo log, containing saved overwritten bytes/presence bits needed for inversion, is
+explicit declared device state, not invocation workspace. Initialisation is classical
+preparation outside control. A bound operation is a controlled reversible transition of
+this state with the read values of §11.3. Reads into program memory obey TDL-5; capacity
+exhaustion is a budget fault before mutation. Slices compute parameters and validation,
+TDL-8 success predicates gate the permutation transition, and its adjoint restores state
+and cleans parameter workspace. External effects wait for explicit CC observation of model
+state; adjoint/compute uncompute virtual transitions exactly. CONSOLE appends without
+silently discarding action output; its finite capacity is a declared bound. Clock, entropy
+and block use §11.3 values and cursor/overlay rules. Only unbound/unmodelled operations or
+genuine host calls have `fault 8` and a trapped coverage line. Release of outliving Co objects
+requires clean/restored state, not unconditional fault 8. Oracle device state stays private
+under §11.3, with declared outputs under §8.6.
 
 ## 11. Effects and device models per tier (effects 0.2)
 
@@ -3149,7 +3189,7 @@ NS §4.2's effects table, made concrete. The four device models are the ISA's (I
 | CC | `hostcall bennett.dev.<model>.<op>` (ISA §10): a genuine host effect, since ISA `effect` is R-only (ISA §4.1); the host's reply carries the bytes a read returns | host functions by `hostcall` (§11.4) |
 | R | ISA `effect <model>.<op>` on the effect tape, reversed by whole-run reversal (ISA §7.3, §10) | – (R makes no host calls) |
 | L | the lifted device model of §11.3 over state bound by the descriptor (§8.3) | – |
-| action regions | `fault 8` into the action's fault register (TDL-12) | same |
+| action regions | inherited virtual bindings: controlled reversible transitions (TDL-12); external effects deferred | unbound/unmodelled: F(8) |
 | unmodelled | F(8) with a `trapped` coverage line (§4.5) | same |
 
 ### 11.2 Effect markers in the R tier
@@ -6070,7 +6110,7 @@ instruction is one frame of the R history (ISA §7.4).
 | steps budget exhausted | 1 `FAULT_BUDGET_STEPS` |
 | heap budget or shadow stack exhausted | 2 `FAULT_BUDGET_HEAP` |
 | depth or lifted stack budget exhausted | 3 `FAULT_BUDGET_DEPTH` |
-| a trapped call, an unmodelled or unbound device, an effect in an action region | 8 `FAULT_EFFECT_UNMODELLED` |
+| a trapped call, an unmodelled or unbound device | 8 `FAULT_EFFECT_UNMODELLED` |
 | entropy exhausted (ISA §7.3; §11.3) | 10 `FAULT_ENTROPY_EXHAUSTED` |
 | a blocker point (§25.1) | 4, with the blocker report |
 
@@ -6132,13 +6172,22 @@ set** (a set of wires, initially empty). The forms are:
 - `oracle R B (ins..) tgt fault (mem..) (args..)` and `wide R …` (§8.6), `inplace G G′ B X`;
 - the TDL events of §10: `slice O (args..) (ins..) (mem..) -> regs`, `xmask X+o m`, `xstore X+a
   m`, `perm P X+a (params..)`, `xchg X+a h`, `fault C` (TDL-12), `firstfault (f..) Φ`;
+- `qcopy S -> D`: allocate D clean then XOR S into it; `quncopy S D`: XOR S into D and
+  release clean D; `qxor S T`: T XOR= S; `copy F -> G` means qalloc G then qxor F G (TDL-8);
 - `observe X+o len`, `measure` (outside generations), `effect dev.op` (R).
 
 When no recorder is active, an event is **applied** to Σ at once; otherwise it is appended to the
 innermost recorder. Applying an event with control set S applies it only on the basis states where
 every wire of S is 1 (ISA `ctl`, ISA §4.7, §5.3); `qalloc` and `qfree` are unconditional (ISA
-§3.5). Applying an event that writes object X: when K(X) = Cl and S ≠ ∅ or the written value is
-Co, X is first materialised (TDL-2); after an application with S ≠ ∅ or a Co value, K(X) = Co.
+§3.5). Arena writes with nonempty control set, Co address or Co value first materialise
+Cl objects and make Cl or M objects Co. Otherwise apply events per form: `xmask` XORs its
+mask into shadow only for Cl (arena stays zero), both copies for M, arena only for Co;
+`xstore` does the same XOR at its selected address; `perm` applies its bijection to shadow
+only for Cl, both copies for M, arena only for Co. `xchg` with a Co register first
+materialises and makes X Co; with a classical basis operand it exchanges with shadow for
+Cl, both copies consistently for M (returning one old value), arena only for Co.
+Unconditional Cl-valued xmask/xstore/perm leave K unchanged. Event application does not
+also reapply its speculative generation-view update. Writes invalidate observation coverage.
 The plugin realises applied events as CC-level region calls in event order (ISA §4.7), whose
 temporaries are released by `qreg.free` with the dynamic cleanliness check of ISA §3.3; it MAY
 compile an event list into one ISA action when that action satisfies ISA §6.
@@ -6147,7 +6196,9 @@ compile an event list into one ISA action when that action satisfies ISA §6.
 `x h cx cz swap ccx qload qstore qprep oracle wide slice xmask xstore xchg` are self-adjoint; `s`
 ↔ `sdg`; `t` ↔ `tdg`; `rx θ` ↦ `rx −θ` (and `ry`, `rz`); `qalloc` ↔ `qfree` of the same wires;
 `inplace G G′ B X` ↦ `inplace G′ G B X`; `perm P` ↦ the library inverse of P. Control sets are
-unchanged.
+unchanged. qcopy and quncopy are mutual adjoints; qxor and firstfault are self-adjoint
+XORs. `fault C` is an xmask of C on a fresh declared fault register, also self-adjoint.
+Adjoint of `copy F -> G` is qxor F G then qfree G, not another allocation.
 
 ### 18.3 Marker rules
 
@@ -6165,14 +6216,14 @@ fault code 4 (§17.5) with the named diagnostic (§22.2).
 | `gate2(op, a, i, b, j)` | as above for both; `a.i` ≠ `b.j` (`T-ALIAS`) | `cx a.i b.j`, `cz a.i b.j` or `swap a.i b.j` |
 | `gate3(op, a, i, b, j, c, k)` | as above; the three wires distinct (`T-ALIAS`) | `ccx a.i b.j c.k` |
 | `rot(op, h, i, θ)` | as `gate`; θ finite (`T-THETA`) | `rx θ`, `ry θ` or `rz θ` on `h.i` |
-| `measure(h, i)` | as `gate`; no recorder active unless deferred (§7.5a) (`T-MEASURE`) | projective measurement of `h.i` (ISA §14.2); outcome m with its Born probability; the wire stays live in state m (ISA: `measure` and re-preparation, ISA-6 not a gap); returns m |
+| `measure(h, i)` | as `gate`; no recorder active unless deferred (§7.5a) (`T-MEASURE`) | projective measurement of `h.i` (ISA §14.2); outcome m with its Born probability; the wire stays live in state m (ISA: copy h.i onto a fresh one-wire non-view register and measure that copy; h is never whole-register measured, ISA-6 not a gap); returns m |
 | `qload(dst, mem, addr)` | the three handles live and distinct (`T-DEAD`, `T-ALIAS`); n(mem) = 2^n(addr) · n(dst) (`T-SIZE`) | event `qload`: for every cell c, on the basis states where addr holds c, `dst.b ⊕= mem.(c·W + b)` for b < W = n(dst) (ISA §4.6 cell order) |
 | `qstore(mem, addr, val)` | as `qload` with W = n(val) | event `qstore`: `mem.(c·W + b) ⊕= val.b` under addr = c |
 | `qprep(h, src, n)` | h live; n ≤ n(h)/8 (`T-SIZE`); [src, src + n) valid (fault 7) | event `qprep h bytes`: wire 8k + j ⊕= bit j of byte k |
 | `observe(p, len)` | [p, p + len) valid (fault 7); no recorder active (`T-MEASURE`) | TDL-11 |
 | `ctrl(q, qi, f, budget, env)` | q live, qi < n(q); after generation, the wire `q.qi` is named by no event of E (`T-CTRL`) | E = gen(f, env) (§18.4); each event of E with `q.qi` added to its control set; then the TDL-8 combine |
 | `adj(f, budget, env)` | – | E = gen(f, env); the adjoint of E |
-| `compute(f, use, budget, env)` | – | E_f = gen(f, env); the TDL-8 copies of E_f's fault registers; E_u = gen(use, env); then the events E_f, copies, E_u, adjoint(E_f) |
+| `compute(f, use, budget, env)` | – | E_f = gen(f, env); the TDL-8 copies of E_f's fault registers; E_u = gen(use, env) with E_f's retained recorder visible (TDL-2); then the events E_f, copies, E_u, adjoint(E_f) |
 | `reversible(f, budget, env)` | no recorder active (else §7.4 applies) | §18.6 |
 | `oracle(f, budget, desc)` | the descriptor's checks (§8.1–§8.4: `T-IFACE`, `T-SIZE`, `T-DEAD`, `T-ALIAS`) | event `oracle` or `wide` of the dispatched shape: on every basis state, outputs ⊕= payload(F_B), fault ⊕= code(F_B) (ISA §5.2), F_B from the reference object of §16 on the entry state of §8.5 |
 | `inplace(g, ginv, budget, desc)` | the descriptor's checks; budget ≥ B_min (`T-BUDGET`) | event `inplace`: x ← g(x; args), the permutation that §8.7 verified (ISA `qinplace`) |
@@ -6599,7 +6650,7 @@ h H0.0
 h H1.0
 xmask @cnt+0 0x05 ctrl H0.0
 slice O1 args(0x00) mem(coh) -> m1:8 f1:4 ctrl H1.0
-xstore @other+0 m1 ctrl H1.0
+xstore @other+0 m1 ctrl H1.0 success(f1)
 slice O1 args(0x00) mem(coh) -> m1 f1b:4 ctrl H1.0
 qxor f1 f1b
 qfree f1b
@@ -6672,10 +6723,10 @@ qalloc H1 1
 h H0.0
 xmask @cnt+0 0x05 ctrl H0.0
 slice O9 -> h:8 f9:4
-xchg @cnt+0 h
+xchg @cnt+0 h success(f9)
 copy f9 -> g9:4
 x H1.0
-xchg @cnt+0 h
+xchg @cnt+0 h success(f9)
 slice O9 -> h f9
 qfree h
 qfree f9
@@ -6710,7 +6761,7 @@ h H0.0
 h H1.0
 xmask @cnt+0 0x05 ctrl H0.0
 slice Oz mem(coh) -> w:1 fz:4 ctrl H1.0
-x H2.0 ctrl H1.0 w
+x H2.0 ctrl H1.0 w success(fz)
 slice Oz mem(coh) -> w fzb:4 ctrl H1.0
 qxor fz fzb
 qfree fzb
@@ -6727,10 +6778,9 @@ firstfault (fz) -> Phi1:4
 
 *(non-normative)* w = (cnt = 5) = H0, so the target H2 flips exactly where H0 and H1 are 1.
 
-An effect inside an action region (TDL-12): the console write cannot happen under control, so on
-the branch where the control is 1 it is the fault code 8 in a retained register, combined into the
-plugin-allocated fault register Φ (the budget record is null), and the fault rate (here 1/2) is a
-reported quantity:
+A bound effect inside an action region (TDL-12): launch binds CONSOLE to a two-byte
+zero buffer plus length/undo state. The control-1 branch appends 0x21,0x0a; control-0
+preserves it. All external output waits for observation.
 
 ```llvm example=tdl-effect verdict=accept
 @msg = private unnamed_addr constant [2 x i8] c"!\0A"
@@ -6754,24 +6804,89 @@ define void @tdl_e() {
 ```
 
 ```text tdl=tdl-effect
-@loud: G = { load of %t; the gate marker -> x; the effect marker -> fault 8 (TDL-12) }, slices = {}
+@loud: G = { load of %t; gate marker -> x }; bound console -> reversible append (TDL-12)
 events of @tdl_e:
 qalloc H0 1
 qalloc H1 1
 h H0.0
 x H1.0 ctrl H0.0
-fault 8 -> f1:4 ctrl H0.0
-firstfault (f1) -> Phi1:4
+perm console.append bytes=210a ctrl H0.0
+firstfault () -> Phi1:4
 ```
 
 ```text state=tdl-effect at=6
-|00; f1 = 0, Phi1 = 0> 0.70710678
-|11; f1 = 8, Phi1 = 8> 0.70710678
+|00; console=0000 length=0, Phi1=0> 0.70710678
+|11; console=210a length=2, Phi1=0> 0.70710678
 ```
 
 *(non-normative)* `@tdl_e` returns with H0 and H1 live, as a REPL keeps registers (§6.6); the run's
-CC epilogue measures the retained f1 and Φ1 (TDL-8) and reports code 8 with probability 1/2. A
+CC epilogue reports fault rate zero. Explicit console observation yields empty or 210a
+with probability 1/2 each; no console is implicitly observed. A
 program that ended without freeing H0 and H1 would trap `T-LEAK` at its end.
+
+Round-1 boundary witnesses. Masks are old XOR new; mutually exclusive arms start
+from the same old value. These state/TDL vectors specify expected executions.
+
+```text tdl=compute-view
+initial @t=0 Cl; H1=|0>; f: store 9 @t; use: if (@t==9) X H1
+xmask @t+0 0x09
+x H1.0
+xmask @t+0 0x09
+```
+
+```text state=compute-view at=3
+|1; t-shadow=00 t-arena=00 K=Cl> 1
+```
+
+```text tdl=branch-views
+initial @x=0 Cl; branch w: store 5 @x; else: store 7 @x
+xmask @x+0 0x05 ctrl w
+xmask @x+0 0x07 ctrl not-w
+workspace diamond: if(w) *local=1; else *local=2; return *local -> slice select(w,1,2)
+```
+
+```text state=branch-views at=2
+w=1 -> x=05; w=0 -> x=07; code=0; no coherent-overwrite
+workspace: w=1 -> payload=1; w=0 -> payload=2
+```
+
+```text state=partial-observe at=1
+initial X[2] Co, basis bytes=0102; observe(X,1) -> outcome=01, arena=0102, K=Co
+subsequent slice load X[0] -> payload=1; observe(X+1,1) -> shadow=0102, arena=0000, K=Cl
+observe length=17 -> chunk widths=[128,8], identical joint distribution to basis measurement
+```
+
+```text state=fault-consumers at=1
+initial X=05 Co; value slice budget=0 -> payload=0 code=1 success=0
+xchg X t success(f) -> X=05, t=00; firstfault(f) -> Phi=1
+condition slice code=1 -> neither arm fires (including negative predicate)
+```
+
+```text state=clean-predicate at=0
+Co x in {0,1}; if(x!=0) x^=1 -> visible images [0,0]; not injective
+verdict=reject:BD-E-COHERENT-OVERWRITE; no implicit condition measurement
+out-of-place oracle payload=(x!=0 ? x xor 1 : x), preserved IN x -> accept
+```
+
+```text state=deferred-channel at=1
+q=|+>; deferred measure(q), unused result; boundary: measure fresh outcome record
+then H(q); measure(q) -> P(0)=1/2, P(1)=1/2
+```
+
+```text tdl=generation-budget
+source: entry: br label loop; loop: br label loop
+steps=2 -> execute two branches; next branch emits fault 1 under invocation control, stop
+```
+
+```text state=generation-budget at=1
+control=0 -> Phi=0; control=1 -> Phi=1; finite event list; no later source effects
+```
+
+```text state=classical-event-application at=3
+initial @cnt shadow=03 arena=00 K=Cl; adj(store 5) mask=03 xor 05=06
+apply -> shadow=05 arena=00 K=Cl; classical load -> 5
+ctrl(q=1,add3) -> materialise 05; arena=08 K=Co; observe -> 8, shadow=08 arena=00 K=Cl
+```
 
 A rotation by an angle that is superposed and has an unbounded value set cannot be predicated per
 value (TDL-10): `@setang` stores a host value under control, so `@ang` is Co with value set ⊤,
@@ -7281,8 +7396,7 @@ Correct on ISA 0.8 by the stated construction; ISA 0.9 candidates on evidence on
 | G-16 (fibers and interrupts in CC/R) | rewindable frames (§14.6) and poll points (§20.4) |
 | SQLite E1–E5 | per-function cell widths, frame width, an indirect-call row, a block-copy row, a classical-content hint for `in` regions |
 
-ISA-2 is not a gap (the R step counter, §17.6). ISA-6 is not a gap (`measure` and re-preparation,
-§18.3). ISA-10 is settled by the ISA's test vectors. **LLVM changes needed**: none; the legality
+ISA-2 is not a gap (the R step counter, §17.6). ISA-6 is not a gap (fresh one-wire copy and measurement, §18.3). ISA-10 is settled by the ISA's test vectors. **LLVM changes needed**: none; the legality
 findings' LLVM bugs are outside the envelope (§21.1).
 
 ## Appendix A. Changes from the ratified outline
@@ -7301,8 +7415,8 @@ every departure keeps or widens the capability the outline gives.
 | A7 | TDL-5(a), Co value: XOR v, then `xmask c`, then uncompute | one XOR of the mask c ⊕ v (c a classical argument of the slice) | equal effect, one event fewer |
 | A8 | TDL-5(a)/§18: "the uncompute is valid (ISA §6.2)" | events are applied as CC-level region calls with dynamic cleanliness checks; a static ISA action only when it satisfies ISA §6 (§18.2) | ISA §6.1 makes an oracle's value depend on every cell of a region it reads, so a static action cannot uncompute a slice after writing any arena cell; at CC level the uncompute is exact because the slice does not read the written cells |
 | A9 | TDL-8: combine into Φ; plugin register when null | per-slice fault registers retained and combined by `@firstfault`; in `compute`, copied between E_f and E_use (TDL-8) | the uncomputing call XORs the code out again, and in `compute` adjoint(E_f) would erase f's faults |
-| A10 | TDL-12: Co effects follow §11.3, else F(8) | every effect in an action region is `fault 8` (TDL-12) | action regions have no descriptor, so no device model is bound to them; an effect in G under control is the same coherence problem as a store |
-| A11 | TDL-7: history freed by the scheduler | history that cannot be cleaned inside the invocation is a declared output, reported (`BD-W-COHERENT-HISTORY`) and measured at the epilogue | an action must return workspace clean (ISA §5.3); NS §4.2's padded unitary on declared wires |
+| A10 | TDL-12 effects | inherited per-run virtual bindings and reversible state | D02-07 removes the action-effect narrowing |
+| A11 | TDL-7 history | clean workspace; explicit fault/measurement outcomes only | D02-05 restores ratified E3; no implicit history channel |
 | A12 | §3.1: primitive `__bennett_nz_fault` | also `__bennett_nz_alloc`, `__bennett_nz_free`; reserved-name rules apply to producer inputs (§3.1) | the runtimes allocator must reach `lift.alloc`/`alloc`; runtimes bitcode uses reserved names |
 | A13 | §3.8: a `@cfunction` constant "resolves whenever the body is in the link" | it is dispatched by value and traps unless it equals some A(F) (§3.8, §5.2) | A(F) is fixed by the comparison link after the analysis, and a Julia-process address never equals it; Bennett.jl's `ptr @f` route keeps the capability (audit B-14) |
 | A14 | §7.2: thunk resolution as 0.1 C1 (a cycle is `BD-E-REGION-THUNK`) | a thunk on a cycle resolves to itself; the code is deleted | a rejection with no NS clause behind it |

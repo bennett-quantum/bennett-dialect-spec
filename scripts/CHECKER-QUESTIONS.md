@@ -39,3 +39,11 @@ returning transfer attributes and GC provenance changed. n-varargs now pushes 32
 not 24. Add n-fcmp differential vectors and state=normalisation-boundaries/fcmp-abi
 execution. Existing normaliser expectations must follow the corrected rules; never
 remove these examples to restore green. Full baseline already has incomplete families.
+
+## Q5 — Round-1 TDL semantics (editor)
+
+Implement retained compute views, instruction MC, forked branch views, all-code-zero
+consumer predicates, clean workspace, deferred channel records, bounded G, inherited
+virtual devices and per-K application. New §18.8 TDL/state witnesses and updated tdl-effect
+are normative; baseline run-action is unavailable. Full baseline: 1922/1982 passed,
+60 failed/blocked. Direct dialect_check_v02.py exits 0 without main; frontend runs it.
