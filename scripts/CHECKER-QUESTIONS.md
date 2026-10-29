@@ -143,3 +143,13 @@ Correction to Q10: V10 half fneg exposes normative conflict b-dialect-spec-7u1
 (V10 excludes it; 13.1 retains it; 16.4 maps all formats), not an unambiguous
 missed rejection. The literal V10 expectation remains visible pending full
 boundary reconciliation. No normative semantic edit or version bump made.
+
+## Q14 — final coverage-job gate (editor)
+
+Full direct gate on spec b7330de: 2273 passed / 22 failed / 8 blocked / 2303
+total, exit 1. All 567 LLVM parses, 15 object checks and 15 run blocks pass.
+Red: coverage 7, normalise 5, map 5, recognise 4, blocker 1; state 8 unavailable.
+Exact ids/reasons and the full per-family table are in the spec progress file.
+V10 remains a normative conflict (7u1); the other gaps and BLK-5 routing require
+checker work outside this editor's read-only boundary. Round 2 is not ready.
+No examples/checks weakened or removed; version remains 0.2.1; no push.

@@ -249,6 +249,11 @@ changes, so version remains 0.2.1. ISA 0.9 draft 61550b4 is reference-only.
 | Group | Gate | Result |
 |---|---|---|
 | normalisation omissions | whole direct gate, headless, repository TMPDIR | 2043 pass / 34 fail / 1 blocked (2078); parse 429/429; normalise 19/24 |
+| validator/points-to omissions | selected parse,recognise,coverage; headless, repo TMPDIR | 746 pass / 16 fail / 0 blocked (762); 13 remaining coverage rows |
+| bindings/transfer/indirectbr | selected parse,map,check,run-oracle,coverage | 697 pass / 12 fail / 0 blocked (709); parse 540/540, check/run 15/15 each, map 9/14, coverage 118/125 |
+| driver/platform | selected parse,recognise,state,coverage,xrefs | 2139 pass / 10 fail / 8 blocked (2157); state 28/36, coverage 118/125 |
+| BLK-5 | selected parse,recognise,blocker,state,coverage,xrefs | 2142 pass / 12 fail / 8 blocked (2162); parse 567/567, blocker 5/6 |
+| final whole gate | direct runner, all families, headless, repository TMPDIR | 2273 pass / 22 fail / 8 blocked (2303), exit 1 |
 
 Normalisation report: `scripts/.tmp/coverage-normalisation.json`. Coverage 96/125
 is index discovery only, not successful execution: the six added witnesses remove six
@@ -258,7 +263,6 @@ N34 emits no R marks (rmode attribute ignored); N35 drops volatile without MMIO
 routing/poll (platform attribute ignored). These are checker limitations, not
 permissions to alter the normative output. N12 passes on all three LLVM majors.
 
-| validator/points-to omissions | selected parse,recognise,coverage; headless, repo TMPDIR | 746 pass / 16 fail / 0 blocked (762); 13 remaining coverage rows |
 
 Report: `scripts/.tmp/coverage-validator.json`. All 15 clean validator witnesses
 and PT12 ROOT return pass. Negative V4 (ctlz true), V10 (half fneg) and V12
@@ -266,7 +270,6 @@ and PT12 ROOT return pass. Negative V4 (ctlz true), V10 (half fneg) and V12
 as failing obligations. V8 negative also triggers V13, so this does not claim
 an independent pre-N21 V8-pattern implementation. No normative text was fixed.
 
-| bindings/transfer/indirectbr | selected parse,map,check,run-oracle,coverage | 697 pass / 12 fail / 0 blocked (709); parse 540/540, check/run 15/15 each, map 9/14, coverage 118/125 |
 
 Report: `scripts/.tmp/coverage-bindings.json`. The six hand-authored objects
 were checked/hashed/run independently with Rust before insertion; Python only
@@ -286,7 +289,6 @@ raises checker-unimplemented. The binding objects and their expectations remain
 unchanged to expose these gaps. Seven hard-coded driver/platform coverage failures
 remain regardless of examples (dialect_meta.coverage sets them False).
 
-| driver/platform | selected parse,recognise,state,coverage,xrefs | 2139 pass / 10 fail / 8 blocked (2157); state 28/36, coverage 118/125 |
 
 Report: `scripts/.tmp/coverage-driver.json`. All new source modules parse and
 recognise; all 1309 xrefs pass. Each driver operation has a concrete hand-derived
@@ -299,7 +301,6 @@ None can be executed by current families just by adding a tag. In addition,
 coverage unconditionally sets all seven section obligations False, irrespective
 of Appendix B rows. Recorded on 1jb and Q12; never weakened or removed.
 
-| BLK-5 | selected parse,recognise,blocker,state,coverage,xrefs | 2142 pass / 12 fail / 8 blocked (2162); parse 567/567, blocker 5/6 |
 
 Report: `scripts/.tmp/coverage-blk5.json`. ISA 0.9 draft commit 61550b4,
 section 0.2 K5 and section 4.1 fault row were read: literal C < 2^64, zero
@@ -327,3 +328,75 @@ fix. The intended complete exception boundary also includes retained FP
 intrinsics and carrier interfaces, so a complete semantic fix is not uniquely
 specified by this coverage task. No normative rule was changed; version 0.2.1
 remains appropriate under README.
+
+### Final freeze-gate verification (2026-10-29)
+
+**Not green; round 2 is not ready.** All 35 omissions have concrete added
+witnesses and index evidence, but P-2 execution still fails. Do not interpret
+118/125 index coverage as implemented capabilities. No checker code changed,
+no check removed, no expectation weakened, no push, and no semantic version bump.
+This section supersedes the historical open-questions list and earlier counts.
+
+Command (absolute paths; environment headless):
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/editor-final-freeze.json
+```
+
+Spec tested: b7330de, draft 0.2.1; checker remains 56fe08c. Interpreter receipt:
+commit 8503d818b7cd96b95682e5970596790b364ea6a6, source fingerprint
+4b829170d7c6dcfbb5bc04a713861c01217fd20b55997321bea69e431aceeb96
+(the checker snapshots current dependency sources; different group receipts
+reflect concurrent dependency work). Full report and stdout are repository-local
+`scripts/.tmp/editor-final-freeze.json` and `editor-final-freeze.log`.
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 5 | 1 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 15 | 0 | 0 |
+| coverage | 118 | 7 | 0 |
+| driver | 1 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 15 | 0 | 0 |
+| hash | 5 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 9 | 5 | 0 |
+| native | 13 | 0 | 0 |
+| normalise | 19 | 5 | 0 |
+| parse | 567 | 0 | 0 |
+| recognise | 120 | 4 | 0 |
+| run-oracle | 15 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 28 | 0 | 8 |
+| step-check | 6 | 0 | 0 |
+| tdl | 9 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1306 | 0 | 0 |
+| **Total** | **2273** | **22** | **8** |
+
+Exact remaining red obligations (no other family is red):
+
+| Family | Checks | Why |
+|---|---|---|
+| coverage (7) | §19.3, §19.4, §19.5, §19.6, §19.7, §19.8, §20 | coverage() hard-codes False despite added source/state/index evidence |
+| normalise (5) | n-lower-widenable, n-dynamic-lane, n-byval-copy, n-rstep-return, n-platform-mmio | absent LLVM N0 lowering, dynamic lane chain, byval copy, R marks, platform routing/poll respectively |
+| map (5) | binding-out-byte, binding-block-byte, binding-clock-read, binding-console-byte, indirectbr-two-blocks | OUT and indirectbr explicitly unimplemented; BLOCK/CLOCK/CONSOLE model prologues/interface/delivery absent |
+| recognise (2) | validator-v4-residue, validator-v12-residue | ctlz(true) and unresolved L/R callee wrongly accept |
+| recognise (1) | validator-v10-residue | literal V10 forbids half fneg, but retained-operation rules permit it; normative conflict 7u1 |
+| recognise + blocker (2) | r-budget-prefix (one in each family) | materialised recognition only enabled for the hard-coded older r-fault-code id; new primitive use wrongly rejected as producer input |
+| state (1 blocked) | r-budget-prefix | verdict ignored; still probes host fuel, which cannot establish typed fault 1 before the first effect |
+| state (7 blocked) | driver-oracle-synthesis, driver-pointer-promotion, driver-comparison-layout, driver-snapshot-initializer, driver-closed-unit-fallback, driver-mixed-majors, platform-uart-write | actual driver/platform adapters absent; generic TDL/xam unavailable diagnostic, not missing published ISA commands |
+
+All 567 LLVM parses pass. All 15 object checks and 15 run blocks pass, including
+all six new objects. The entry replay object maps exactly. Previously passing
+normalise/native/CC/R/TDL/trace families retain their earlier examples.
+
+Group commits: 4e8de56 normalisation; c3977f9 validator/PT12; 2a0358a binding
+objects/replay/indirectbr; 02ebe2a driver/platform; b7330de BLK-5 and V10 finding.
+Tracking: notes on b-dialect-spec-1jb and b-dialect-spec-bz6; new bug
+b-dialect-spec-7u1. All remain open because the freeze gate is not green.
+Append-only checker questions Q9–Q13 (plus final Q14) record the required follow-up.
+Generated .beads/issues.jsonl stays outside the owned-path commits.
