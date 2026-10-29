@@ -3223,7 +3223,8 @@ instruction without a result (a `void` call, a `store`, an `invoke` of a `void` 
 is `<f>.<k>`: f the enclosing function's name and k the 0-based count, in instruction order, of
 the result-less instructions of f that the same rule rewrites. A value introduced once per
 function is `%nz.<tag>.<f>`. A constant global a rule needs is `@nz.<tag>.<f>.<r>`. A
-declaration a rule needs is appended at the end of the module in order of first use. Each rule
+declaration a rule needs is appended at the end of the module, and a global after the module's
+globals, in order of first use. Each rule
 states its tags.
 
 ### 12.2 The rules
@@ -3794,5 +3795,672 @@ k(2147483647, 1) = 31
 *(non-normative)* k(7, −3): smax = 7, ctpop(7) = 3, and 7 + 0xFFFFFFFD overflows 32 bits, so 3 +
 1 = 4. k(−1, −1): ctpop(0xFFFFFFFF) = 32, overflow, 33. k(2^31 − 1, 1): ctpop = 31, no unsigned
 overflow, 31.
+
+## 13. Floating point (arith contract)
+
+NS §3.2: "Floating point is deterministic soft-float in both builds … Hardware floating point
+never executes in either build." Every floating-point construct of every format has a row
+here; none faults.
+
+### 13.1 Soft-float rewrite (rules N19, N32)
+
+**Formats and carriers:**
+
+| LLVM type | Suffix | Carrier |
+|---|---|---|
+| `half` | `f16` | `i16` |
+| `bfloat` | `bf16` | `i16` |
+| `float` | `f32` | `i32` |
+| `double` | `f64` | `i64` |
+| `x86_fp80` | `f80` | `i80` |
+| `fp128` | `f128` | `i128` |
+| `ppc_fp128` | `ppcf128` | `i128` |
+
+The rewrite of an instruction `%r` with floating-point operands or result is: first, for each
+floating-point operand k (value or constant, in operand order), `%nz.<k>.r = bitcast <T>
+<operand> to <carrier>`; then the call below, named `%nz.i.r`; then, for a floating-point result,
+`%r = bitcast <carrier> %nz.i.r to <T>`. The entry points are defined by `bennett-arith` and are
+part of its bitcode the driver links. B below is the format's suffix, C its carrier.
+
+| Instruction | Call (carrier operands in order) | Result |
+|---|---|---|
+| `fadd`, `fsub`, `fmul`, `fdiv`, `frem` | `C @__bennett_sf_{add,sub,mul,div,rem}_B(C, C)` | bitcast |
+| `fcmp <p>` | `i1 @__bennett_sf_cmp_B(C, C, i32 P)`, P the LLVM predicate number: `false` 0, `oeq` 1, `ogt` 2, `oge` 3, `olt` 4, `ole` 5, `one` 6, `ord` 7, `ueq` 8, `ugt` 9, `uge` 10, `ult` 11, `ule` 12, `une` 13, `uno` 14, `true` 15 | `%r` is the call itself |
+| `fptosi`/`fptoui` to iM, `llvm.fptosi.sat`/`llvm.fptoui.sat` to iM | `i128 @__bennett_sf_{fptosi,fptoui}_B(C, i32 M)` | `%r = trunc i128 %nz.i.r to iM` (the call is `%r` when M = 128) |
+| `sitofp`/`uitofp` from iM | `%nz.x.r = sext`/`zext iM a to i128` (omitted when M = 128), `C @__bennett_sf_{sitofp,uitofp}_B(i128)` | bitcast |
+| `fpext`, `fptrunc` from format S to format D; `llvm.convert.to.fp16`, `llvm.convert.from.fp16` | `D_carrier @__bennett_sf_{fpext,fptrunc}_S_D(S_carrier)` | bitcast |
+| `llvm.fptrunc.round(x, mode)` | `D_carrier @__bennett_sf_fptrunc_S_D_rm(S_carrier, i32 R)`, R from the mode (§13.5) | bitcast |
+| `llvm.sqrt`, `llvm.floor`, `llvm.ceil`, `llvm.trunc`, `llvm.round`, `llvm.roundeven`, `llvm.rint`, `llvm.nearbyint`, `llvm.canonicalize` | `C @__bennett_sf_<name>_B(C)` | bitcast |
+| `llvm.minnum`, `llvm.maxnum`, `llvm.minimum`, `llvm.maximum`, `llvm.minimumnum`, `llvm.maximumnum` | `C @__bennett_sf_<name>_B(C, C)` | bitcast |
+| `llvm.fma` | `C @__bennett_sf_fma_B(C, C, C)` | bitcast |
+| `llvm.is.fpclass(x, mask)` | `i1 @__bennett_sf_isfpclass_B(C, i32 mask)` | the call |
+| `llvm.ldexp(x, e)`, `llvm.frexp(x)` | `C @__bennett_sf_ldexp_B(C, i32 e)`; `{ C, i32 } @__bennett_sf_frexp_B(C)` | bitcast (for frexp: of field 0) |
+| `llvm.lround`, `llvm.llround`, `llvm.lrint`, `llvm.llrint` to iM | `i128 @__bennett_sf_{lround,llround,lrint,llrint}_B(C, i32 M)` | `trunc` to iM |
+| `llvm.convert.to.arbitrary.fp`, `llvm.convert.from.arbitrary.fp` (format named by metadata) | `@__bennett_sf_convert_to_<fmt>_B` / `@__bennett_sf_convert_from_<fmt>_B` with LLVM APFloat's semantics of the named format | bitcast |
+| `fneg`, `llvm.fabs`, `llvm.copysign`, `bitcast`, `load`, `store`, `select`, `phi` | unchanged: bit-exact operations (LangRef) | – |
+
+**Semantics of the entry points** (the contract with `bennett-arith`): IEEE 754-2019 for
+binary16 (`half`), binary32, binary64 and binary128; `bfloat` is the IEEE-style format with 8
+exponent and 7 fraction bits; `x86_fp80` is the 80-bit x87 extended format (64-bit significand
+with explicit integer bit; encodings with exponent ≠ 0 and integer bit 0, the unnormals, and
+pseudo-denormals and pseudo-infinities are treated as NaN inputs, as modern x87 hardware does);
+`ppc_fp128` is double-double with the operations of LLVM's APFloat `PPCDoubleDouble` semantics of
+the major in use. For all formats: round to nearest ties to even, subnormals supported, no
+observable flags or exceptions (except §13.5); **every NaN result is the format's canonical NaN**
+(sign 0, quiet bit set, other payload bits 0: `0x7E00` f16, `0x7FC0` bf16, `0x7FC00000` f32,
+`0x7FF8000000000000` f64, `0x7FFFC000000000000000` f80, `0x7FFF8000…0` f128, and for ppcf128
+the f64 canonical NaN in the high double and +0 in the low); `rem` is C `fmod` (exact, the sign of
+the dividend); `cmp` is LLVM's `fcmp` for the predicate; `fptosi`/`fptoui` and the `.sat` forms
+truncate toward zero, map NaN to 0 and saturate values outside the range of iM to its bounds,
+returned sign-extended (`fptosi`) or zero-extended (`fptoui`) in i128; `sitofp`/`uitofp` round to
+nearest even; `minnum`/`maxnum` are IEEE 754-2008 minNum/maxNum (one NaN operand: the other
+operand; two: the canonical NaN) with −0 < +0; `minimum`/`maximum` are IEEE 754-2019 (either NaN:
+the canonical NaN) with −0 < +0; `minimumnum`/`maximumnum` are IEEE 754-2019 minimumNumber/
+maximumNumber; `sqrt`, `fma` and every rounding function are correctly rounded (`round` ties
+away from zero, `rint` and `nearbyint` to nearest even); `fpext` is exact; `fptrunc` rounds to
+nearest even; `canonicalize` maps every NaN to the canonical NaN and is the identity otherwise;
+`is.fpclass` tests LangRef's ten classes on the bit pattern; `ldexp`/`frexp` are exact up to
+rounding of a subnormal `ldexp` result; `lround`/`llround` round half away from zero and `lrint`/
+`llrint` to nearest even, saturating like `fptosi`. *(non-normative)* `fneg`, `fabs` and
+`copysign` stay bit-exact, so a NaN's sign bit set by `fneg` survives, as LangRef requires; an
+implementation of `half` and `bfloat` + − × ÷ √ in binary32 followed by one rounding is
+correctly rounded, since 24 ≥ 2p + 2 for p = 11 and p = 8 (Figueroa's double-rounding bound), but
+the contract is correct rounding, so `fma` needs its own implementation.
+
+### 13.2 Vector floating point
+
+After N21 every vector floating-point operation is scalar: §13.1 applies lane by lane, and
+`vector.reduce.fadd`/`fmul` are the ordered left folds of §12.6 (exact once N2 has removed
+`reassoc`).
+
+### 13.3 Formats beyond binary32 and binary64
+
+All seven formats of §13.1 are covered by the same table and contract (NS §3.2: "coverage-report
+lines until the library covers them"; `bennett-arith` covers them, so they are `lowered`). musl's
+`fmt_fp` (`printf("%Lf")`, rung 3) uses `x86_fp80` on x86-64 and `fp128` on AArch64 and RISC-V64.
+
+### 13.4 Transcendentals and libm intrinsics (N33)
+
+`llvm.sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `exp2`,
+`exp10`, `log`, `log2`, `log10`, `pow`, `powi`, `sincos`, `sincospi` and `modf` become calls of
+the **runtimes libm**: `@<name>` for `double`, `@<name>f` for `float`, `@<name>l` for the
+target's `long double` (`x86_fp80` or `fp128`), and for `half`, `bfloat` and the other
+`fp128`/`ppc_fp128` cases the call of the `float`, respectively `long double`, function on the
+`fpext`ed value followed by `fptrunc`; `powi(x, n)` becomes `__bennett_rt_powi_B(x, n)` (the
+repeated squaring of compiler-rt's `__powidf2`); `sincos(x)` becomes the pair (sin x, cos x),
+`sincospi(x)` the pair (sinpi x, cospi x), `modf(x)` the pair (fractional, integral). The runtimes
+libm is musl-derived and compiled through this pipeline, so it is soft-float code itself and the
+same function runs in both builds; calls of `sin`, `exp`, … in source resolve to it by §4.5. The
+certificate records the runtimes version. No correct-rounding claim is required; bit-exact
+determinism is (NS §3.2).
+
+### 13.5 Constrained intrinsics, `strictfp` and the floating-point environment
+
+`llvm.experimental.constrained.<op>(…, metadata <rounding>, metadata <except>)` becomes the
+soft-float call of §13.1 with the suffix `_rm` and an extra `i32 R` operand: R = 0 for
+`round.tonearest`, 1 `round.downward`, 2 `round.upward`, 3 `round.towardzero`, 4
+`round.tonearestaway`, and for `round.dynamic` the value loaded from the runtimes global
+`__bennett_rt_fenv` (field `round`); when `<except>` is not `fpexcept.ignore`, the entry point
+ORs the IEEE flags it raises (invalid 1, divbyzero 2, overflow 4, underflow 8, inexact 16) into
+`__bennett_rt_fenv` (field `flags`). `llvm.get.rounding`, `set.rounding`, `get.fpenv`,
+`set.fpenv`, `reset.fpenv`, `get.fpmode`, `set.fpmode`, `reset.fpmode` read and write that state;
+musl's `<fenv.h>` functions in `bennett-runtimes` do the same. Unconstrained operations use round
+to nearest and raise no flags, as LLVM assumes of the default environment. A `strictfp` call-site
+attribute on a marker is benign (§3.6).
+
+### 13.6 Examples
+
+```llvm normalise-in=n-fmuladd
+define internal double @fm(double %a, double %b, double %c) {
+  %r = call double @llvm.fmuladd.f64(double %a, double %b, double %c)
+  ret double %r
+}
+
+declare double @llvm.fmuladd.f64(double, double, double)
+```
+
+```llvm normalise-out=n-fmuladd
+define internal double @fm(double %a, double %b, double %c) {
+  %nz.0.nz.m.r = bitcast double %a to i64
+  %nz.1.nz.m.r = bitcast double %b to i64
+  %nz.i.nz.m.r = call i64 @__bennett_sf_mul_f64(i64 %nz.0.nz.m.r, i64 %nz.1.nz.m.r)
+  %nz.m.r = bitcast i64 %nz.i.nz.m.r to double
+  %nz.0.r = bitcast double %nz.m.r to i64
+  %nz.1.r = bitcast double %c to i64
+  %nz.i.r = call i64 @__bennett_sf_add_f64(i64 %nz.0.r, i64 %nz.1.r)
+  %r = bitcast i64 %nz.i.r to double
+  ret double %r
+}
+
+declare double @llvm.fmuladd.f64(double, double, double)
+
+declare i64 @__bennett_sf_mul_f64(i64, i64)
+
+declare i64 @__bennett_sf_add_f64(i64, i64)
+```
+
+```text native=n-fmuladd
+fm(1.5, 2.0, 0.25) = 3.25 (0x400a000000000000), input and output modules
+fm(0.1, 10.0, -1.0) = 0.0 (0x0000000000000000), output module on every target; input module: 0.0 for -march=x86-64, 5.551115123125783e-17 (0x3c90000000000000) for -march=haswell
+```
+
+*(non-normative)* The double nearest 0.1 is 0x3FB999999999999A = 0.1 + 2^−54/10 exactly, so its
+exact product with 10 is 1 + 2^−54. Unfused, the product rounds to 1.0 (2^−54 is below half an
+ulp of 1, 2^−53) and adding −1.0 gives 0.0; fused, the exact 1 + 2^−54 − 1 = 2^−54 is returned.
+`llvm.fmuladd` lets the code generator choose, so the input module's result depends on the CPU;
+N16 fixes the unfused meaning in both builds (spike F4).
+
+Extended precision and libm intrinsics (N33):
+
+```llvm normalise-in=n-fp80
+define internal x86_fp80 @l(x86_fp80 %a, double %d) {
+  %e = fpext double %d to x86_fp80
+  %r = fadd x86_fp80 %a, %e
+  ret x86_fp80 %r
+}
+```
+
+```llvm normalise-out=n-fp80
+define internal x86_fp80 @l(x86_fp80 %a, double %d) {
+  %nz.0.e = bitcast double %d to i64
+  %nz.i.e = call i80 @__bennett_sf_fpext_f64_f80(i64 %nz.0.e)
+  %e = bitcast i80 %nz.i.e to x86_fp80
+  %nz.0.r = bitcast x86_fp80 %a to i80
+  %nz.1.r = bitcast x86_fp80 %e to i80
+  %nz.i.r = call i80 @__bennett_sf_add_f80(i80 %nz.0.r, i80 %nz.1.r)
+  %r = bitcast i80 %nz.i.r to x86_fp80
+  ret x86_fp80 %r
+}
+
+declare i80 @__bennett_sf_fpext_f64_f80(i64)
+
+declare i80 @__bennett_sf_add_f80(i80, i80)
+```
+
+```llvm normalise-in=n-libm
+define internal double @e(double %x, float %y) {
+  %a = call double @llvm.exp.f64(double %x)
+  %b = call float @llvm.sin.f32(float %y)
+  %c = fpext float %b to double
+  %r = fadd double %a, %c
+  ret double %r
+}
+
+declare double @llvm.exp.f64(double)
+
+declare float @llvm.sin.f32(float)
+```
+
+```llvm normalise-out=n-libm
+define internal double @e(double %x, float %y) {
+  %a = call double @exp(double %x)
+  %b = call float @sinf(float %y)
+  %nz.0.c = bitcast float %b to i32
+  %nz.i.c = call i64 @__bennett_sf_fpext_f32_f64(i32 %nz.0.c)
+  %c = bitcast i64 %nz.i.c to double
+  %nz.0.r = bitcast double %a to i64
+  %nz.1.r = bitcast double %c to i64
+  %nz.i.r = call i64 @__bennett_sf_add_f64(i64 %nz.0.r, i64 %nz.1.r)
+  %r = bitcast i64 %nz.i.r to double
+  ret double %r
+}
+
+declare double @llvm.exp.f64(double)
+
+declare float @llvm.sin.f32(float)
+
+declare double @exp(double)
+
+declare float @sinf(float)
+
+declare i64 @__bennett_sf_fpext_f32_f64(i32)
+
+declare i64 @__bennett_sf_add_f64(i64, i64)
+```
+
+*(non-normative)* The calls of `exp` and `sinf` pass `double` and `float` values, which are
+bit-exact moves; they resolve by §4.5 to the runtimes libm, whose own floating-point code has been
+normalised by §13.1. The N33 rewrite runs before N32 in the sense that the libm calls it creates
+are not floating-point instructions and are left alone by N32.
+
+## 14. Calls and control transfer
+
+### 14.1 Direct calls and recursion
+
+Direct calls lower to CC/R `call` (ISA §4.1) and to lifted `lift.call`/`lift.ret` lprocs (ISA
+§3.7), with the depth and stack faults of the budget (§9). Recursion is unrestricted.
+
+### 14.2 Indirect calls
+
+- **Candidate set** of an indirect call with callee value v: every `FN(F)` atom of AV(v) (§5),
+  resolved through aliases; if AV(v) has the ⊤ flag, in addition every function whose LLVM
+  function type equals the call's and whose address is used anywhere in the linked program
+  (sound for defined C, C++ and Rust: a call through an incompatible type is undefined, and
+  compatible C types lower to the same LLVM type under opaque pointers; SQLite §3). The device
+  closure includes every candidate (§4.1).
+- **Dispatch**: the compare tree of §16.4 over the candidates' A(F) values, sorted unsigned, with
+  a static call at each leaf: CC/R `icmp eq` + `br` + `call @F_k` (ISA §4.1), lifted `lift.icmp.eq`
+  + `qbranch` + `lift.call @L(F_k)` (ISA §4.2). `qjumpr` is intra-function only (ISA §4.2) and is
+  not used for calls.
+- **No match** (a value that is the address of no function of the program, or of a function
+  without bitcode): F(4) `FAULT_UB_TRAP` (outline E13; calling through such a pointer is undefined
+  or reaches code without bitcode, which the coverage report names). **Zero candidates**: F(4) at
+  the site.
+- **Trampolines** (`llvm.init.trampoline(t, f, nval)`, `llvm.adjust.trampoline(t)`): `init`
+  stores the tag `0x42454E54` (i32), A(f) and nval in the trampoline memory t (runtimes
+  `__bennett_rt_tramp_init`); `adjust` returns t. Before the compare tree, an indirect call whose
+  callee value v points to a live allocation holding the tag at offset 0 calls the stored
+  function with the stored nest value as its `nest` argument.
+- Calls through a variadic function type use §14.3. The same compare-tree construction serves
+  region operands (§7.2), handle ids (§6.5), descriptor shapes (§8.4), `switch` (§14.8) and
+  `indirectbr` (§14.9).
+
+```llvm example=indirect-table verdict=accept callees=gt,lt
+define internal i32 @lt(i32 %a, i32 %b) {
+  %c = icmp slt i32 %a, %b
+  %r = zext i1 %c to i32
+  ret i32 %r
+}
+
+define internal i32 @gt(i32 %a, i32 %b) {
+  %c = icmp sgt i32 %a, %b
+  %r = zext i1 %c to i32
+  ret i32 %r
+}
+
+@cmps = internal constant [2 x ptr] [ptr @lt, ptr @gt]
+
+define void @pick(i32 %which, i32 %a, i32 %b) {
+entry:
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %k = and i32 %which, 1
+  %i = zext i32 %k to i64
+  %p = getelementptr [2 x ptr], ptr @cmps, i64 0, i64 %i
+  %f = load ptr, ptr %p
+  %r = call i32 %f(i32 %a, i32 %b)
+  %t = icmp ne i32 %r, 0
+  br i1 %t, label %flip, label %out
+
+flip:
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  br label %out
+
+out:
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+A callee from host input dispatches over the address-taken functions of the call's type; here
+`@lt` and `@gt` (their addresses are stored in `@cmps`), but not `@neg`, whose type differs:
+
+```llvm example=indirect-host-pointer verdict=accept callees=gt,lt
+define internal i32 @lt(i32 %a, i32 %b) {
+  %c = icmp slt i32 %a, %b
+  %r = zext i1 %c to i32
+  ret i32 %r
+}
+
+define internal i32 @gt(i32 %a, i32 %b) {
+  %c = icmp sgt i32 %a, %b
+  %r = zext i1 %c to i32
+  ret i32 %r
+}
+
+define internal i32 @neg(i32 %a) {
+  %r = sub i32 0, %a
+  ret i32 %r
+}
+
+@cmps = global [2 x ptr] [ptr @lt, ptr @gt]
+@unary = global ptr @neg
+
+define void @apply(ptr %f, i32 %a, i32 %b) {
+entry:
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %r = call i32 %f(i32 %a, i32 %b)
+  %t = icmp ne i32 %r, 0
+  br i1 %t, label %flip, label %out
+
+flip:
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  br label %out
+
+out:
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+### 14.3 Varargs (N23)
+
+- A variadic definition `R @f(P…, ...)` becomes `R @f(P…, ptr %nz.va)`; every call of it, direct
+  or through a variadic function type, passes a **va block** in place of the variadic arguments.
+- A call site spills its variadic arguments (as the front end promoted them) into a va block
+  `%nz.vb.<r>`, an alloca of the caller's entry block (so N24 places it in the caller's shadow
+  frame), in argument order: argument j at the next offset aligned to max(8, ABI alignment of its
+  type), occupying its size rounded up to 8 bytes (the x86-64 System V, AAPCS64 and RISC-V LP64
+  memory-argument layout); argument j ≥ 1 is addressed by `%nz.vb<j>.<r>`.
+- `llvm.va_start(ptr ap)` builds the target's `va_list` so that the front end's inline `va_arg`
+  takes its memory path:
+
+  | Target | `va_list` | Fields written by `va_start` |
+  |---|---|---|
+  | x86-64 System V | `{ i32 gp_offset, i32 fp_offset, ptr overflow_arg_area, ptr reg_save_area }` | gp_offset = 48, fp_offset = 176, overflow_arg_area = `%nz.va`, reg_save_area = null (SQLite §5.1): every `va_arg` finds no register slot left |
+  | AArch64 AAPCS64 | `{ ptr __stack, ptr __gr_top, ptr __vr_top, i32 __gr_offs, i32 __vr_offs }` | __stack = `%nz.va`, __gr_top = __vr_top = null, __gr_offs = __vr_offs = 0 |
+  | RISC-V LP64 | `ptr` | the pointer `%nz.va` |
+
+  The stores are named `%nz.vfo.<r>` (x86-64 `fp_offset` address), `%nz.vov.<r>` (overflow area
+  address), `%nz.vrs.<r>` (register save area address); AArch64 and RISC-V use `%nz.vs.<r>`,
+  `%nz.vgt.<r>`, `%nz.vvt.<r>`, `%nz.vgo.<r>`, `%nz.vvo.<r>` in field order.
+- IR `va_arg` is expanded by the same memory layout; `llvm.va_copy(d, s)` copies the
+  `va_list` record (24, 32 or 8 bytes); `llvm.va_end` is deleted.
+- A call of an external variadic function without bitcode passes the va block to its host call
+  (§11.4) or is trapped (§4.5). One table row per target ABI; adding a target adds a row (§24).
+
+```llvm normalise-in=n-varargs
+%struct.__va_list_tag = type { i32, i32, ptr, ptr }
+
+define internal i32 @sum(i32 %n, ...) {
+entry:
+  %ap = alloca %struct.__va_list_tag, align 16
+  call void @llvm.va_start(ptr %ap)
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i2, %got ]
+  %s = phi i32 [ 0, %entry ], [ %s2, %got ]
+  %done = icmp sge i32 %i, %n
+  br i1 %done, label %out, label %arg
+
+arg:
+  %gp = load i32, ptr %ap, align 16
+  %fits = icmp ult i32 %gp, 41
+  br i1 %fits, label %inreg, label %inmem
+
+inreg:
+  %rsap = getelementptr %struct.__va_list_tag, ptr %ap, i64 0, i32 3
+  %rsa = load ptr, ptr %rsap, align 16
+  %gp64 = zext i32 %gp to i64
+  %ra = getelementptr i8, ptr %rsa, i64 %gp64
+  %gp2 = add i32 %gp, 8
+  store i32 %gp2, ptr %ap, align 16
+  br label %got
+
+inmem:
+  %ovp = getelementptr %struct.__va_list_tag, ptr %ap, i64 0, i32 2
+  %ov = load ptr, ptr %ovp, align 8
+  %ov2 = getelementptr i8, ptr %ov, i64 8
+  store ptr %ov2, ptr %ovp, align 8
+  br label %got
+
+got:
+  %addr = phi ptr [ %ra, %inreg ], [ %ov, %inmem ]
+  %v = load i32, ptr %addr, align 4
+  %s2 = add i32 %s, %v
+  %i2 = add i32 %i, 1
+  br label %loop
+
+out:
+  call void @llvm.va_end(ptr %ap)
+  ret i32 %s
+}
+
+define i32 @top(i32 %x) {
+  %r = call i32 (i32, ...) @sum(i32 3, i32 %x, i32 20, i32 300)
+  ret i32 %r
+}
+
+declare void @llvm.va_start(ptr)
+
+declare void @llvm.va_end(ptr)
+```
+
+```llvm normalise-out=n-varargs
+%struct.__va_list_tag = type { i32, i32, ptr, ptr }
+
+define internal i32 @sum(i32 %n, ptr %nz.va) {
+entry:
+  %nz.fp.sum = call ptr @__bennett_rt_ss_push(i64 24, i64 16)
+  %ap = getelementptr i8, ptr %nz.fp.sum, i64 0
+  store i32 48, ptr %ap, align 4
+  %nz.vfo.sum.0 = getelementptr i8, ptr %ap, i64 4
+  store i32 176, ptr %nz.vfo.sum.0, align 4
+  %nz.vov.sum.0 = getelementptr i8, ptr %ap, i64 8
+  store ptr %nz.va, ptr %nz.vov.sum.0, align 8
+  %nz.vrs.sum.0 = getelementptr i8, ptr %ap, i64 16
+  store ptr null, ptr %nz.vrs.sum.0, align 8
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i2, %got ]
+  %s = phi i32 [ 0, %entry ], [ %s2, %got ]
+  %done = icmp sge i32 %i, %n
+  br i1 %done, label %out, label %arg
+
+arg:
+  %gp = load i32, ptr %ap, align 16
+  %fits = icmp ult i32 %gp, 41
+  br i1 %fits, label %inreg, label %inmem
+
+inreg:
+  %rsap = getelementptr %struct.__va_list_tag, ptr %ap, i64 0, i32 3
+  %rsa = load ptr, ptr %rsap, align 16
+  %gp64 = zext i32 %gp to i64
+  %ra = getelementptr i8, ptr %rsa, i64 %gp64
+  %gp2 = add i32 %gp, 8
+  store i32 %gp2, ptr %ap, align 16
+  br label %got
+
+inmem:
+  %ovp = getelementptr %struct.__va_list_tag, ptr %ap, i64 0, i32 2
+  %ov = load ptr, ptr %ovp, align 8
+  %ov2 = getelementptr i8, ptr %ov, i64 8
+  store ptr %ov2, ptr %ovp, align 8
+  br label %got
+
+got:
+  %addr = phi ptr [ %ra, %inreg ], [ %ov, %inmem ]
+  %v = load i32, ptr %addr, align 4
+  %s2 = add i32 %s, %v
+  %i2 = add i32 %i, 1
+  br label %loop
+
+out:
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.sum)
+  ret i32 %s
+}
+
+define i32 @top(i32 %x) {
+  %nz.fp.top = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %nz.vb.r = getelementptr i8, ptr %nz.fp.top, i64 0
+  store i32 %x, ptr %nz.vb.r, align 8
+  %nz.vb1.r = getelementptr i8, ptr %nz.vb.r, i64 8
+  store i32 20, ptr %nz.vb1.r, align 8
+  %nz.vb2.r = getelementptr i8, ptr %nz.vb.r, i64 16
+  store i32 300, ptr %nz.vb2.r, align 8
+  %r = call i32 @sum(i32 3, ptr %nz.vb.r)
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.top)
+  ret i32 %r
+}
+
+declare ptr @__bennett_rt_ss_push(i64, i64)
+
+declare void @__bennett_rt_ss_pop(ptr)
+```
+
+```text native=n-varargs
+top(1) = 321
+top(-320) = 0
+top(2147483000) = 2147483320
+```
+
+*(non-normative)* The input is the shape clang's inline x86-64 `va_arg` expansion takes after
+`default<O2>` (with the loop bound left as a parameter). With gp_offset = 48 the `fits` test
+(gp_offset < 41) is always false, so every argument is read from `overflow_arg_area`, which is the
+va block: slots at offsets 0, 8, 16 hold x, 20, 300, and the sum is x + 320.
+
+### 14.4 Unwinding (N28: explicit propagation)
+
+The runtimes keep the **EH state** in the global `__bennett_rt_eh` of type `{ i32 active, i32
+selector, ptr object }` (active: 0 none, 1 exception, 2 longjmp, 3 fiber switch, 4 exit; §14.5–
+§14.7). Every device variant is rewritten, and the native comparison build uses the same
+materialised code, so the behaviour is identical in both builds:
+
+- `invoke F(args) to label %N unwind label %U` → `call F(args)`; `%nz.ehl.<r> = load i32, ptr
+  @__bennett_rt_eh`; `%nz.ehc.<r> = icmp ne i32 %nz.ehl.<r>, 0`; `br i1 %nz.ehc.<r>, label %U,
+  label %N`.
+- A `call` of a function that may unwind (one without `nounwind`, or an indirect call) inside a
+  function that may unwind → the same check after the call, branching on a set flag to the
+  function's **early-return block** `nz.ehr.<f>`, which pops the shadow frame (§17.3) and returns
+  the zero of the return type.
+- `%r = landingpad T clauses` → `%r = call { ptr, i32 } @__bennett_rt_eh_match(ptr P, ptr
+  @nz.lp.<f>.<r>)`, where P is the function's personality and `@nz.lp.<f>.<r>` is the private
+  constant `{ i64 cleanup, i64 n, [n x { i64 kind, ptr info }] }` of the clauses in order (kind 0
+  `catch` with its typeinfo, kind 1 `filter` with its array). The runtimes implement the
+  personality's matching: for `__gxx_personality_v0`, C++ catch by typeinfo with the C++ ABI's
+  derived-class rules and filters; for `rust_eh_personality`, Rust panics; for
+  `__gcc_personality_v0`, cleanups only. A matching catch or a cleanup clears `active` and
+  returns (object, selector) with selector = `llvm.eh.typeid.for` of the matched typeinfo (0 for
+  a cleanup); when nothing matches (or the pseudo-exception is a longjmp, switch or exit, which no
+  clause handles) the flag stays set, the selector is −1, and the normaliser's check after the
+  call (`%nz.ehm.<r> = extractvalue … 1`, `icmp eq … −1`) branches to the early-return block.
+- `resume v` → `call void @__bennett_rt_eh_resume({ ptr, i32 } v)` (sets `active` = 1 and the
+  object) and a branch to the early-return block.
+- `llvm.eh.typeid.for(ti)` → `call i32 @__bennett_rt_eh_typeid(ptr ti)`; `llvm.eh.exceptionpointer`
+  and `llvm.eh.exceptioncode` read the state's object.
+- `__cxa_throw`, `_Unwind_RaiseException`, `_Unwind_Resume`, `__rust_start_panic` are runtimes
+  functions that set the state and return; the code after their call is the check above, and the
+  original `unreachable` after them is kept on the path where the flag is clear (F(4)).
+- Windows funclet pads (`catchswitch`, `catchpad`, `cleanuppad`, `catchret`, `cleanupret`) use the
+  same transform with the `__CxxFrameHandler3` matching rules (corpus case needed, bd `-kdj`).
+- **Unwinding out of a region**: a set flag when an oracle's region function returns is `fault 4`
+  in the wrapper (§16.2); in an action's generation it is TDL-12's `fault` event with code 4; at
+  an R entry or a CC device entry it ends the run with code 4 (§11.5). NS §3.1: "a fault code
+  where it is not [handled in the region]".
+
+```llvm normalise-in=n-eh
+declare i32 @__gxx_personality_v0(...)
+
+declare void @may_throw(i32)
+
+define internal i32 @eh(i32 %x) personality ptr @__gxx_personality_v0 {
+entry:
+  invoke void @may_throw(i32 %x)
+          to label %ok unwind label %lp
+
+ok:
+  ret i32 0
+
+lp:
+  %e = landingpad { ptr, i32 }
+          catch ptr null
+  ret i32 1
+}
+```
+
+```llvm normalise-out=n-eh
+@__bennett_rt_eh = external global { i32, i32, ptr }
+@nz.lp.eh.e = private constant { i64, i64, [1 x { i64, ptr }] } { i64 0, i64 1, [1 x { i64, ptr }] [{ i64, ptr } { i64 0, ptr null }] }
+
+declare i32 @__gxx_personality_v0(...)
+
+declare void @may_throw(i32)
+
+define internal i32 @eh(i32 %x) {
+entry:
+  call void @may_throw(i32 %x)
+  %nz.ehl.eh.0 = load i32, ptr @__bennett_rt_eh, align 4
+  %nz.ehc.eh.0 = icmp ne i32 %nz.ehl.eh.0, 0
+  br i1 %nz.ehc.eh.0, label %lp, label %ok
+
+ok:
+  ret i32 0
+
+lp:
+  %e = call { ptr, i32 } @__bennett_rt_eh_match(ptr @__gxx_personality_v0, ptr @nz.lp.eh.e)
+  %nz.ehm.e = extractvalue { ptr, i32 } %e, 1
+  %nz.ehn.e = icmp eq i32 %nz.ehm.e, -1
+  br i1 %nz.ehn.e, label %nz.ehr.eh, label %nz.lpc.e
+
+nz.lpc.e:
+  ret i32 1
+
+nz.ehr.eh:
+  ret i32 0
+}
+
+declare { ptr, i32 } @__bennett_rt_eh_match(ptr, ptr)
+```
+
+```text native=n-eh
+eh(2) = 0; eh(3) = 1; eh(-5) = 1 (input built with clang++ and a C++ may_throw that throws when x is odd; output built with the runtimes seeds, whose may_throw sets the EH state)
+```
+
+### 14.5 setjmp and longjmp (N29)
+
+- A call of `setjmp`, `_setjmp`, `sigsetjmp` or `__sigsetjmp` with buffer b in function f
+  becomes a block boundary: `call void @__bennett_rt_setjmp(ptr b, ptr %nz.fp.<f>, i32 k)` stores
+  the **frame token** (f's shadow-frame address, §17.3) and the site index k (0-based among f's
+  setjmp sites) in b, and the call's result becomes the phi `%r = phi i32 [ 0, <normal> ], [ v,
+  %nz.sj<k>.<f> ]` at the continuation.
+- `longjmp(b, v)` (and `siglongjmp`, `_longjmp`) is a runtimes function that sets the EH state to
+  the longjmp pseudo-exception (`active` = 2, object = b, selector = v, with v = 0 replaced by 1)
+  and returns; propagation is §14.4 (landing pads do not handle it).
+- In every function containing a setjmp site, the check after each call that may unwind also
+  tests `active` = 2 and the frame token and site index stored in b; on a match it clears the
+  state and branches to `%nz.sj<k>.<f>`, the continuation of site k with value v. SSA values live
+  into the continuation take, on that path, their values at the call after which the longjmp was
+  detected (C makes non-volatile locals modified after `setjmp` indeterminate; memory is the
+  shadow frame's).
+- This covers `longjmp` to an active frame, the only defined case in C, and Julia's `jl_try`
+  (`sigsetjmp`, rung 5). A `longjmp` to a frame that has returned reaches the device entry and
+  faults (code 4, §14.4).
+
+### 14.6 Fibers and context switches (N30: rewindable frames)
+
+- **Switch primitives**: the runtimes' `swapcontext`, `makecontext`, `setcontext`, Julia's task
+  switch (`jl_swap_fiber`, `ctx_switch`), and the platform shims `swtch` and `__switch_to` (§20.5);
+  all are implemented by `__bennett_rt_fiber_switch(from, to)` over records that hold a fiber's
+  shadow stack (the `makecontext` stack argument) and its saved frame chain.
+- Every function on a call-graph path to a switch primitive is **instrumented**, Asyncify-style:
+  its SSA values that are live across a call that may switch are spilled to its shadow frame
+  before the call and reloaded after it, and it gets a resume index (the call site it was
+  suspended at).
+- A switch sets the EH state to `active` = 3 and propagates (§14.4): each instrumented frame on
+  the way out saves its resume index and returns early, up to the fiber's base; the runtime
+  records the chain, then **rewinds** the target fiber: it calls the target's base with the
+  rewind state, and each instrumented frame jumps to its saved resume index, reloads its values
+  and calls the next frame, until the target's switch call returns.
+- This works in CC, R and L on ISA 0.8: it is ordinary code over memory. G-16 (ISA fibers,
+  §25.3) is the efficient alternative.
+
+### 14.7 `exit`, `abort`, `_Exit`
+
+- `abort` → F(4).
+- musl's `exit` runs the `atexit` handlers and flushes stdio, then calls `_Exit(s)`. `_Exit(s)`
+  (the runtimes' `exit_group` system call) sets the EH state to the **exit pseudo-exception**
+  (`active` = 4, selector = s) and propagates.
+- An R or CC whole-program entry (§19.2) catches it and returns s as the program's status; an
+  oracle wrapper in "oracle from program" mode (§19.3) catches it and delivers s as the payload;
+  a CC device entry of a host program catches it and makes `hostcall bennett.exit` with s, whose
+  host stub calls `_Exit(s)`. Elsewhere (inside an oracle in the plain marker form, inside an
+  action) it is unwinding out of the region: code 4.
+
+### 14.8 `switch`
+
+`switch` lowers by the compare tree of §16.4 in L, and by the same tree of `icmp`/`br` in CC and R
+(ISA has no switch instruction).
+
+### 14.9 `blockaddress` and `indirectbr`
+
+`blockaddress(@f, %bb)` has the device value A(f) + 4·(1 + i), where i is the index of %bb among
+f's address-taken blocks in layout order. `indirectbr ptr v, [labels]` dispatches with the compare
+tree over the labels' values to static branches (`qjump` in L, `br` in CC/R); no match is F(4).
+*(non-normative)* LangRef permits a `blockaddress` only in `indirectbr` and in comparisons with
+null; an execution in which its bits influence a result otherwise (printing, hashing) is
+layout-dependent and validated against the reference interpreter (NS §3.2, §17.1).
 
 <!-- APPEND -->
