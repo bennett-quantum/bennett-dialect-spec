@@ -46,8 +46,8 @@ file, `SPEC_VERSIONS.toml`, `corpus/legality/cases/spec-*`. Standing rule: no na
   `markers-c` block equals the header's prototype block byte for byte; version strings `0.2`,
   `dialect-0.2;isa-0.8`, `isa=0.8 … target=0.8` checked).
 
-Size at the end: ~7310 lines, ~59,500 words, 385 kB; 91 tagged examples (56 accept, 30 reject,
-5 blocked), 17 normalisation pairs, 6 executed ISA objects.
+Size at the end: ~7310 lines, ~59,500 words, 385 kB; 87 verdict examples (82 `llvm`, 5 `c`: 56 accept,
+26 reject, 5 blocked), 17 normalisation pairs, 6 executed ISA objects.
 
 ## Verification run (final state)
 
@@ -155,3 +155,13 @@ BLK-1), `budget-device-computed` (BD-B-ISA1, BLK-2), `inplace-param-quantum` (BD
   call/ret/br; code 10 "(R only)".
 - TDL: event application as CC-level region calls is exact but not one ISA action; an ISA 0.9
   per-cell window rule would allow static actions (efficiency, not capability).
+
+## Issues filed (bd)
+
+- `b-dialect-spec-566`: note added (spec-sem2-adj/compute baseline exit 87; trace runtime to ABI 0.2).
+- `b-dialect-spec-d4k`: checker seeds `spec/seeds/` (§21.4) do not exist.
+- `b-dialect-spec-gvr`: rule ids without a checked example (P-1 list of Appendix B).
+- `b-dialect-spec-rq0`: publish `spec/asm/<arch>.toml` from §15.
+- `b-dialect-spec-gwf`: ISA 0.9 wording items raised by §25.2.
+
+`.beads/issues.jsonl` was rewritten by `bd` and is left uncommitted (not an owned path).
