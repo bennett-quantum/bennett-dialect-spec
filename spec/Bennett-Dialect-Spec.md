@@ -174,6 +174,9 @@ A module's **verdict** is one of:
   executions that reach the point), MUST emit the blocker report of §25.1 and MUST exit with the
   distinct status 3. The code is the first blocker report in processing order.
 
+The R-entry BLK-5 classification of §11.5 and §25.1 applies even when all supplied
+budgets allow a successful execution; §17.6 defines its mandatory typed fault point.
+
 A module that would be rejected and blocked is rejected. Warnings (`BD-W-*`, §22.4) never change
 a verdict.
 
@@ -7988,6 +7991,12 @@ adj-body allocation/write-Co/free/realloc fails at free before any reused read.
 {"source":["qalloc","gate-x","gate-x","qfree","ret"],"steps":1,"controls":[0,1],"results":[[0,0,0],[1,0,0]],"compute_failure":["f","use"],"foreign_before":7,"foreign_after":7}
 ```
 
+```text tdl=nested-cl-view
+parent: store 9 @t; child: ctrl(c2,g) where g flips z iff @t==9; invoke parent under c1
+xmask @t+0 0x09 ctrl c1
+x z ctrl c1 c2
+```
+
 ```text state=nested-cl-view at=0
 {"parent_store":9,"child_test":9,"controls":[[1,1],[0,1],[1,0]],"results":[[9,1],[0,0],[9,0]]}
 ```
@@ -9352,7 +9361,7 @@ every departure keeps or widens the capability the outline gives.
 | A8 | TDL-5(a)/§18: "the uncompute is valid (ISA §6.2)" | events are applied as CC-level region calls with dynamic cleanliness checks; a static ISA action only when it satisfies ISA §6 (§18.2) | ISA §6.1 makes an oracle's value depend on every cell of a region it reads, so a static action cannot uncompute a slice after writing any arena cell; at CC level the uncompute is exact because the slice does not read the written cells |
 | A9 | TDL-8: combine into Φ; plugin register when null | per-slice fault registers retained and combined by `@firstfault`; in `compute`, copied between E_f and E_use (TDL-8) | the uncomputing call XORs the code out again, and in `compute` adjoint(E_f) would erase f's faults |
 | A10 | TDL-12 effects | inherited per-run virtual bindings and reversible state | D02-07 removes the action-effect narrowing |
-| A11 | TDL-7 history | clean workspace; explicit fault/measurement outcomes only | D02-05 restores ratified E3; no implicit history channel |
+| A11 | TDL-7 history | clean workspace; explicit fault/control/channel outcomes | D02-05 restores ratified E3; no implicit history channel |
 | A12 | §3.1: primitive `__bennett_nz_fault` | also `__bennett_nz_alloc`, `__bennett_nz_free`; reserved-name rules apply to producer inputs (§3.1) | the runtimes allocator must reach `lift.alloc`/`alloc`; runtimes bitcode uses reserved names |
 | A13 | §3.8: a `@cfunction` constant "resolves whenever the body is in the link" | it is dispatched by value and traps unless it equals some A(F) (§3.8, §5.2) | A(F) is fixed by the comparison link after the analysis, and a Julia-process address never equals it; Bennett.jl's `ptr @f` route keeps the capability (audit B-14) |
 | A14 | §7.2: thunk resolution as 0.1 C1 (a cycle is `BD-E-REGION-THUNK`) | a thunk on a cycle resolves to itself; the code is deleted | a rejection with no NS clause behind it |

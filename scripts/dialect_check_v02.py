@@ -313,7 +313,7 @@ def recognise(text, **options):
 # exemption for arbitrary unresolved functions. Full L/R validation defaults to
 # an empty link environment.
 NORMALISATION_LINK={
-    '__bennett_rt_ctlz_i8','__bennett_rt_cttz_i8','__bennett_rt_abs_i8','__bennett_rt_ss_push','__bennett_rt_ss_pop','__bennett_rt_memmove',
+    '__bennett_rt_ctlz_i8','__bennett_rt_cttz_i8','__bennett_rt_ss_push','__bennett_rt_ss_pop','__bennett_rt_memmove',
     '__bennett_rt_memset','__bennett_rt_ctpop_i32','__bennett_rt_eh_match',
     '__bennett_rt_syscall','__bennett_rt_poll','may_throw','exp','sinf',
     '__bennett_sf_cmp_f64','__bennett_sf_add_f64','__bennett_sf_mul_f64',

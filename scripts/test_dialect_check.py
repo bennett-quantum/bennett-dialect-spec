@@ -62,7 +62,8 @@ class ContractTests(unittest.TestCase):
             ir=f'declare i8 @llvm.{intrinsic}.i8(i8, i1 immarg)\ndefine i8 @f(i8 %x) {{\n %v = call i8 @llvm.{intrinsic}.i8(i8 %x, i1 false)\n ret i8 %v\n}}\n'
             with self.subTest(intrinsic=intrinsic):
                 with self.assertRaisesRegex(d.Reject,'V4'):v.validate(ir)
-                self.assertIn('@__bennett_rt_'+intrinsic+'_i8',v.normalise(ir))
+                if intrinsic=='abs':self.assertIn('icmp slt i8 %x, 0',v.normalise(ir))
+                else:self.assertIn('@__bennett_rt_'+intrinsic+'_i8',v.normalise(ir))
         ir='define i32 @f() {\n %v = bitcast <2 x i16> <i16 1, i16 2> to i32\n ret i32 %v\n}\n'
         self.assertNotIn('<2 x',v.normalise(ir).split('define')[1])
 

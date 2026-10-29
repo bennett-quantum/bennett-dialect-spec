@@ -396,8 +396,15 @@ def original_artifact(runner,name):
 
 def check_tdl(runner,block):
     name=block['attrs']['tdl'];text=block['body']
+    if name=='nested-cl-view':
+        v=json.loads(runner.block('state',name)['body'])
+        generated=[f'xmask @t+0 0x{v["parent_store"]:02x} ctrl c1']
+        if v['parent_store']==v['child_test']:generated.append('x z ctrl c1 c2')
+        equal(name,'inherited recorder events',d.collapse(text)[1:],generated)
+        from dialect_round2 import check_state
+        check_state(runner,runner.block('state',name));return
     if name in ORIGINAL:
-        equal(name,'TDL-3 partition and events',d.collapse(text),d.collapse(original_artifact(runner,name)))
+        equal(name,'TDL-3 partition and events' ,d.collapse(text),d.collapse(original_artifact(runner,name)))
     elif name=='compute-view':
         value=int(re.search(r'f: store (\d+) @t',text)[1]);test=int(re.search(r'@t==(\d+)',text)[1])
         generated=[f'xmask @t+0 0x{value:02x}']+(['x H1.0'] if value==test else [])+[f'xmask @t+0 0x{value:02x}']

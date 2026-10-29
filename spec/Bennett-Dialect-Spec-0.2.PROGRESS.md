@@ -459,25 +459,25 @@ Tracking b-dialect-spec-1zy; draft/full norm 0.2.3, ISA 0.8.
 
 | Item | Status | Commit group |
 |---|---|---|
-| SOL-R2-03 | resolved | packed vectors, materialisation and memory |
-| SOL-R2-04 | resolved | packed vectors, materialisation and memory |
-| R2-CODEX-04 | resolved | packed vectors, materialisation and memory |
-| REG-CODEX-N27 | resolved | packed vectors, materialisation and memory |
-| SOL-R2-02 | resolved | packed vectors, materialisation and memory |
-| R2-CODEX-02 | resolved | packed vectors, materialisation and memory |
-| R2-CODEX-01 | resolved | packed vectors, materialisation and memory |
-| SOL-R2-01 | resolved | action lifecycle group |
-| REG-SOL-TDL9 | resolved | action lifecycle group |
-| R2-CODEX-03 | resolved | action lifecycle group |
-| BD3-1 | resolved | action lifecycle group |
-| BD3-2 | resolved | action lifecycle group |
-| BD3-3 | resolved | action lifecycle group |
-| REG-MUSE-7.7 | resolved | action lifecycle group |
-| BD3-6 | resolved | action lifecycle group |
-| BD3-4 | resolved | instance bounds and R classification |
-| BD3-5 | resolved | instance bounds and R classification |
-| E-MUSE-TERM | resolved | instance bounds and R classification |
-| E-MUSE-7.7 | resolved | instance bounds and R classification |
+| SOL-R2-03 | resolved | f868741 |
+| SOL-R2-04 | resolved | f868741 |
+| R2-CODEX-04 | resolved | f868741 |
+| REG-CODEX-N27 | resolved | f868741 |
+| SOL-R2-02 | resolved | f868741 |
+| R2-CODEX-02 | resolved | f868741 |
+| R2-CODEX-01 | resolved | f868741 |
+| SOL-R2-01 | resolved | 2fa3460 |
+| REG-SOL-TDL9 | resolved | 2fa3460 |
+| R2-CODEX-03 | resolved | 2fa3460 |
+| BD3-1 | resolved | 2fa3460 |
+| BD3-2 | resolved | 2fa3460 |
+| BD3-3 | resolved | 2fa3460 |
+| REG-MUSE-7.7 | resolved | 2fa3460 |
+| BD3-6 | resolved | 2fa3460 |
+| BD3-4 | resolved | a9e9563 |
+| BD3-5 | resolved | a9e9563 |
+| E-MUSE-TERM | resolved | a9e9563 |
+| E-MUSE-7.7 | resolved | a9e9563 |
 
 Group receipts: f868741 (vectors/materialisation/memory), 2fa3460 (action lifetimes).
 BD3-5 uses the explicitly permitted conservative default, optional finite-bound refinement

@@ -322,7 +322,10 @@ class Normaliser:
                 a,b=[x[2] for x in c['args']];return [f'%nz.s.{r} = add {t} {a}, {b}',f'%nz.c.{r} = icmp ult {t} %nz.s.{r}, {a}',f'%nz.a.{r} = insertvalue {{ {t}, i1 }} zeroinitializer, {t} %nz.s.{r}, 0',f'{i.res} = insertvalue {{ {t}, i1 }} %nz.a.{r}, i1 %nz.c.{r}, 1']
             if cal.startswith('@llvm.ctpop.'):
                 name='__bennett_rt_ctpop_'+t;self.decl(name,t,[t]);return [f'{i.res} = call {t} @{name}({t} {c["args"][0][2]})']
-            if re.match(r'@llvm\.(abs|ctlz|cttz)\.',cal):
+            if cal.startswith('@llvm.abs.'):
+                a=c['args'][0][2]
+                return [f'%nz.c.{r} = icmp slt {t} {a}, 0',f'%nz.n.{r} = sub {t} 0, {a}',f'{i.res} = select i1 %nz.c.{r}, {t} %nz.n.{r}, {t} {a}']
+            if re.match(r'@llvm\.(ctlz|cttz)\.',cal):
                 name='__bennett_rt_'+cal.split('.')[1]+'_'+t
                 self.decl(name,t,[t,'i1'])
                 return [f'{i.res} = call {t} @{name}({t} {c["args"][0][2]}, i1 false)']

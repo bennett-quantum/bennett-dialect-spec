@@ -34,10 +34,14 @@ int main(void){'''
         for j,limit in enumerate(v['heap_limits']):
             src+=f'{{struct alloc caller={{{base},0,{limit}}};unsigned code=0;'
             for size in sizes:src+=f'take(&caller,{size},&code);'
-            src+=f'struct alloc saved=caller,private=caller;uint64_t p=take(&private,{req},&code);printf("[%llu,%u]\\n",(unsigned long long)p,code);if(caller.bump!=saved.bump)return 9;}}'
+            src+=f'struct alloc saved=caller,private={{{base},0,{limit}}};'
+            for size in sizes:src+=f'take(&private,{size},&code);'
+            src+=f'uint64_t p=take(&private,{req},&code);printf("[%llu,%u]\\n",(unsigned long long)p,code);if(caller.bump!=saved.bump)return 9;}}'
         src+=f'{{struct alloc a={{{base},0,4096}};unsigned c;'
         for size in sizes+[v['next_caller_size']]:src+=f'take(&a,{size},&c);'
-        src+=f'struct alloc private=a;uint64_t p=take(&private,{req},&c);printf("[%llu,%u]\\n",(unsigned long long)p,c);}}return 0;}}'
+        src+=f'struct alloc private={{{base},0,4096}};'
+        for size in sizes+[v['next_caller_size']]:src+=f'take(&private,{size},&c);'
+        src+=f'uint64_t p=take(&private,{req},&c);printf("[%llu,%u]\\n",(unsigned long long)p,c);}}return 0;}}'
         run_native(runner,name,'',src,v['results']+[v['next_result']])
         equal(name,'caller state preserved',True,v['caller_unchanged'])
     elif name=='arena-logical-bounds':

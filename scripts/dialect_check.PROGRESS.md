@@ -463,3 +463,8 @@ All 36 unit tests passed after implementation. Targeted recognise/blocker/covera
 gate passes 295/295. N29/N30 accepted CC companions preserve P-1 after R sources become
 BLK-5; all successful R execution expectations remain. Added numeric wrong-expectation
 mutations for every new action/memory adapter; all are rejected.
+
+Final consistency: canonical abs uses N27 compare/sub/select, not a runtime helper;
+new regression reproduced the wrong helper then passed. Allocation probes replay sizes,
+not a struct copy; nested-cl-view now checks a TDL event list and executes its states.
+All 36 checker tests and four legacy runtime tests pass headless.
