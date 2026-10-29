@@ -34,7 +34,40 @@ file, `SPEC_VERSIONS.toml`, `corpus/legality/cases/spec-*`. Standing rule: no na
 
 - §1-§3 + header (commit 56a3eb1)
 - §4-§8 (commit 85c53ab)
-- §9 budgets (next commit)
+- §9-§12 (commit cd709ee)
+- §13-§14 (commit fd30dd5)
+- §15-§16 (commit 49a2100)
+- §17-§18 + corpus `spec-sem2-*` (commit df9e0a5)
+- §19-§25 (commit e0e5142)
+- Appendices A (outline changes), B (example index), C (546 generic intrinsics); SPEC_VERSIONS
+  0.2/0.8; README change rules (commit d0c4830)
+- Hostile re-read under the rubric, two passes of fixes (commits eda7eb3, aa004bf), then a
+  consistency pass (section cross-references by script: no dangling internal reference; the
+  `markers-c` block equals the header's prototype block byte for byte; version strings `0.2`,
+  `dialect-0.2;isa-0.8`, `isa=0.8 … target=0.8` checked).
+
+Size at the end: ~7310 lines, ~59,500 words, 385 kB; 91 tagged examples (56 accept, 30 reject,
+5 blocked), 17 normalisation pairs, 6 executed ISA objects.
+
+## Verification run (final state)
+
+- Every `llvm` block (126) parses and verifies with `opt -passes=verify` on LLVM 18, 20 and 23,
+  headless (`env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER
+  TMPDIR=$PWD/.tmp`).
+- Every `isa object=` block passes `bennett-isa-ref check`; every `hash=` line equals `hash`;
+  every `run=` line is the output of `run-oracle`; every `step-check=` claim is the output of
+  `step-check` (scratch tool `checkruns.py`: 0 failures).
+- Normalisation pairs with `native=` lines: input and output modules compiled with clang 18/23
+  and the job's seed implementations, the stated values computed by running them.
+- `cc-run=` native statuses (sjlj 77, fiber 98, exit 3) computed by native builds (clang 18 and
+  23, -O2); the R-tier `run:`/`reverse:` lines need `run-cc`/`reverse` (b-isa-spec-xam).
+- Header: compiles as C and C++ on clang 18/20/23; static asserts on record layouts; IR
+  signatures of all 23 prototypes identical across majors and equal to §3.2.
+- Corpus: `spec-sem2-ctrl`, `spec-sem2-adj`, `spec-sem2-compute` are byte-equal to §18.8. Baseline
+  on a scratch copy of `corpus/legality` with `python3 harness/run.py baseline --majors 18,20,23
+  --cases 'cases/spec-sem2-*'` (headless): ctrl agrees on all majors; adj and compute report
+  `BASELINE PROBLEM … L1 baseline exit=87` on all majors, because the trace runtime is still at
+  ABI v0 (2-argument adj, 3-argument compute); this is bd `-566` (trace runtime at ABI 0.2).
 
 ## Decisions taken while writing (not in the outline)
 
@@ -45,38 +78,80 @@ file, `SPEC_VERSIONS.toml`, `corpus/legality/cases/spec-*`. Standing rule: no na
 - §5: abstract value = (atom set, TOP flag); TOP never stands for a ROOT atom; K = 4096 cap is
   normative (decides verdicts). Residue classes carry an extent [lo, hi) from array types (B-27).
 - §5: `inttoptr` constants are TOP for function pointers (A(F) is fixed only after the
-  comparison link, which happens after S7); a Julia `@cfunction` constant traps unless it equals
-  an A(F) at run time; Bennett.jl's `ptr @f` route keeps the capability.
-- §6.5: two realisations: *direct* (handle never stored in memory: CC qreg SSA values, no bound,
-  recursion and loops fine) and *static register file* (stored handles; reference instance
-  bound: self-disjoint -> 1, else E(s) via constant max trip counts; infinite -> BLK-1).
+  comparison link); a Julia `@cfunction` constant traps unless it equals an A(F) at run time;
+  Bennett.jl's `ptr @f` route keeps the capability.
+- §6.5: two realisations: *direct* (handle never stored in memory: CC qreg SSA values, no bound)
+  and *static register file* (stored handles; reference instance bound; infinite -> BLK-1).
 - §6.6: device-entry pointer parameters get a candidate ROOT(E,i) atom that survives only if it
   reaches a marker handle operand (decides QREG binding).
-- §7.5(b): R-tier allocation hoisting uses the reference instance bound; BLK-4 only when it is
-  infinite (e.g. allocation per activation of an unbounded recursion).
-- §8.1: descriptor layout = LLVM struct {H,[n x Bind],[m x DevBind]} under the datalayout;
-  ARG values: bits 0-63 in `value`, 64-127 in `size`.
-- §8.5: snapshot byte format fixed; replay by a runtimes function; the snapshot register is
-  released by `measure` (it is an unentangled basis state) -- the outline had no cleanup for it.
-- §8.7: in-place verification computes B_min; F_B is monotone in the budget, so run-time
-  budgets are checked against B_min at the marker (`T-BUDGET`).
+- §7.5(b): R-tier allocation hoisting uses the reference instance bound; BLK-4 only when infinite.
+- §8.1: descriptor layout = LLVM struct {H,[n x Bind],[m x DevBind]} under the datalayout.
+- §8.5: snapshot register released by `measure` (unentangled basis state).
+- §8.6: wide outputs are the `wide` event: copy-out pairs issued as CC-level region calls
+  (`qreg.slice` views, `@xor<w>` action), temporaries freed with the ISA §3.3 dynamic check.
+- §8.7: in-place verification computes B_min; run-time budgets checked at the marker (`T-BUDGET`).
 - §9.2: budget table JSON schema and precedence (identity > region key > symbol glob > default).
+- §9.5 example `budget-device-computed` uses a 64-bit value assembled from 64 measurements, so no
+  launch-time token set covers it (a value set like {5, n+5} would be launch-mintable).
+- §10: Cl/M/Co object states; slices with classical twins; events applied as CC-level region
+  calls (ISA §6 per-region coarse windows make a static action unable to uncompute a slice after
+  an arena write); per-slice fault registers retained and combined by `@firstfault`.
+- §12.1: N33 runs immediately before N32 (its fpext/fptrunc pairs are FP that N32 rewrites).
+- §14.9: blockaddress values are bytes of a driver-added data object `__bennett_rt_blk.<f>`, so
+  they never collide with A(F) or other objects.
+- §15.2: the default `cpuid` table is read on the build machine and recorded in the build record.
+- §16: reference object = wrapper `@ref` + lprocs; layout restricted to closure-reachable
+  globals; A_tab chosen so allocation-table overflow never precedes heap exhaustion.
+- §18.4: `T-LEAK` outside generations is checked at program end (§6.6's REPL lifetime).
+- §19.5: `text_base` rises above the device ranges when they pass 0x400000 (native binary must
+  map heap/arena/regions disjointly from its code); §20.1 RAM placed by the profile's linker
+  script at 0x80000000 after the other data.
 
 ## Departures from the outline
 
-(each also recorded in the spec's Appendix A)
-
-1. **§8.6 wide outputs: copy-out construction (2k−1 calls) instead of the W_c construction
-   (k+2 calls).** The outline cleans each slice's fault bundle f_j with `qxor` from a copy c of
-   the code computed by a different variant W_c. That cleanup is not "reverse" or "recompute"
-   of f_j's own computing sequence (ISA §6.2, §6.4), so the action would be ill-formed under the
-   ISA's static discipline. The copy-out pair (compute into fresh t_j, f_j; qxor t_j into the
-   target; identical call again) cleans t_j and f_j by `reverse`. Same capability, valid ISA.
+All are in the spec's Appendix A (A1-A23), each with its reason; every one keeps or widens the
+outline's capability. Summary: A1 wide outputs by 2k-1 copy-out calls (outline's qxor cleanup is
+ill-formed under ISA §6); A2 snapshot release by measure; A3 direct handle realisation without a
+bound; A4 exact reference instance bound; A5 Cl/M/Co; A6 slices without stores/markers + classical
+twins; A7 one XOR of c ⊕ v; A8 CC-level event application; A9 retained per-slice fault registers;
+A10 effects in action regions are fault 8; A11 history as declared outputs measured at the
+epilogue; A12 two more primitives; A13 `@cfunction` constants dispatched by value; A14 thunk cycles
+resolve to themselves (BD-E-REGION-THUNK deleted); A15 N0 (LLVM's own lowering passes); A16 N34
+marks as metadata; A17 wrapper/lproc form and layout rules; A18 compare-tree block names; A19
+blockaddress/indirectbr, seven FP formats, exit via hostcall, B_min/T-BUDGET; A20 two more wording
+items; A21 `__bennett_rt_platform_ram`; A22 `spec-sem2-*` beside `spec-sem-*`; A23 N33 before N32.
 
 ## Examples and checker requirements
 
-(the full index is the spec's Appendix B)
+The full index is the spec's Appendix B. Capabilities per example family:
+
+| Examples | Checker capability | Executor / CLI |
+|---|---|---|
+| markers-ir, markers-c | parse, header | LLVM 18/20/23, clang 18/20/23 |
+| operand-*, recog-*, attr-*, unwind-invoke, julia-jlplt, effect-lie, pt-variable-index, handle-* (20), qstore-twice, region-* (18), oracle-*, budget-*, indirect-*, asm-musl-syscall, version-flag | parse, recognise | LLVM; Python reference recogniser (to be written in dialect_check.py) |
+| inplace-* (4) | parse, recognise, run-oracle | isa-ref `run-oracle` (exists) for the inverse check |
+| budget-table=rung4-mini | driver | Python |
+| tdl, tdl-overwrite, tdl-effect, tdl-angle (+ tdl=, state=) | parse, recognise, tdl, run-action | Python TDL; isa-ref `run-action` (b-isa-spec-xam, requested) |
+| effect-console-r, effect-console-cc; sjlj-two-frames, fiber-pingpong, exit-status (cc-run=) | frontend, run-cc, reverse | isa-ref `run-cc`, `reverse` (requested); native statuses computed |
+| 17 normalise-in/out pairs, 10 native= | parse, normalise, native | LLVM; Python normaliser; clang + spec/seeds (not yet created) |
+| residual-nsw, residual-clean | validate | Python |
+| inc8, add2, rung4-mini, rung8-mini, listsum, switch5 (lift=, linkmap=, object=, hash=, run=, step-check=) | map, check, hash, run-oracle, step-check | isa-ref `check`, `hash`, `run-oracle`, `step-check` (exist; all lines verified) |
+| rung4-minidb, rung4-grover-tu (+ native=) | frontend, recognise, native | clang 18/20/23 |
+| sem2-ctrl, sem2-adj, sem2-compute (events=, state=) | trace, run-action | trace runtime at ABI 0.2 (bd -566); isa-ref `run-action` (requested) |
+
+Blocked examples (one per BLK): `operand-width-host` and `handle-vec-unbounded` (BD-B-ISA4,
+BLK-1), `budget-device-computed` (BD-B-ISA1, BLK-2), `inplace-param-quantum` (BD-B-ISA3, BLK-3),
+`region-reversible-qalloc-dynamic` (BD-B-ISA12, BLK-4); each has a `text blocker=` report line.
 
 ## Open questions
 
-(none yet)
+- Rule ids without an example (P-1 fails on them until added; Appendix B lists them): N0, N12,
+  N15, N25, N34, N35; V2-V16; PT12; the OUT binding's object; BLOCK, CLOCK, CONSOLE device
+  bindings; entry-state transfer (§8.5); indirectbr; §19.3-§19.8; §20.
+- `spec/seeds/` (checker seeds named in §21.4) and `spec/asm/<arch>.toml` (§15.1) are not owned
+  paths of this job and do not exist yet.
+- ISA wording items raised in §25.2: certificate fields (build record, budget table, deferred
+  measurement); ISA §12.2 domains with a fixed classical region (rung 4(a)); `qreg` across CC
+  call/ret/br; code 10 "(R only)".
+- TDL: event application as CC-level region calls is exact but not one ISA action; an ISA 0.9
+  per-cell window rule would allow static actions (efficiency, not capability).
