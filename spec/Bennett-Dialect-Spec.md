@@ -5622,4 +5622,737 @@ budget of 32 the third `lift.alloc` (`heap_used` 32 + 16 > 32) is `FAULT_BUDGET_
 steps of n = 1: `@ref` 2 rows to the call; `^b0` 3; `^b0.e1` 4; `^b1` 14 (including `@L2`'s 2);
 `^b1.e2` 3; `^b2` 17 (including `@L3`'s 6); `^b4` 1; `lift.retval` 1.
 
+## 17. Device classical code: memory model, lowering, faults
+
+### 17.1 Memory model
+
+There is one classical memory, shared by H, CC, R and the entry state of every L invocation
+(§8.5; NS §3.2):
+
+- **Live allocations**: a shadow-stack frame from its push to its pop (§17.3); a global, always;
+  a heap allocation of the runtimes allocator from its allocation to its `free` (`free` of a null
+  pointer does nothing). The null region is never allocated.
+- **Zero fill**: shadow-stack frames and heap allocations are zero-filled in both builds; globals
+  hold their initialisers. Region inputs are not zero-filled: they are the bytes the host
+  supplies (NS §3.2).
+- **Bounds**: a load, store or memory-function range is valid iff all its bytes lie in one live
+  allocation (an address model: the object a pointer was derived from is irrelevant; NS §3.2
+  "faulting memory access is defined").
+- **Addresses**: the comparison link (§19.5) places globals and functions; the runtimes
+  allocator's fixed base places the heap; the shadow stack is heap memory, so native stack
+  addresses never reach device results. The residue is host-stack addresses passed in by host
+  code: executions in which they influence a result are *layout-dependent* (NS §3.2; §24 D12),
+  validated against the reference interpreter.
+- **Single thread**: atomics and volatile are sequentialised (N9; NS §3.2; §24 D24).
+
+### 17.2 Layout
+
+The device `layout` (ISA §9.1) replicates the comparison link (§19.5). CC and R code use ISA §7.1
+memory; L code uses ISA §7.2 memory with the same `heap_base` and global bases, so addresses are
+equal in every tier.
+
+### 17.3 Shadow stack (N24)
+
+NS §3.2: "Region allocas are rewritten by the normaliser onto a shim-managed shadow stack in both
+builds where possible"; in device variants it is always possible. The runtimes provide, with
+these contracts:
+
+| Entry point | Contract |
+|---|---|
+| `void __bennett_rt_ss_init(i64 size)` | allocates the shadow stack, a heap block of `size` bytes (`sstack`, §9.2), by `__bennett_nz_alloc`; called by the oracle wrapper prologue (§16.2), the R entry stub and the CC entry stub when their closure uses the shadow stack |
+| `ptr __bennett_rt_ss_push(i64 size, i64 align)` | pushes a frame of `size` bytes aligned to `align` and returns its base; the frame is zero-filled; overflow of the block is `__bennett_nz_fault(2)` (`FAULT_BUDGET_HEAP`) |
+| `void __bennett_rt_ss_pop(ptr fp)` | pops the frame fp and every frame pushed after it |
+| `ptr __bennett_rt_ss_alloca(i64 n, i64 align)` | a zero-filled dynamic allocation in the current frame, released by its pop |
+| `ptr __bennett_rt_ss_save()`, `void __bennett_rt_ss_restore(ptr)` | `llvm.stacksave`/`llvm.stackrestore` |
+
+N24 rewrites each function with allocas: `%nz.fp.<f> = call ptr @__bennett_rt_ss_push(i64 S,
+i64 A)` at entry, where the static allocas of the entry block are laid out in instruction order,
+each at the next offset aligned to its alignment, S is the total rounded up to A, the largest
+alignment; each static alloca becomes `getelementptr i8, ptr %nz.fp.<f>, i64 <offset>` with the
+alloca's name; every other alloca becomes `__bennett_rt_ss_alloca`; `call void
+@__bennett_rt_ss_pop(ptr %nz.fp.<f>)` precedes every `ret` (including the early returns of
+§14.4). `llvm.frameaddress(0)`, `llvm.sponentry`, `llvm.addressofreturnaddress`,
+`llvm.swift.async.context.addr` and `llvm.eh.dwarf.cfa` give `%nz.fp.<f>`;
+`llvm.frameaddress(n > 0)` and `llvm.returnaddress` give null (LangRef: "zero if it cannot be
+identified"); `llvm.stackaddress` gives the current shadow-stack pointer; `llvm.localescape`
+records the escaped allocas' offsets in a per-function table that `llvm.localrecover` reads with
+the parent's frame address; `llvm.structured.alloca` is an alloca.
+
+### 17.4 CC and R lowering
+
+The lowering of device CC and R variants to ISA CC and R (ISA §4.1) is plugin-defined and
+constrained by §18.7, with these dialect rules: LLVM integer and memory instructions map to the
+ISA instructions of the same name (phis to block parameters, ISA §3.4); the primitives to `alloc`,
+`free` and §11.5; multi-result calls carry aggregates; marker calls lower to the region calls
+and `qreg.*` instructions of §18.3 with the handle register environment of §6.5; dispatch uses
+the compare trees of §14.2; host calls are §11.4; effect markers §11.1. In R, every executed
+instruction is one frame of the R history (ISA §7.4).
+
+### 17.5 Fault outcomes
+
+| Event | Fault code (ISA §5.4) |
+|---|---|
+| `udiv`, `urem`, `sdiv`, `srem` with divisor 0 | 5 `FAULT_UB_DIV0` |
+| `sdiv`, `srem` of the minimum value by −1 | 6 `FAULT_UB_SDIV_OVERFLOW` |
+| an access outside every live allocation; `free` of a non-null pointer that is not the base of a live heap allocation | 7 `FAULT_UB_MEMFAULT` |
+| `unreachable` reached; N11; an indirect call or `indirectbr` matching no candidate (§14.2, §14.9); unwinding out of a region (§14.4); a descriptor shape mismatch (`T-IFACE`); `T-TAINT-HOST`; every other run-time check of §18.3 | 4 `FAULT_UB_TRAP` |
+| `__bennett_nz_fault(C)` | C |
+| steps budget exhausted | 1 `FAULT_BUDGET_STEPS` |
+| heap budget or shadow stack exhausted | 2 `FAULT_BUDGET_HEAP` |
+| depth or lifted stack budget exhausted | 3 `FAULT_BUDGET_DEPTH` |
+| a trapped call, an unmodelled or unbound device, an effect in an action region | 8 `FAULT_EFFECT_UNMODELLED` |
+| entropy exhausted (ISA §7.3; §11.3) | 10 `FAULT_ENTROPY_EXHAUSTED` |
+| a blocker point (§25.1) | 4, with the blocker report |
+
+In an oracle region a fault is the F_B outcome (ISA §5.2). In an action region it is TDL-8's. In
+other device code the run ends `FAILED` with that fault record (ISA §10); CC reports the code by
+§11.5; for R code the record is an R fault record (ISA §7.4; ISA-7, ISA-8 in §25.2).
+
+### 17.6 The R tier
+
+- The R lowering inserts a **step counter**: one step per executed materialised LLVM instruction
+  other than `phi`, debug intrinsics and the N34 marks, counted at the marks of N34 (function
+  entries and loop latches) by the number of instructions of the blocks executed since the
+  previous mark. Heap bytes are counted by the allocator, depth at function entry. These define
+  the R budget unit on the materialised module, independent of the plugin (outline B5).
+- Exhaustion of the R budget (§9.3) is `__bennett_nz_fault(1)`, `(2)` or `(3)`, lowered to `trap`
+  (§11.5), and the run ends `FAILED`.
+- R faults end the run (ISA §4.1); §25.2 records ISA-8 (fault status to the CC caller,
+  reverse-eligibility of faulted runs).
+
+### 17.7 The native comparison build
+
+Differential testing (NS §5.1) compares the artefact with the **native comparison binary**: the
+materialised device variants, code-generated by the same LLVM major and linked with
+`bennett-runtimes` and `bennett-arith` (never host libc or libm) under the comparison link of
+§19.5. It is never an `-O0` build: optimisation legally changes marker operands (spike F4), and
+the materialised optimised module is the one program both builds implement. The driver MUST make
+division by zero and INT_MIN/−1 trap in the native build: on targets whose divide instruction does
+not trap it inserts, after materialisation and outside the materialised module, a check that
+calls `__bennett_nz_fault` with code 5 or 6. Results compare by the outcome table of §18.7.
+
+## 18. Reference semantics
+
+### 18.1 State
+
+The reference semantics runs H functions natively and every device entry, region invocation and
+whole-program entry on the materialised module over a state Σ = (C, Q, H, G, K, T):
+
+- **C**, the classical state: LLVM's semantics of the materialised module (LangRef), with every
+  remaining choice fixed by §12–§14 and the fault outcomes of §17.5; it includes the shadows of
+  the arena (TDL-4);
+- **Q**, the quantum state of the ISA formal model (ISA §14.2): a unit vector over the live wires
+  in allocation order, including the arena's wires (TDL-4);
+- **H**, the handle table: for each register id, its wires, whether it is live, and the
+  generation it was allocated in, if any;
+- **G**, a stack of **recorders**, one per active generation (§18.4);
+- **K**, the coherence states of the object instances (TDL-2);
+- **T**, the device-model states and the effect tape (§11).
+
+Measurement and `observe` make the semantics a tree: every outcome sequence has its Born
+probability (ISA §14.2) and its own continuation.
+
+### 18.2 Events
+
+A marker call or a TDL store produces **events**: ISA-level operations, each with a **control
+set** (a set of wires, initially empty). The forms are:
+
+- `qalloc H n`, `qfree H`; the gates `x h s sdg t tdg cx cz swap ccx` (ISA §4.4) and `rx θ`,
+  `ry θ`, `rz θ` on wires; `qload D M A`, `qstore M A V`, `qprep H bytes`;
+- `oracle R B (ins..) tgt fault (mem..) (args..)` and `wide R …` (§8.6), `inplace G G′ B X`;
+- the TDL events of §10: `slice O (args..) (ins..) (mem..) -> regs`, `xmask X+o m`, `xstore X+a
+  m`, `perm P X+a (params..)`, `xchg X+a h`, `fault C` (TDL-12), `firstfault (f..) Φ`;
+- `observe X+o len`, `measure` (outside generations), `effect dev.op` (R).
+
+When no recorder is active, an event is **applied** to Σ at once; otherwise it is appended to the
+innermost recorder. Applying an event with control set S applies it only on the basis states where
+every wire of S is 1 (ISA `ctl`, ISA §4.7, §5.3); `qalloc` and `qfree` are unconditional (ISA
+§3.5). Applying an event that writes object X: when K(X) = Cl and S ≠ ∅ or the written value is
+Co, X is first materialised (TDL-2); after an application with S ≠ ∅ or a Co value, K(X) = Co.
+The plugin realises applied events as CC-level region calls in event order (ISA §4.7), whose
+temporaries are released by `qreg.free` with the dynamic cleanliness check of ISA §3.3; it MAY
+compile an event list into one ISA action when that action satisfies ISA §6.
+
+**Adjoint** of an event list (ISA §5.3 adjoint table): reverse the list and replace each event:
+`x h cx cz swap ccx qload qstore qprep oracle wide slice xmask xstore xchg` are self-adjoint; `s`
+↔ `sdg`; `t` ↔ `tdg`; `rx θ` ↦ `rx −θ` (and `ry`, `rz`); `qalloc` ↔ `qfree` of the same wires;
+`inplace G G′ B X` ↦ `inplace G′ G B X`; `perm P` ↦ the library inverse of P. Control sets are
+unchanged.
+
+### 18.3 Marker rules
+
+Wire `h.i` is wire i of handle h; n(h) its width. A wire is **named** by an event when it is one of
+the event's operand wires. The conditions are checked when the marker is called, against H, and H
+is updated then; Q changes only when an event is applied. A failed condition is a run-time trap:
+fault code 4 (§17.5) with the named diagnostic (§22.2).
+
+| Marker | Conditions (trap) | Effect |
+|---|---|---|
+| `qalloc(cls, n)` | n ≥ 1 (`T-SIZE`); cls in the class table (`T-CLASS`) | a new live handle h of n wires; event `qalloc h n`, whose application appends the n wires to Q in state 0; h belongs to the innermost active generation, if any |
+| `qborrow(cls, n)` | as `qalloc` | inside a generation compiled as an ISA action, ISA `qborrow`/`qreturn` with borrow-frame verification (ISA §5.6); otherwise as `qalloc` (a correct user of borrowed wires also works on clean wires; ISA-9, §25.3). 0.1's `T-BORROW` is deleted |
+| `qfree(h)` | h live (`T-DEAD`); if a recorder is active, h belongs to it (`T-FOREIGN`); when applied, Q is the product of the all-zero state on h's wires and a state of the other wires (`T-CLEAN`) | event `qfree h` |
+| `gate(op, h, i)` | h live (`T-DEAD`); i < n(h) (`T-INDEX`); op in the table (`T-OP`) | the realisation of §3.4 on `h.i` |
+| `gate2(op, a, i, b, j)` | as above for both; `a.i` ≠ `b.j` (`T-ALIAS`) | `cx a.i b.j`, `cz a.i b.j` or `swap a.i b.j` |
+| `gate3(op, a, i, b, j, c, k)` | as above; the three wires distinct (`T-ALIAS`) | `ccx a.i b.j c.k` |
+| `rot(op, h, i, θ)` | as `gate`; θ finite (`T-THETA`) | `rx θ`, `ry θ` or `rz θ` on `h.i` |
+| `measure(h, i)` | as `gate`; no recorder active unless deferred (§7.5a) (`T-MEASURE`) | projective measurement of `h.i` (ISA §14.2); outcome m with its Born probability; the wire stays live in state m (ISA: `measure` and re-preparation, ISA-6 not a gap); returns m |
+| `qload(dst, mem, addr)` | the three handles live and distinct (`T-DEAD`, `T-ALIAS`); n(mem) = 2^n(addr) · n(dst) (`T-SIZE`) | event `qload`: for every cell c, on the basis states where addr holds c, `dst.b ⊕= mem.(c·W + b)` for b < W = n(dst) (ISA §4.6 cell order) |
+| `qstore(mem, addr, val)` | as `qload` with W = n(val) | event `qstore`: `mem.(c·W + b) ⊕= val.b` under addr = c |
+| `qprep(h, src, n)` | h live; n ≤ n(h)/8 (`T-SIZE`); [src, src + n) valid (fault 7) | event `qprep h bytes`: wire 8k + j ⊕= bit j of byte k |
+| `observe(p, len)` | [p, p + len) valid (fault 7); no recorder active (`T-MEASURE`) | TDL-11 |
+| `ctrl(q, qi, f, budget, env)` | q live, qi < n(q); after generation, the wire `q.qi` is named by no event of E (`T-CTRL`) | E = gen(f, env) (§18.4); each event of E with `q.qi` added to its control set; then the TDL-8 combine |
+| `adj(f, budget, env)` | – | E = gen(f, env); the adjoint of E |
+| `compute(f, use, budget, env)` | – | E_f = gen(f, env); the TDL-8 copies of E_f's fault registers; E_u = gen(use, env); then the events E_f, copies, E_u, adjoint(E_f) |
+| `reversible(f, budget, env)` | no recorder active (else §7.4 applies) | §18.6 |
+| `oracle(f, budget, desc)` | the descriptor's checks (§8.1–§8.4: `T-IFACE`, `T-SIZE`, `T-DEAD`, `T-ALIAS`) | event `oracle` or `wide` of the dispatched shape: on every basis state, outputs ⊕= payload(F_B), fault ⊕= code(F_B) (ISA §5.2), F_B from the reference object of §16 on the entry state of §8.5 |
+| `inplace(g, ginv, budget, desc)` | the descriptor's checks; budget ≥ B_min (`T-BUDGET`) | event `inplace`: x ← g(x; args), the permutation that §8.7 verified (ISA `qinplace`) |
+| effect markers | §11 | §11 per tier |
+
+A region operand whose value matches no source of its candidate set traps (`T-REGION`, §7.2); a
+dispatched ill-formed candidate traps (`T-REGION-INVALID`).
+
+### 18.4 Generation of action regions
+
+`gen(R, env)` pushes a recorder, runs `R(env)`'s CC variant under §18.1 with the TDL partition of
+§10 (its G instructions run once on the generation's view; its slices, stores to outliving objects
+and marker calls produce events per §10 and §18.3, nested `ctrl`, `adj` and `compute` producing
+their events into this recorder), pops the recorder and returns its event list E. **Leak rule**
+(`T-LEAK`): for `ctrl` and `adj`, every register allocated during the generation is freed during
+it; for `compute`, every register allocated during gen(use) is freed during it, while a register
+allocated during gen(f) and not freed during it is freed by adjoint(E_f), in which its `qalloc`
+event becomes a `qfree` event, so gen(use) MUST NOT free it (`T-FOREIGN`). *(non-normative)* The
+classical part of an action region (G) runs once per invocation; its effect on outliving memory
+is the events of TDL-5, so under `ctrl` it happens exactly on the branch where the control is 1
+(the audit's counterexample to 0.1). NS §4.2 requires "allocations inside released clean or
+borrowed and restored": `T-LEAK` and `T-CLEAN` are those checks.
+
+### 18.5 Oracle semantics
+
+An `oracle` event applies, on every basis state of its operands, the permutation |x⟩|t⟩|e⟩ ↦
+|x⟩|t ⊕ payload(F_B(x, S))⟩|e ⊕ code(F_B(x, S))⟩ where F_B is the reference interpreter's result on
+the reference object of the dispatched shape (§16) with the token's budget, and S is the entry
+state of §8.5 (the caller's classical memory at the call). It is an involution (ISA §5.2).
+
+### 18.6 Reversible semantics
+
+`reversible(f, budget, env)` and the whole-program R mode (§19.2) run f on the R tier (ISA §3.1):
+its classical effects on memory are those of §18.1, its effects are ISA device models on the tape
+(§11.2), its region calls are R-tier region calls (§7.5b), and the run history (ISA §7.4) is
+retained, so the whole run is reversible by `bennett_reverse` (ISA §10). A fault ends the run
+(§17.6).
+
+### 18.7 Conformance
+
+A plugin and an executor (ISA §1.2) together conform iff, for every module the rules accept or
+block, every host input and every sequence of measurement and `observe` outcomes, outside the
+executions that reach a blocker point: the probability of that sequence, every classical value
+the host observes (return values of device entries, memory they write, console output), every
+fault code and every trap equal those of the reference semantics; and the quantum state at every
+measurement and at every device-entry return equals the reference state, exactly when the program
+uses permutation gates only, and otherwise within the error bound its certificate states (ISA
+§12.3). A program that reaches `T-CLEAN` in the reference semantics is erroneous; an executor that
+cannot test cleanliness (hardware) need not reproduce that trap (ISA §17 item 14).
+
+**Outcome table** (NS §5.1: "one outcome table governs §3.2, §5.1 and §8"). For every input of a
+declared domain the comparison with the native comparison build (§17.7) has one of four outcomes:
+
+| Outcome | When | Comparison |
+|---|---|---|
+| native-comparable success | the reference completes without fault and no layout-dependent value influences the result | the artefact's results equal native |
+| reference fault | the reference faults (code ≠ 0) | the artefact reports the same code; native supplies no cause (it may trap, silently read adjacent memory or hang) |
+| layout-dependent | the reference interpreter's address provenance shows a host-stack address, or a `blockaddress` value (§14.9), influencing the result | validated against the reference interpreter instead of native, counted separately |
+| classifier-flagged undefined | an instrumented build (UBSan, ASan, MSan) flags the input (NS §3.2) | excluded from comparison, counted separately |
+
+### 18.8 Worked examples
+
+**0.1 examples at ABI 0.2.** These programs are also legality cases in the corpus. The checker
+builds each with the trace runtime (`corpus/legality/runtime/`), whose `ctrl` and `adj` call the
+region once and whose `compute` calls `f`, `use`, `f`; it converts the trace into events by §18.3–
+§18.4 (for `compute` it keeps the first `f` recording and checks that the third equals it) and
+simulates them. Wire `Hk.i` is wire i of the k-th allocated handle; basis states list wires in
+allocation order, leftmost first; the state is given before event `at` (0-based).
+
+**Control.** A `ctrl` on a control in superposition entangles; a second `ctrl` disentangles:
+
+```llvm semantics=sem2-ctrl corpus=spec-sem2-ctrl
+; CASE: spec-sem2-ctrl
+; HAZARD: dialect 0.2 reference-semantics example (spec section 18.8): ctrl of an action region that flips a target read from an environment, on a control in superposition, twice
+; INPUTS: 0..3
+; EXPECT: legal
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-pc-linux-gnu"
+
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+declare void @__bennett_gate(i32, ptr, i64)
+declare void @__bennett_ctrl(ptr, i64, ptr, ptr, ptr)
+
+define void @flip(ptr %e) {
+  %t = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %t, i64 0)
+  ret void
+}
+
+define i64 @case_entry(i64 %x) {
+  %e = alloca ptr
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %t, ptr %e
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @flip, ptr null, ptr %e)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @flip, ptr null, ptr %e)
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_qfree(ptr %t)
+  call void @__bennett_qfree(ptr %c)
+  ret i64 %x
+}
+```
+
+```text events=sem2-ctrl input=0
+qalloc H0 1
+qalloc H1 1
+h H0.0
+x H1.0 ctrl H0.0
+x H1.0 ctrl H0.0
+h H0.0
+qfree H1
+qfree H0
+```
+
+```text state=sem2-ctrl input=0 at=4
+|00> 0.70710678
+|11> 0.70710678
+```
+
+**Adjoint.** `adj` replays the recording reversed and inverted:
+
+```llvm semantics=sem2-adj corpus=spec-sem2-adj
+; CASE: spec-sem2-adj
+; HAZARD: dialect 0.2 reference-semantics example (spec section 18.8): a direct call of a region body applies h s t; adj of the same body applies tdg sdg h and returns the register to 0
+; INPUTS: 0..3
+; EXPECT: legal
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-pc-linux-gnu"
+
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+declare void @__bennett_gate(i32, ptr, i64)
+declare void @__bennett_adj(ptr, ptr, ptr)
+
+define void @phase(ptr %e) {
+  %q = load ptr, ptr %e
+  call void @__bennett_gate(i32 2, ptr %q, i64 0)
+  call void @__bennett_gate(i32 3, ptr %q, i64 0)
+  call void @__bennett_gate(i32 5, ptr %q, i64 0)
+  ret void
+}
+
+define i64 @case_entry(i64 %x) {
+  %e = alloca ptr
+  %q = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %q, ptr %e
+  call void @phase(ptr %e)
+  call void @__bennett_adj(ptr @phase, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %q)
+  ret i64 %x
+}
+```
+
+```text events=sem2-adj input=0
+qalloc H0 1
+h H0.0
+s H0.0
+t H0.0
+tdg H0.0
+sdg H0.0
+h H0.0
+qfree H0
+```
+
+```text state=sem2-adj input=0 at=4
+|0> 0.70710678
+|1> -0.5+0.5i
+```
+
+**Compute–use–uncompute.** Phase kickback through an ancilla that the uncompute returns clean:
+
+```llvm semantics=sem2-compute corpus=spec-sem2-compute
+; CASE: spec-sem2-compute
+; HAZARD: dialect 0.2 reference-semantics example (spec section 18.8): compute(f, use) with f = cx onto an ancilla and use = z on the ancilla; phase kickback leaves the ancilla clean
+; INPUTS: 0..3
+; EXPECT: legal
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-pc-linux-gnu"
+
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+declare void @__bennett_gate(i32, ptr, i64)
+declare void @__bennett_gate2(i32, ptr, i64, ptr, i64)
+declare void @__bennett_compute(ptr, ptr, ptr, ptr)
+
+define void @copy(ptr %e) {
+  %a = load ptr, ptr %e
+  %pb = getelementptr i8, ptr %e, i64 8
+  %b = load ptr, ptr %pb
+  call void @__bennett_gate2(i32 1, ptr %a, i64 0, ptr %b, i64 0)
+  ret void
+}
+
+define void @kick(ptr %e) {
+  %pb = getelementptr i8, ptr %e, i64 8
+  %b = load ptr, ptr %pb
+  call void @__bennett_gate(i32 7, ptr %b, i64 0)
+  ret void
+}
+
+define i64 @case_entry(i64 %x) {
+  %e = alloca [2 x ptr]
+  %a = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %b = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %a, ptr %e
+  %pb = getelementptr i8, ptr %e, i64 8
+  store ptr %b, ptr %pb
+  call void @__bennett_gate(i32 2, ptr %a, i64 0)
+  call void @__bennett_compute(ptr @copy, ptr @kick, ptr null, ptr %e)
+  call void @__bennett_gate(i32 2, ptr %a, i64 0)
+  call void @__bennett_gate(i32 1, ptr %a, i64 0)
+  call void @__bennett_qfree(ptr %b)
+  call void @__bennett_qfree(ptr %a)
+  ret i64 %x
+}
+```
+
+```text events=sem2-compute input=0
+qalloc H0 1
+qalloc H1 1
+h H0.0
+cx H0.0 H1.0
+s H1.0
+s H1.0
+cx H0.0 H1.0
+h H0.0
+x H0.0
+qfree H1
+qfree H0
+```
+
+```text state=sem2-compute input=0 at=8
+|10> 1
+```
+
+*(non-normative)* The states are those of 0.1 §8.8. Control: after h, one controlled flip gives
+(|00⟩ + |11⟩)/√2 and the second cancels it. Adjoint: h|0⟩ = (|0⟩ + |1⟩)/√2, s multiplies the |1⟩
+amplitude by i and t by e^{iπ/4}, so before the adjoint it is i·e^{iπ/4}/√2 = e^{i3π/4}/√2 =
+(−1 + i)/2. Compute: h, cx give (|00⟩ + |11⟩)/√2; s s = Z on the ancilla gives (|00⟩ − |11⟩)/√2;
+the uncomputing cx gives (|0⟩ − |1⟩)/√2 ⊗ |0⟩, and h maps it to |10⟩; x returns a to |0⟩ before
+release.
+
+**TDL.** The following programs exercise every case of TDL-5, TDL-10 and TDL-11 on the globals
+`@cnt` and `@other`, which are in the may-Co set (TDL-2) and hence in the arena. Each device
+entry ends by observing both globals, so that MC's state at every device entry is empty (MC3; a
+host may call the entries in any order). `text tdl=` blocks give the partition of each region and
+the run's events with their control sets; a register written `-> r:w` is a fresh register of w
+wires allocated by that event. `text state=` blocks list the handles in allocation order and then
+the arena bytes of `@cnt` (and `@other`) in hex, as `|q…; cnt other>`. Temporary and retained
+registers (TDL-7, TDL-8) hold 0 in these fault-free runs and are omitted. Every Co read is from
+the arena; every slice is an oracle bound to the arena region `coh`.
+
+```llvm example=tdl verdict=accept
+@cnt = internal global i8 0
+@other = internal global i8 0
+
+; TDL-5(a), classical value
+define internal void @bump(ptr %e) {
+  store i8 5, ptr @cnt
+  ret void
+}
+
+; TDL-5(a), Co value: the old contents of @other are Cl
+define internal void @copy1(ptr %e) {
+  %v = load i8, ptr @cnt
+  %w = add i8 %v, 1
+  store i8 %w, ptr @other
+  ret void
+}
+
+; TDL-5(b): a library bijection of a Co object
+define internal void @add3(ptr %e) {
+  %v = load i8, ptr @cnt
+  %w = add i8 %v, 3
+  store i8 %w, ptr @cnt
+  ret void
+}
+
+; TDL-5(c): an overwrite of a Co object inside compute's f
+define internal void @set9(ptr %e) {
+  store i8 9, ptr @cnt
+  ret void
+}
+
+define internal void @flip(ptr %e) {
+  %t = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %t, i64 0)
+  ret void
+}
+
+; TDL-10: a gate under a Co condition
+define internal void @maybe(ptr %e) {
+entry:
+  %v = load i8, ptr @cnt
+  %z = icmp eq i8 %v, 5
+  br i1 %z, label %yes, label %out
+
+yes:
+  %t = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %t, i64 0)
+  br label %out
+
+out:
+  ret void
+}
+
+define internal void @reset(ptr %h) {
+entry:
+  %m = call i1 @__bennett_measure(ptr %h, i64 0)
+  br i1 %m, label %one, label %done
+
+one:
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  br label %done
+
+done:
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+
+define internal void @settle() {
+  call void @__bennett_observe(ptr @cnt, i64 1)
+  call void @__bennett_observe(ptr @other, i64 1)
+  ret void
+}
+
+define i8 @tdl_a() {
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @bump, ptr null, ptr null)
+  call void @settle()
+  %v = load i8, ptr @cnt
+  call void @reset(ptr %c)
+  ret i8 %v
+}
+
+define void @tdl_b() {
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c2 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_gate(i32 2, ptr %c2, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @bump, ptr null, ptr null)
+  call void @__bennett_ctrl(ptr %c2, i64 0, ptr @copy1, ptr null, ptr null)
+  call void @__bennett_ctrl(ptr %c2, i64 0, ptr @add3, ptr null, ptr null)
+  call void @settle()
+  call void @reset(ptr %c2)
+  call void @reset(ptr %c)
+  ret void
+}
+
+define void @tdl_d() {
+  %e = alloca ptr
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %t, ptr %e
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @bump, ptr null, ptr null)
+  call void @__bennett_compute(ptr @set9, ptr @flip, ptr null, ptr %e)
+  call void @settle()
+  call void @reset(ptr %t)
+  call void @reset(ptr %c)
+  ret void
+}
+
+define void @tdl_f() {
+  %e = alloca ptr
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c2 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %t, ptr %e
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_gate(i32 2, ptr %c2, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @bump, ptr null, ptr null)
+  call void @__bennett_ctrl(ptr %c2, i64 0, ptr @maybe, ptr null, ptr %e)
+  call void @settle()
+  call void @reset(ptr %t)
+  call void @reset(ptr %c2)
+  call void @reset(ptr %c)
+  ret void
+}
+```
+
+`@tdl_a`: the store of `@bump` has view Cl(0), so it is the classical event of TDL-5(a); applied
+under H0.0 it materialises `@cnt` (its shadow is 0, so the XOR changes no wire) and makes it Co;
+`observe` then measures it (TDL-11):
+
+```text tdl=tdl-a
+@bump: G = { store i8 5, ptr @cnt -> xmask @cnt+0 0x05 }, slices = {}
+events of @tdl_a:
+qalloc H0 1
+h H0.0
+xmask @cnt+0 0x05 ctrl H0.0
+observe @cnt+0 1
+observe @other+0 1
+measure H0.0
+```
+
+```text state=tdl-a at=3
+|0; 00> 0.70710678
+|1; 05> 0.70710678
+```
+
+*(non-normative)* `observe` gives 0x00 with probability 1/2 (H0 collapses to |0⟩) or 0x05 with
+probability 1/2 (H0 to |1⟩); `@tdl_a` returns that byte, and `measure` of H0 agrees with it before
+the reset. Under 0.1's semantics the store would have happened on both branches and `@tdl_a`
+would return 5 with certainty.
+
+`@tdl_b` runs `@bump` under H0, then `@copy1` and `@add3` under H1. In `@copy1` the load of `@cnt`
+(state Co) is Co, so the load and the `add` form slice O1, and the store into `@other`, whose view
+is Cl(0), is TDL-5(a) with a Co value. In `@add3` the three instructions are the library bijection
+"add 3" of TDL-5(b):
+
+```text tdl=tdl-b
+@copy1 (signature: @cnt may-Co, @other Cl): slice O1 = { %v = load i8, ptr @cnt; %w = add i8 %v, 1 } with ARG c (the old byte of @other), MEM_IN coh, output m:8 = c xor %w; store i8 %w, ptr @other -> TDL-5(a) with a Co value
+@add3 (signature: @cnt may-Co): { %v = load; %w = add i8 %v, 3; store i8 %w, ptr @cnt } -> TDL-5(b) perm add.i8 with k = 3
+events of @tdl_b up to the observes:
+qalloc H0 1
+qalloc H1 1
+h H0.0
+h H1.0
+xmask @cnt+0 0x05 ctrl H0.0
+slice O1 args(0x00) mem(coh) -> m1:8 f1:4 ctrl H1.0
+xstore @other+0 m1 ctrl H1.0
+slice O1 args(0x00) mem(coh) -> m1 f1b:4 ctrl H1.0
+qxor f1 f1b
+qfree f1b
+qfree m1
+firstfault (f1) -> Phi1:4
+perm add.i8 @cnt+0 k=3 ctrl H1.0
+```
+
+```text state=tdl-b at=10
+|00; 00 00> 0.5
+|01; 00 01> 0.5
+|10; 05 00> 0.5
+|11; 05 06> 0.5
+```
+
+```text state=tdl-b at=13
+|00; 00 00> 0.5
+|01; 03 01> 0.5
+|10; 05 00> 0.5
+|11; 08 06> 0.5
+```
+
+*(non-normative)* Before event 10 the copy-out pair is complete: `@other` = cnt + 1 exactly where
+H1 is 1: 0 + 1 = 1 and 5 + 1 = 6. The permutation "add 3" under H1 then gives cnt = 5·H0 + 3·H1:
+0, 3, 5, 8.
+
+A second `@copy1` invocation would overwrite `@other`, whose state is then Co, with a value that
+is not a bijection of its old contents, outside `compute`: TDL-5(d) (NS §4.2):
+
+```llvm example=tdl-overwrite verdict=reject:BD-E-COHERENT-OVERWRITE
+@cnt = internal global i8 0
+@other = internal global i8 0
+
+define internal void @bump(ptr %e) {
+  store i8 5, ptr @cnt
+  ret void
+}
+
+define internal void @copy1(ptr %e) {
+  %v = load i8, ptr @cnt
+  %w = add i8 %v, 1
+  store i8 %w, ptr @other
+  ret void
+}
+
+define void @twice() {
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c2 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_gate(i32 2, ptr %c2, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @bump, ptr null, ptr null)
+  call void @__bennett_ctrl(ptr %c2, i64 0, ptr @copy1, ptr null, ptr null)
+  call void @__bennett_ctrl(ptr %c2, i64 0, ptr @copy1, ptr null, ptr null)
+  call void @__bennett_observe(ptr @cnt, i64 1)
+  call void @__bennett_observe(ptr @other, i64 1)
+  ret void
+}
+```
+
+`@tdl_d`: `compute(@set9, @flip)` with `@cnt` Co: the store of 9 is TDL-5(c); the new byte (a
+constant) is computed by a slice invocation, exchanged into the cell, kept as history h, and
+restored by the adjoint; the fault register f9 is copied into a retained g9 between E_f and E_use
+(TDL-8):
+
+```text tdl=tdl-d
+@set9 inside compute f (signature: @cnt may-Co): slice O9 = { the constant 9 } output h:8; store i8 9, ptr @cnt -> TDL-5(c) xchg
+events of @tdl_d up to the observes:
+qalloc H0 1
+qalloc H1 1
+h H0.0
+xmask @cnt+0 0x05 ctrl H0.0
+slice O9 -> h:8 f9:4
+xchg @cnt+0 h
+copy f9 -> g9:4
+x H1.0
+xchg @cnt+0 h
+slice O9 -> h f9
+qfree h
+qfree f9
+```
+
+```text state=tdl-d at=7
+|00; 09> 0.70710678 (h = 00)
+|10; 09> 0.70710678 (h = 05)
+```
+
+```text state=tdl-d at=12
+|01; 00> 0.70710678
+|11; 05> 0.70710678
+```
+
+*(non-normative)* Events 4–5 are E_f, 6 is the copy, 7 is E_use, 8–9 are adjoint(E_f): the
+exchange puts the displaced byte back and the second slice invocation XORs 9 into h, which held 9,
+so h and f9 are clean before release. During `use`, `@cnt` is 9 on both branches while h holds the
+old byte: the history is entangled with H0 exactly while it must be (NS §3.1
+compute-with-uncompute).
+
+`@tdl_f`: in `@maybe` the branch on `%z` is a Co branch (the load of `@cnt` is Co), so the gate is
+issued under `qpred` of the condition wire (TDL-10):
+
+```text tdl=tdl-f
+@maybe (signature: @cnt may-Co): slice Oz = { %v = load i8, ptr @cnt; %z = icmp eq i8 %v, 5 } output w:1; the gate in %yes is control-dependent on %z -> issued under qpred w
+events of @tdl_f up to the observes:
+qalloc H0 1
+qalloc H1 1
+qalloc H2 1
+h H0.0
+h H1.0
+xmask @cnt+0 0x05 ctrl H0.0
+slice Oz mem(coh) -> w:1 fz:4 ctrl H1.0
+x H2.0 ctrl H1.0 w
+slice Oz mem(coh) -> w fzb:4 ctrl H1.0
+qxor fz fzb
+qfree fzb
+qfree w
+firstfault (fz) -> Phi1:4
+```
+
+```text state=tdl-f at=13
+|000; 00> 0.5
+|010; 00> 0.5
+|100; 05> 0.5
+|111; 05> 0.5
+```
+
+*(non-normative)* w = (cnt = 5) = H0, so the target H2 flips exactly where H0 and H1 are 1.
+
 <!-- APPEND -->
