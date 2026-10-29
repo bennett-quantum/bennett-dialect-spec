@@ -439,13 +439,14 @@ class Runner:
     def normalisation(self, b):
         ident=b['attrs']['normalise-in']
         want=self.block('normalise-out',ident)['body']
-        got=normalise(b['body'])
-        if d.collapse(want)!=d.collapse(got):
-            diff='\n'.join(difflib.unified_diff(d.collapse(want),d.collapse(got),'expected','actual',lineterm=''))
-            raise Mismatch(f'{ident} [§12] expected normalise-out; actual diff:\n{diff}')
-        equal(ident,'§12.4 validator','accept',validate(got))
-        generated={'body':got,'line':'generated-'+ident}
-        for major in d.MAJORS:self.verify(generated,major)
+        for major in d.MAJORS:
+            got=normalise(b['body'],rmode=b['attrs'].get('rmode'),platform=b['attrs'].get('platform'),major=major)
+            if d.collapse(want)!=d.collapse(got):
+                diff='\n'.join(difflib.unified_diff(d.collapse(want),d.collapse(got),'expected','actual',lineterm=''))
+                raise Mismatch(f'{ident}/llvm{major} [§12] expected normalise-out; actual diff:\n{diff}')
+            equal(ident,'§12.4 validator','accept',validate(got))
+            generated={'body':got,'line':'generated-'+ident}
+            self.verify(generated,major)
 
     def unsupported(self, capability, command_text, bead=CLI_BEAD):
         raise Unavailable(capability, command_text, bead)

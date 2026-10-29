@@ -69,7 +69,7 @@ class ContractTests(unittest.TestCase):
             name = b['attrs']['normalise-in']
             with self.subTest(example=name):
                 want = self.block('normalise-out', name)['body']
-                got = v.normalise(b['body'])
+                got = v.normalise(b['body'],rmode=b['attrs'].get('rmode'),platform=b['attrs'].get('platform'))
                 self.assertEqual(d.collapse(want), d.collapse(got))
                 self.assertEqual(v.validate(got), 'accept')
 

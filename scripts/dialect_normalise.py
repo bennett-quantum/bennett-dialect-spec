@@ -6,16 +6,36 @@ FP={'half':('f16',16),'bfloat':('bf16',16),'float':('f32',32),'double':('f64',64
     'x86_fp80':('f80',80),'fp128':('f128',128),'ppc_fp128':('ppcf128',128)}
 
 
+def lower_llvm_intrinsics(text,major):
+    from dialect_check_v02 import SCRATCH, command
+    import tempfile
+    from pathlib import Path
+    groups=[(r'coro\.', ['coro-early','cgscc(coro-split)','coro-cleanup']),
+            (r'matrix\.', ['lower-matrix-intrinsics']),
+            (r'(?:public\.)?type\.|icall\.branch\.funnel', ['lowertypetests']),
+            (r'instrprof\.', ['instrprof']), (r'alloc\.token\.id', ['alloc-token']),
+            (r'experimental\.guard', ['lower-guard-intrinsic']),
+            (r'experimental\.widenable\.condition', ['lower-widenable-condition'])]
+    passes=[p for pattern,ps in groups if re.search(r'@llvm\.'+pattern,text) for p in ps]
+    if not passes:return text
+    with tempfile.TemporaryDirectory(dir=SCRATCH) as tmp:
+        path=Path(tmp)/'n0.ll';path.write_text(d.with_decls(text))
+        out=command([d.toolchains()[major]/'opt','-S','-passes='+','.join(passes),path,'-o','-'])
+    return out
+
+
 class Normaliser:
-    def __init__(self,text):
+    def __init__(self,text,*,rmode=None,platform=None,major="18"):
+        self.rmode=rmode;self.platform=platform;self.major=major
+        lowered=lower_llvm_intrinsics(text,major)
         # Parse named types with the legacy parser without changing the printed type names.
         from dialect_check_v02 import expanded_types
         self.original=text
-        expanded=expanded_types(text)
+        expanded=expanded_types(lowered)
         self.m=d.Module(expanded)
         originals={re.search(r'@([-\w.$]+)\(',ln)[1]:ln.strip() for ln in text.splitlines() if ln.lstrip().startswith('define ')}
         for name,f in self.m.funcs.items():
-            if f.is_def:f.header=originals[name]
+            if f.is_def and name in originals:f.header=originals[name]
         # Instructions may retain named types once their sizes have been resolved.
         self.named=dict(re.findall(r'^(%[-\w.$]+) = type (.+)$',text,re.M))
         for f in self.funcs():
@@ -57,7 +77,7 @@ class Normaliser:
             for ins in f.instrs():
                 if ins.op not in ('call','invoke'):
                     ins.text=' '.join(t for t in ins.text.split(' ') if t not in d.INT_FLAGS|d.FMF)
-                ins.text=re.sub(r',\s*!(?!dbg)[\w.]+\s+![\w.{}]+','',ins.text)
+                ins.text=re.sub(r',\s*!(?!dbg\b|bennett\.rstep\b)[\w.]+\s+![\w.{}]+','',ins.text)
                 if ins.op in ('call','invoke') and ' asm ' not in ins.text:ins.text=d.strip_n4(ins.text)
                 ins.text=d.n7(ins.text)
         for key,toks in self.m.groups.items():self.m.groups[key]=[t for t in toks if d.attr_name(t) not in d.N4_FN]
@@ -146,11 +166,22 @@ class Normaliser:
                 return [f'{v} = {i.op} {d.tstr(t[2])} {x}, {y}' for v,x,y in zip(vals,aa,zz)]
             if i.op=='insertelement':
                 ps=d.split_top(b[len(i.op):].strip());t=d.parse_type(ps[0])[0];lanes=list(get(d.typed_val(ps[0]),t[1],t[2]));idx=d.typed_val(ps[2])
-                if not idx.isdigit():raise d.Fail('N15/N21 dynamic insert needs select chain')
+                if not idx.isdigit():
+                    it=d.tstr(d.parse_type(ps[2])[0]);et=d.tstr(t[2]);value=d.typed_val(ps[1]);out=[];vals=[]
+                    for k,old in enumerate(lanes):
+                        c=f'%nz.k{k}.{r}';v=f'%nz.l{k}.{r}'
+                        out += [f'{c} = icmp eq {it} {idx}, {k}',f'{v} = select i1 {c}, {et} {value}, {et} {old}'];vals.append(v)
+                    self.lanes[i.res]=vals;return out
                 lanes[int(idx)]=d.typed_val(ps[1]);self.lanes[i.res]=lanes;return []
             if i.op=='extractelement':
                 ps=d.split_top(b[len(i.op):].strip());t=d.parse_type(ps[0])[0];lanes=get(d.typed_val(ps[0]),t[1],t[2]);idx=d.typed_val(ps[1])
-                if not idx.isdigit():raise d.Fail('N15/N21 dynamic extract needs select chain')
+                if not idx.isdigit():
+                    it=d.tstr(d.parse_type(ps[1])[0]);et=d.tstr(t[2]);L=len(lanes)
+                    out=[f'%nz.c.{r} = icmp uge {it} {idx}, {L}'];prev='0'
+                    for k,value in enumerate(lanes):
+                        c=f'%nz.k{k}.{r}';v=f'%nz.e.{r}' if k==L-1 else f'%nz.l{k}.{r}'
+                        out += [f'{c} = icmp eq {it} {idx}, {k}',f'{v} = select i1 {c}, {et} {value}, {et} {prev}'];prev=v
+                    return out+[f'{i.res} = select i1 %nz.c.{r}, {et} 0, {et} {prev}']
                 self.replace(f,i.res,lanes[int(idx)]);return []
             if i.op=='call' and '@llvm.vector.reduce.' in b:
                 c=d.parse_call(i);op=c['callee'].split('.')[3];t=c['args'][0][0];vals=get(c['args'][0][2],t[1],t[2]);out=[];a=vals[0]
@@ -316,9 +347,85 @@ class Normaliser:
         return ('\n'.join(self.globals)+'\n\n' if self.globals else '')+d.print_module(self.m,self.original.rstrip('\n').split('\n'),self.appended)
 
     def run(self):
-        self.basic();self.atomics();self.traps();self.shifts();self.fmuladd();self.vector();self.wide()
+        self.byval();self.basic();self.platform_hooks();self.atomics();self.traps();self.shifts();self.fmuladd();self.vector();self.wide()
         self.varargs();self.shadow();self.memory();self.intrinsics();self.gc();self.eh();self.asm();self.fp()
+        self.rsteps()
         return self.result()
+
+    def byval(self):
+        # N25: caller-owned copy, then N24 gives it the common shadow frame.
+        attr=r'(?:byval|inalloca|preallocated)\(([^)]+)\)(?: align (\d+))?'
+        for f in self.funcs():
+            f.header=re.sub(attr,'',f.header)
+            f.header=re.sub(r'ptr\s+%','ptr %',f.header)
+        def go(f,i,r):
+            if i.op!='call' or ' asm ' in i.text:return
+            c=d.parse_call(i);out=[];text=i.text
+            for j,(ty,attrs,value) in enumerate(c['args']):
+                match=next((re.fullmatch(attr,a) for a in attrs if re.fullmatch(attr,a)),None)
+                # parse_call can separate the ABI attribute from align.
+                if match is None:
+                    joined=' '.join(attrs);match=re.search(attr,joined)
+                if match is None:continue
+                t=self.typ(match[1]);size=d.tsize(t);al=int(match[2] or d.talign(t));slot=f'%nz.bv{j}.{r}'
+                out += [f'{slot} = alloca {d.tstr(t)}, align {al}',f'call void @llvm.memcpy.p0.p0.i64(ptr {slot}, ptr {value}, i64 {size}, i1 false)']
+                typed='ptr'+(' '+' '.join(attrs) if attrs else '')+' '+value
+                text=text.replace(typed,'ptr '+slot,1)
+            return out+[text] if out else None
+        self.rewrite(go)
+
+    def platform_hooks(self):
+        if self.platform is None:return
+        if self.platform!='riscv64-bennett-virt':raise d.Fail('N35 unknown platform '+self.platform)
+        self.decl('__bennett_rt_poll','void',[])
+        for f in self.funcs():
+            if f.name.startswith(('__bennett_rt_','__bennett_dev_')):continue
+            labels=[lab for lab,_ in f.blocks];pred={lab:set() for lab in labels}
+            for lab,blk in f.blocks:
+                for target in re.findall(r'label %([-\w.$]+)',blk[-1].text):pred[target].add(lab)
+            dom={lab:({lab} if lab==labels[0] else set(labels)) for lab in labels}
+            while True:
+                old={lab:set(ds) for lab,ds in dom.items()}
+                for lab in labels[1:]:dom[lab]={lab}|(set.intersection(*(dom[p] for p in pred[lab])) if pred[lab] else set())
+                if old==dom:break
+            for lab,blk in f.blocks:
+                out=[]
+                if lab==labels[0]:out.append(d.Instr('call void @__bennett_rt_poll()',None,'call',f,lab))
+                for i in blk:
+                    if i is blk[-1] and any(target in dom[lab] for target in re.findall(r'label %([-\w.$]+)',i.text)):
+                        out.append(d.Instr('call void @__bennett_rt_poll()',None,'call',f,lab))
+                    body=i.text.split(' = ',1)[-1]
+                    if i.op in ('load','store') and 'volatile' in body:
+                        ps=d.split_top(body.split('volatile ',1)[1]);t=d.parse_type(ps[0])[0];ts=d.tstr(t);p=d.typed_val(ps[1])
+                        name='__bennett_rt_mmio_'+i.op+'_'+ts
+                        if i.op=='load':
+                            self.decl(name,ts,['ptr']);i.text=f'{i.res} = call {ts} @{name}(ptr {p})'
+                        else:
+                            self.decl(name,'void',['ptr',ts]);i.text=f'call void @{name}(ptr {p}, {ts} {d.typed_val(ps[0])})'
+                        i.op='call'
+                    out.append(i)
+                blk[:]=out
+
+    def rsteps(self):
+        if not self.rmode:return
+        entry=self.rmode.lstrip('@')
+        if not self.m.defined(entry):raise d.Fail('N34 missing R entry '+entry)
+        selected={entry}
+        while True:
+            old=set(selected)
+            for name in old:
+                for i in self.m.funcs[name].instrs():
+                    if i.op=='call' and ' asm ' not in i.text:
+                        cal=d.parse_call(i)['callee'].lstrip('@')
+                        if self.m.defined(cal):selected.add(cal)
+            if old==selected:break
+        used={int(x) for x in re.findall(r'!(\d+)',self.original)};n=0
+        while n in used:n+=1
+        for name in selected:
+            for i in self.m.funcs[name].instrs():
+                if i.op!='phi' and '@llvm.dbg.' not in i.text and '!bennett.rstep' not in i.text:
+                    i.text+=f', !bennett.rstep !{n}'
+        self.appended.append(f'!{n} = !{{}}')
 
     def varargs(self):
         varfuncs={f.name:f for f in self.funcs() if f.vararg}
@@ -399,4 +506,4 @@ class Normaliser:
             f.blocks.append((lab,[d.Instr(line,None,'ret',f,lab)]))
 
 
-def normalise(text):return Normaliser(text).run()
+def normalise(text,**context):return Normaliser(text,**context).run()

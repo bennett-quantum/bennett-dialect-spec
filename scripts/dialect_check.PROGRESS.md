@@ -315,3 +315,14 @@ mutations now pass. Selected gate coverage 125/125, driver 1/1, all seven new
 state adapters pass. R-budget remains the old bz6 probe until item 5.
 No spec or ISA source edits. Snapshot rebuilt offline through the existing
 immutable build path; the runner records its actual dependency commit.
+
+## Freeze repair item 2 — N0/N15/N25/N34/N35
+
+Normalisation now consumes rmode/platform/LLVM-major context. N0 invokes LLVM's
+normative lowering passes; N15 builds scalar dynamic-lane selection with the
+out-of-range zero/unchanged-vector semantics; N25 creates caller-owned copies
+in the shared shadow frame; N34 preserves and emits pre-instruction metadata
+through the R closure; N35 routes volatile memory before N9 and inserts entry
+and loop-back-edge polls. All 24 exact pairs ran red before implementation and
+now pass, including validator and LLVM 18/20/23 verification. Each major runs
+its own N0 lowering. No changed or omitted expected output.
