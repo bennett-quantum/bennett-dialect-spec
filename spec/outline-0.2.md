@@ -72,7 +72,8 @@ Sections keep 0.1's numbering where they correspond. New material is inserted as
 - **§1.4 Departures from the north star.** Only these remain:
   - the three maintainer decisions (region identity by content; handle provenance through
     bitwise copies; region operands dispatched over a bounded candidate set);
-  - D8 (handle comparison is supported; legality findings, maintainer, 2026-10-29);
+  - D8 (handle comparison is supported; maintainer decision 2026-10-29, recorded with the
+    phase-3 brief; to be added to the legality findings §3);
   - normalisation of the whole device closure (1.4-h);
   - the XOR store without a static clean-target rule (1.4-g, D7). These are both supersets of
     the north star.
@@ -138,6 +139,15 @@ Sections keep 0.1's numbering where they correspond. New material is inserted as
     bytes [p, p+len) of classical memory whose coherence state is Co (§10.6). Afterwards they
     are Cl and hold the outcome. It is the only way that superposed classical memory reaches
     classical code without a handle (NS §4.2, "outputs leave through measurement after exit").
+  - **New: `void __bennett_qprep(ptr h, ptr src, i64 nbytes)`.** XOR of classical bytes into
+    a register: wire 8k + j ^= bit j of byte k, for k < nbytes ≤ n(h)/8. A copy when h is
+    clean, and self-inverse.
+    - It is how "fixed classically before entry" data reaches quantum memory: the rung-4
+      database image, an `ARG`-too-wide constant. Without it, one `gate` marker per set bit
+      would be needed (about 1.3e8 for the rung-4 image).
+    - Lowered by the CC concat tree of §8.5. When h is a device-entry `QREG` argument and src
+      is host memory, the launch stub uses `bennett_qreg_prepare` instead (ISA §10).
+    - Inside a generation it is an `xmask` event on the register (controlled under `ctrl`).
   - **New: the effect markers of §11.2**, one per device-model operation (ISA §7.3):
     - `__bennett_effect_console_write(ptr, i64)`;
     - `__bennett_effect_clock_read(ptr)`;
@@ -189,7 +199,8 @@ Sections keep 0.1's numbering where they correspond. New material is inserted as
 
 - classes: ISA §4.3 `qalloc cls n`, §3.3 `qreg.new cls n`;
 - dispatch: CC compare-and-branch (ISA §4.1 `icmp`, `br`);
-- observe: ISA §3.3 `measure` of the arena slice (§10.4).
+- observe: `qload` copy plus ISA §3.3 `measure` (TDL-11);
+- qprep: `qreg.new`, oracle `args` XOR, `qreg.concat` (ISA §3.3, §4.7), or §10 `bennett_qreg_prepare`.
 
 **Reuses:** 0.1 §3 (all examples except `operand-class` and `operand-width-host`, which become
 `accept` and `blocked` respectively).
@@ -474,10 +485,14 @@ trap.
     - Constant globals are data images: equal by construction.
     - For the mutable globals and live heap objects in R, the plugin emits an
       **entry-state transfer**:
-      - at the call, CC prepares a snapshot register;
+      - at the call, CC prepares a snapshot register of the object's static maximum size
+        2^A_s bytes (bytes beyond the live data are zero);
       - it contains the allocation-table sizes and live bits plus the bytes of R;
-      - CC builds it with chunk-wise `oracle_call`s of a runtime oracle that XORs classical
-        `args` into slices, 128 bits per call;
+      - CC builds it with a **concat tree** of A_s − 4 static-width CC functions:
+        - the leaf allocates `qreg[128]` and runs a runtime oracle that XORs two `i64` `args`
+          (one 16-byte chunk read by CC `load`) into it;
+        - each level joins two halves with `qreg.concat` (ISA §3.3);
+        - all types are static, and the run-time cost is O(size/16) region calls;
       - the register is bound as an extra `in` region;
       - the oracle prologue **replays** the allocation sizes with `lift.alloc`, which
         reproduces the CC addresses exactly, because ISA §4.2 `lift.alloc` and §7.1 `alloc`
@@ -607,8 +622,18 @@ anchors.
     [A_coh, A_coh + 2^A) in the layout, disjoint from CC globals and heap (ISA §7.1/§7.2).
     G-13 would lift that restriction.
   - The arena's contents live in a CC-held `qreg[8·2^A]` bound as `region[A,8]` (ISA §3.3).
-  - While an object's bit is Cl, CC reads and writes a **CC shadow** at a fixed offset. Writes
-    to the shadow are mirrored by TDL-5 events.
+  - **Lazy materialisation.** While an object's bit is Cl, its arena cells are kept at |0⟩, and
+    CC reads and writes its **CC shadow** at a fixed offset with ordinary CC memory
+    instructions.
+  - The first event with a non-empty control set that touches the object first XORs the
+    shadow bytes into the arena cells, uncontrolled. The bit then becomes Co, and the arena is
+    the truth.
+  - **Writing at a run-time address.** A cell write at a classical run-time address (an
+    `xmask a, m` event, or materialisation) lowers to an action. A runtime oracle XORs the
+    classical `args` (a, m) into fresh wires. Then `qstore arena a_w m_w` (ISA §4.6, XOR into
+    the addressed cell; O(2^A) gates unless the target has QRAM, NS §4.3). Then the oracle
+    runs again to uncompute. Objects at static offsets may use static slices instead
+    (`qreg.slice` with literal `lo`).
   - Globals in the may-Co set are relocated into the arena by the layout (§19.5). Heap objects
     in the set are allocated by the runtimes' coherent allocator.
 - **TDL-5 Stores to outliving objects in action regions (the store rule; B4).** A store
@@ -616,9 +641,13 @@ anchors.
   cases:
   - **(a) Old contents Cl** (bit Cl at that point; the old bytes c are known to CC).
     - The event is `xmask o, c ⊕ v` for a classical v.
-    - For a Co v, the event is a slice oracle that receives c as `args`, XORs v into a fresh
-      target, then `qxor` into the arena slice, X-mask c, and re-runs the oracle to uncompute
-      the target. The oracle's inputs are unchanged, so the uncompute is valid (ISA §6.2).
+    - For a Co v, the event sequence is:
+      1. a slice oracle receives c as `args` and XORs v into a fresh target;
+      2. the target is XORed into the arena cells (TDL-4 run-time-address rule: `qstore` of the
+         target wires);
+      3. `xmask c`;
+      4. the oracle runs again to uncompute the target. Its inputs are unchanged, so the
+         uncompute is valid (ISA §6.2).
     - Exact. No history.
   - **(b) Old contents Co**, and the update is a **library bijection** in the old value with Cl
     or Co parameters (the bennett-arith table: add/sub of a value, xor, rotate, negate, bswap,
@@ -677,7 +706,14 @@ anchors.
   - Its Co variant at host or CC level is `T-TAINT-HOST` at run time, and statically
     `BD-W-TAINT-HOST` (a warning naming `__bennett_observe`). The reason: NS §4.2, classical
     outputs leave only through measurement.
-  - `__bennett_observe` makes bytes Cl by measurement.
+  - `__bennett_observe` makes bytes Cl by measurement. On ISA 0.8 `measure` consumes a whole
+    live non-view register (ISA §3.3), so `observe` lowers as follows:
+    - an action `qload`-copies the addressed cells into a fresh register;
+    - `measure` that register, which collapses the arena cells identically, since a
+      computational-basis measurement of a CNOT copy equals one of the source;
+    - write the outcome to the CC shadow;
+    - `xmask` the outcome out of the arena cells, returning them to |0⟩ (lazy representation);
+    - set the bit to Cl.
 - **TDL-12 Effects in Co context.** An effect reached in a Co slice follows §11.3 (coherent
   device models), else F(8) on the executions that reach it.
 
@@ -703,7 +739,7 @@ store events.
   | Tier | Effect realisation |
   |---|---|
   | H | real |
-  | CC | `hostcall` to host services (§11.4) |
+  | CC | host functions by `hostcall` (§11.4); effect markers in CC lower to `hostcall bennett.dev.<model>.<op>`, a genuine host effect, since ISA `effect` is R-only (ISA §4.1) |
   | R | ISA `effect` device models, on the tape |
   | L | lifted device-model state bound by §8.3 |
   | unmodelled | F(8) + `trapped` |
@@ -1368,7 +1404,8 @@ The oracle's view of classical memory is the caller's at entry (§8.5): constant
 images; mutable reachable objects use entry-state transfer by allocation replay (O-07), or
 build-time snapshot images (§19.6).
 
-SQLite route A is then exactly:
+The image register is filled from the host-built bytes by `__bennett_qprep` (§3.2). SQLite
+route A is then exactly:
 
 | Parameter | Binding |
 |---|---|
@@ -1699,6 +1736,10 @@ stated case has no realisation. No rung depends on any of them (part C).
 - **ISA-3 editorial:** the JCS spelling of `args` types, using the §16.2 type spelling as JSON
   strings.
 - **`qreg.slice`:** clarify whether `lo` may be a run-time value.
+- **`qreg` across CC calls:** ISA §3.2 places handles in the classical environment, but the §3.3
+  transition table is silent on CC `call`/`ret`/`br` block parameters of `qreg` type. §6.5
+  (register-environment passing) relies on them carrying `qreg` values unchanged; confirm in
+  wording.
 - **ISA §5.4:** code 10's "(R only)" label versus `fault 10` in oracles (§11.3).
 
 *Efficiency items* (correct on ISA 0.8 by the stated construction; ISA 0.9 candidates on
@@ -1753,7 +1794,7 @@ where the rung depends on it. It is not a dialect gap.
 | | argv; `exit` | CC stub `hostcall bennett.argv`; §14.7 | §10 `hostcall` | |
 | | un-run to reset; tape replay deterministic | whole-run reversal; tape | §7.4, §10, T4 | |
 | **4** Grover over unmodified SQLite | the whole closure lifted (1,218 functions, 262k instructions) | B1 / §12 / §16 | §4.2 all rows, §3.6–§3.7 | none |
-| | database as a file image in quantum-addressed memory; rowid superposed; classical length | §8.2 `MEM_IN` (`region[25,8]`), `IN` (20 wires, ZEXT), `ARG`; SQLite route A | §5.1, §7.2, §3.3 binding | |
+| | database as a file image in quantum-addressed memory; rowid superposed; classical length | §8.2 `MEM_IN` (`region[25,8]`), `IN` (20 wires, ZEXT), `ARG`; SQLite route A; image loaded into the register by `__bennett_qprep` (§3.2) | §5.1, §7.2, §3.3 binding, §10 `bennett_qreg_prepare` | |
 | | 2,229 indirect-call sites (VFS, pcache, SQL functions, walkers) | §14.2 + A(F) in data images (§4.4) | compare + `lift.call` | |
 | | 952 variadic call sites | N23 | memory rows | |
 | | about 1,000 vector instructions; 32 `vector.reduce` | N21 | integer rows | |
