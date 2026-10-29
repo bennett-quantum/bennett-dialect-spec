@@ -1721,3 +1721,283 @@ vectors.
 
 *LLVM changes needed:* none. The legality findings' LLVM bugs (Attributor, IRNormalizer,
 unprepared structurizecfg) are outside the supported envelope (0.1 D20, L).
+
+---
+
+# Part C. Rung-by-rung scope check (NS §8)
+
+Every capability each rung needs, and the 0.2 section or mechanism that provides it.
+Blockers: **none for any rung**. BLK-1 to BLK-4 affect no rung, and the efficiency items
+affect cost only. Work outside the dialect (runtimes, arith, vm, circuits, estimate) is named
+where the rung depends on it. It is not a dialect gap.
+
+| Rung | Capability needed | 0.2 provides it by | ISA 0.8 | Blocker |
+|---|---|---|---|---|
+| **1** Scalar C, Rust, Julia | markers emitted by clang, rustc and Julia (`llvmcall`) | §3.8 | – | none |
+| | multi-argument functions as oracles, no packing wrapper | §8 descriptor: one `IN` per parameter | §4.7 `(ins..)` | |
+| | calls left after O3 (helpers, Rust panic paths for `/` `%`, Julia `throw`) | §14.1 lprocs; §4.5 runtime shims for `core::panicking::*` and `jl_throw`; §14.4 unwinding out of the region → F(4) | §3.7, §4.2 | |
+| | integer intrinsics (overflow checks, min/max/abs) | N27 | §4.2 | |
+| | exhaustive Int8 over D (x, t, e), both executors equal to native | §16 reference body; native comparison build §17/0.1 §7.6; part D | §5.2, §14.1, T3 | |
+| **2** Pointers, structs, byte memory (C hashtable) | loads, stores, GEPs, globals | §16.4, data images §16.2 | §4.2 load/store/boundscheck/addr, §7.2 | none |
+| | malloc/free, structs by value, memcpy/memset | runtimes allocator over `lift.alloc`/`lift.free`; N25; N26 | §4.2 alloc/free, §7.2 | |
+| | allocas | shadow stack (§17.3, B16) | §4.2 | |
+| | heap, stack and depth budgets | §9 record and table | §5.4 | |
+| | result buffers out of the oracle | `OUT` binding (§8.2) | §5.2 contract | |
+| | host-built table queried by the oracle | entry-state transfer (§8.5) | §3.7 initial state, §4.2 alloc | |
+| | "reversed byte-exactly, both executors" | oracle prefix reversal, or whole-program R mode with `bennett_reverse` (§19.2) | §5.2 (4), §10 | |
+| **3** musl hello world | whole program in the reversible tier | §19.2 mode | §3.1 R, §10 `bennett_run` | none |
+| | musl as runtime bitcode; syscalls → device models | §4.5 shims; §11.2 effect markers | §7.3 `console` | |
+| | stock musl `__syscall` inline asm | §15 table rows (x86-64, aarch64, riscv64) | – | |
+| | `printf` varargs | N23 (§14.3) | memory rows | |
+| | `fmt_fp` long double (static closure) | §13.3 `x86_fp80` arith | integer rows | |
+| | argv; `exit` | CC stub `hostcall bennett.argv`; §14.7 | §10 `hostcall` | |
+| | un-run to reset; tape replay deterministic | whole-run reversal; tape | §7.4, §10, T4 | |
+| **4** Grover over unmodified SQLite | the whole closure lifted (1,218 functions, 262k instructions) | B1 / §12 / §16 | §4.2 all rows, §3.6–§3.7 | none |
+| | database as a file image in quantum-addressed memory; rowid superposed; classical length | §8.2 `MEM_IN` (`region[25,8]`), `IN` (20 wires, ZEXT), `ARG`; SQLite route A | §5.1, §7.2, §3.3 binding | |
+| | 2,229 indirect-call sites (VFS, pcache, SQL functions, walkers) | §14.2 + A(F) in data images (§4.4) | compare + `lift.call` | |
+| | 952 variadic call sites | N23 | memory rows | |
+| | about 1,000 vector instructions; 32 `vector.reduce` | N21 | integer rows | |
+| | FP in 75 functions | §13.1 | integer rows | |
+| | 453 relaxed atomics | N9 | plain load/store | |
+| | memcpy family | N26 | `lift.call` | |
+| | intrinsics: bswap, fshl, ctpop, ctlz, min/max, abs | N27 | | |
+| | `switch` with up to 345 cases | §16.4 tree | `qbranch` | |
+| | recursion (SCCs of 69, depth 21) | §14.1 | §3.7 depth/stack | |
+| | heap 182 KB; budget table | §9 | §5.4 | |
+| | SQLite used on the host (build the DB) and in the oracle | §4.3 polyvariant cloning | – | |
+| | libc string functions, `localtime`; OS layer VFS with deterministic random and clock | §4.5 runtimes shims | – | |
+| | error path → fault | user wrapper `__builtin_trap` → N11 F(4) | §5.4 | |
+| | build flags recorded in the certificate | §19.9 / ISA §12.3 `producer` | §12.3 | |
+| | (a) exhaustive oracle check at N ≤ 2^10, fault rate zero | part D + `bennett-conformance` | §12.1 `exhaustive` | |
+| | (b) Grover with branch enumeration | vm (outside the dialect) | §4.2 executors | |
+| | (c) estimate at 2^20 | vm/circuits structure recovery (SQLite work item 9), estimate (outside the dialect); the dialect supplies the reference body and certificate | §5.7, §12 | |
+| **5** Julia on a shim runtime | Julia emission | §3.8 `llvmcall` | – | none |
+| | Julia's LLVM major mixed with runtimes bitcode | §19.8 read-up | – | |
+| | shim runtime as bitcode; `jl_gc_alloc` as allocation sites | §4.5, §5.1 | – | |
+| | generic dispatch through function pointers | §14.2 | compare + call | |
+| | exceptions via `sigsetjmp` (`jl_try`) | §14.5 | – | |
+| | tasks, if reached | §14.6 fibers | – | |
+| | `push!`/`Dict` (memmove, hashing, possibly FP) | N26, N27, §13 | – | |
+| | forward equal to native Julia; reversal exact | §19.2 R mode; whole-run reversal | §10 | |
+| **6** xv6, Linux `tinyconfig` | kernel built to bitcode for a modelled board, build flags only | §20 platform profile (riscv64, open question E4) + §20.7 spike (mechanics) | – | none |
+| | privileged asm, `.S` entry and switch code | §15 rows, §15.3 symbol shims, §20.2, §20.5 | – | |
+| | MMIO devices (UART, timer, virtio-blk) | §20.3 routing to device models | §7.3 console/clock/block | |
+| | interrupts | §20.4 poll points | – | |
+| | context switch | §14.6 rewindable frames | – | |
+| | user programs, `exec` | §20.6 (A(F) dispatch, soft-MMU) | – | |
+| | console output equal to a native QEMU run | §19.2 tape; independent QEMU run (conformance) | §10 tape | |
+| | un-boot to the reset vector; tape replay byte-identical | whole-run reversal | §7.4, §10 | |
+| | uniprocessor | NS §3.2 single-thread assumption (D24, M) | – | |
+| | efficiency | G-16 optional | – | |
+| **7** Quantum fuzzing of the kernel | oracle over syscall arguments (superposed, small space) | quantum programmer's TU: §8 descriptor with `IN` bindings on a harness that calls the kernel's syscall entry; or §19.3 | §4.7 | none |
+| | kernel snapshot fixed classically after boot | §19.6 build-time snapshot images (no transfer), or §8.5 entry-state transfer | §9.1 data, §7.2 | |
+| | devices virtualised in the coherent tier | §11.3 lifted device models | §7.2 regions | |
+| | panic flag as the payload | platform `panic` shim raises the exit pseudo-exception (§14.7), caught by the wrapper → payload bit | §5.2 | |
+| | the whole kernel lifted (including platform and fiber code) | B1, B9, §20 L variants | §4.2 | |
+| | step budget | §9 | §5.4 | |
+| | (a) against native execution of the same snapshot | native comparison build with the same images (§17, §19.6) | – | |
+| | (b), (c) | vm / estimate | – | |
+| | efficiency | G-12 only for run-time snapshots | – | |
+| **8** Amplitude estimation on a plain-C Monte Carlo | unmodified program as the oracle | quantum programmer's TU naming the function (§8), or §19.3 | §4.7 | none |
+| | entropy device replaced by a superposed register | §8.3 ENTROPY binding, §11.3 lifted entropy reading the `in` region (`rand`/`getrandom` → runtimes → effect marker L variant) | §5.1 `in` region, §5.2 domain D | |
+| | double-precision maths and transcendentals | §13.1, §13.4 runtimes libm | integer rows | |
+| | vectorised FP loops | N21 | | |
+| | `printf` | N23 + console buffer discarded or bound | | |
+| | payload from return or exit status | §8.2 `tgt`, §14.7 | | |
+| | budget table | §9 | | |
+| | (a), (b), (c) | part D, vm, estimate | §12 | |
+
+---
+
+# Part D. Pre-flight checking plan (`scripts/dialect_check.py` for 0.2)
+
+**Principle.** The spec's scope comes from the north star and part B. The checker serves the
+spec and never bounds it. Normative process rules, written into the spec's §1.5 and
+`spec/README.md`:
+
+- **P-1.** Every mechanism rule id (S-steps, N-rules, TDL-n, map rows, B/P rules, §8 kinds, §14
+  transforms, §15 rows) has at least one checked `accept` example. Every L rejection has one
+  `reject` example. Every blocker has one `blocked` example. The checker derives this index
+  from the spec text: rule ids in bold anchors. A rule with no example fails the check.
+- **P-2.** An example that the checker cannot yet execute **fails** (`checker-unimplemented:
+  <what>`). It is never skipped, and the spec never removes or weakens an example to make the
+  checker pass. The freeze gate is all green.
+- **P-3.** Every executed result comes from an independent executor: LLVM tools, clang-built
+  native binaries, or the Rust ISA reference interpreter. Python computes only *expected*
+  artefacts: recogniser verdicts, normaliser output, map output, TDL events. It is never both
+  producer and judge of the same example.
+
+**D1. Layers and executors.**
+
+| Layer | What runs | Executor |
+|---|---|---|
+| Parse and verify | every `llvm` block on LLVM 18, 20, 23 (`llvm-as` + `opt -passes=verify`), headless (CLAUDE.md rule 11: `env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=<job dir>`) | LLVM |
+| C, Rust, Julia examples | `clang -O2 -flto` (18, 20, 23), `rustc --emit=llvm-bc`, Julia `code_llvm`, then `lto<O3>` | toolchains of `corpus/legality/toolchains.toml` |
+| Recogniser and validator verdicts | the Python reference recogniser (seed of the independent `bennett-conformance` one) | Python (expected only) |
+| Normalisation | Python normaliser output compared line by line with `normalise-out`; then **native differential**: input and output modules compiled with clang and the spec seeds (D4) and run on the example's input vectors; results must be equal except where the normaliser's documented choices apply (undef → 0, F(C)) | clang native |
+| Map | Python map output compared with `isa object=`; the ISA text checked by `bennett-isa-ref check` (well-formedness, hashes, ISA §9.2 identities) | Rust interpreter |
+| F_B | `bennett-isa-ref run-oracle <obj> <oracle> --input … --budget s,h,st,d --mem r=hex --arg …` for every `text run=` line: memory, lprocs, recursion, alloc/free, indirect dispatch, varargs, soft-float, EH, sjlj, fibers in lifted code | Rust interpreter (exists today) |
+| Prefix reversal | `bennett-isa-ref step-check --exhaustive` over D (≤ 24 bits) for every lifted example small enough | Rust interpreter (exists today) |
+| Native vs reference | for every `run=` example, the materialised module compiled natively with seeds; payloads compared input by input: "equals native, or is flagged" (NS §5.1) | clang + Rust interpreter |
+| CC/R programs | effect markers, whole-program R mode, reversal, tape: `cc-run=` blocks | Rust interpreter: **needs CLI `run-cc`** (D3) |
+| Actions and TDL | event lists from the Python TDL reference, executed as ISA actions | Rust interpreter: **needs CLI `run-action`/`simulate`** (D3); until then the 0.1 Python simulator may compute expected states only, and the result is marked pending → fail (P-2) |
+| Rung-mini programs (suite DX) | end to end: C source → driver steps → ISA object → interpreter run → native comparison | all of the above |
+
+**D2. Checked examples 0.2 adds.** At least one per row:
+
+- **lifted memory** (struct sum over an `in` region; a 3-node linked list built with
+  `malloc`/`free` in the oracle; heap fault at a small heap budget);
+- **recursion** (0.1-style `sum_db` from C, depth fault);
+- **indirect calls** (qsort-style comparator from a table; zero-candidate trap; region pointer
+  from host input → dispatch);
+- **varargs** (`sum(int n, ...)`);
+- **vectors** (`<4 x i32>` add and reduce);
+- **wide int** (i256 add);
+- **soft-float** (`fadd` in an oracle; a libm `exp` via the seed libm);
+- **EH** (C++ throw caught inside the oracle; Rust panic → F(4));
+- **sjlj** (longjmp across two frames);
+- **fiber** (swapcontext ping-pong in R);
+- **descriptor shapes** (multi-`IN`, `MEM_IN`, `OUT` with 160-bit output → k + 2 variants);
+- **entry-state transfer** (a host-mutated global read by an oracle);
+- **budget record and table**;
+- **TDL** (cases a–d; a Co-dependent gate; `observe`);
+- **effects** (console in R with reversal; ENTROPY-bound oracle);
+- **deferred measurement**;
+- **handle table** of fixed size; `Vec<Handle>` with a static bound; unbounded → blocked;
+- **closed-unit equivalence**;
+- **cross-major link**;
+- **rung minis:**
+  - **R1** (Int8 Rust function, exhaustive);
+  - **R2** (a 40-line C hashtable);
+  - **R3** (a `puts` through the runtimes seed in R, reversed);
+  - **R4** (`sqlite`-shaped: a page image in a `MEM_IN` region, a B-tree-like binary search
+    and a function-pointer callback);
+  - **R8** (an entropy-driven estimator with `exp`).
+
+**D3. Interface needed from the reference interpreter.** It is a codex job in progress and
+read-only to this job. Today it provides `check`, `hash`, `run-oracle` (four-component
+budgets, `--mem`, `--arg` including tokens) and `step-check --exhaustive`, which cover every
+lifted example. The library already has `ClassicalMachine` (CC/R, tapes, `hostcall`
+suspend/reply, segment and whole reversal), `QuantumRegisters` and `execute_action`. The
+dialect checker needs CLI exposure of these. They are to be filed as a request to
+`bennett-isa-spec` by the orchestrator, not by this job:
+
+| Command | Purpose |
+|---|---|
+| `run-cc <obj> <entry> --args … --entropy hex --replies file` | results, fault records, tape, a memory digest, measurements with `--draws` |
+| `reverse <obj> <entry> …` | run, then whole-run reversal, then entry-state equality |
+| `run-action <obj> <action> --mut … --in … --mem … --args …` | basis permutation or state vector out |
+| `run-program` | CC runs that issue region calls, with fixed measurement draws |
+
+Until each lands, the examples that need it fail under P-2.
+
+**D4. Seeds.** `spec/seeds/` (C, part of the spec repo, used only by the checker; runtimes
+and arith implement independently, CLAUDE.md rule 5):
+
+- a minimal allocator over the layout heap;
+- shadow stack;
+- memmove/memset/memcmp;
+- EH state and personality subset;
+- setjmp/longjmp;
+- swapcontext;
+- binary64 soft-float add/mul/cmp/conversions;
+- `exp`/`log` from musl;
+- a console/entropy device stub over the effect markers;
+- the musl `__syscall` row.
+
+Seed semantics equal the contract rows of §11, §13 and §14. The seeds are tested by their own
+vectors (suites DR/DF seeds).
+
+**D5. Order of work.**
+
+1. Port 0.1's recogniser and validator to the §5 analysis.
+2. Map with memory and calls, run through `run-oracle`.
+3. Normaliser N21–N33 with native differential.
+4. Descriptor and wrapper.
+5. TDL reference.
+6. CC/R examples once D3 lands.
+7. Rung minis.
+
+The 0.1 Python `run_ref` is retired as an executor. It may remain as a cross-check of the
+Rust interpreter on the scalar subset only.
+
+---
+
+# Part E. Open questions for the maintainer
+
+Each is a genuine design choice inside fixed scope. The outline proceeds with the recommended
+option.
+
+| # | Question | Options | Recommendation |
+|---|---|---|---|
+| E1 | Budget operand form on region-entry markers | (a) `ptr` to `bennett_budget {steps, heap, stack, depth, fault}`, null meaning table; (b) `i64` steps plus table for the rest (0.1 shape) | **(a)**: four components and the action fault register in source; uniform across markers; NS "integer operands" is met by integer fields. Cost: new legality cases for changed signatures. |
+| E2 | `ctrl`/`adj`/`compute` budget across coherent slices | (a) every slice gets the full record; (b) the record is a total shared by all slices of one invocation (a counter threaded through the slice tokens) | **(a)**: simple and plugin-independent. (b) makes the fault set depend on the plugin's slice boundaries. |
+| E3 | A non-bijective overwrite of a Co cell under `ctrl`/`adj` (TDL-5d) | (a) NS-literal `BD-E-COHERENT-OVERWRITE`; (b) additionally an opt-in module flag `bennett.coherent_overwrite = "history"` making the displaced bytes declared history outputs (garbage, reported in the certificate) | **(a) now**. (b) would extend NS §4.2. If wanted, it is an NS amendment through the council, not a dialect default. |
+| E4 | Architecture of the rung 6/7 platform profile | (a) riscv64 (xv6-riscv, Linux `tinyconfig` ARCH=riscv); (b) x86-64 | **(a)**: a small privileged ISA (CSRs, `sret`, `sfence.vma`, `ecall`) and the canonical modern xv6, so fewer asm rows and `.S` shims. x86-64 can follow as a second profile. |
+| E5 | Function-address encoding | (a) comparison-link address; (b) dense canonical index | **(a)**: native-equal pointer values (SQLite hashes and compares function pointers). |
+| E6 | `switch` and dispatch construction in the reference body | (a) balanced binary compare tree; (b) the 0.1 linear chain | **(a)**: O(log k) rows. Changes 0.1's switch example hashes (a draft-to-draft change, allowed). |
+| E7 | Shadow-stack storage | (a) one heap block per region or entry, part of the heap budget; (b) a dedicated layout global with its own size | **(a)**: stays within ISA §5.4's four components. |
+| E8 | memcpy/memset in the reference body | (a) always a runtime lproc call; (b) inline expansion below a size threshold | **(a)**: one row shape, smaller hashes. Executors inline extensionally (T6). |
+| E9 | Oracle interface representation | (a) in-memory descriptor (§8.1); (b) constant-global interface spec plus a parallel argument block | **(a)**: one operand; Rust/Julia/C build it the same way; kinds bounded by the finite domain. |
+| E10 | How a front end requests deferred measurement | (a) module flag; (b) marker variant `__bennett_measure_deferred` | **(a)**: the front end cannot know at the call site whether it is inside a unitary region. |
+| E11 | Default placement of host code sharing pointer-rich memory with device code | (a) promotion to device CC (B7); (b) reject until ISA-11 | **(a)**. (b) is a narrowing. |
+| E12 | Budget operand on `adj` and `compute` | (a) add `ptr budget` to both (uniform; slices need budget and fault register); (b) keep 0.1 signatures and take both from the table and plugin allocation | **(a)**: the corpus is rerun for the changed `ctrl`/`oracle`/`inplace`/`reversible` signatures anyway. |
+| E13 | Fault code for an indirect call matching no function of the program | (a) 4 `FAULT_UB_TRAP`; (b) 8 `FAULT_EFFECT_UNMODELLED` when the pointer may come from code without bitcode | **(a)**: one rule; the coverage report names external pointer sources. |
+| E14 | Ill-formed candidates in a region candidate set | (a) compile them as trap bodies, reject only a unique ill-formed candidate; (b) reject if any is reachable | **(a)**: type-based candidate sets over-approximate, so (b) rejects correct programs. |
+
+---
+
+# Part F. bd closure map
+
+Every child of `b-dialect-spec-8wf` and every 0.1 dialect item, with the 0.2 section that
+removes it, and the blocker where part of the capability needs one.
+
+| bd | Audit rows | 0.2 section | Blocker part |
+|---|---|---|---|
+| .1 | 1.4-d, D17, B-31, B-50, O-05 | §10 TDL, §18.4, B4 | – |
+| .2 | 1.4-e, D18, B-43 | §9.3, TDL-9, §17.6 | – |
+| .3 | 1.4-f | §8.7 | BLK-3 (ISA-3) |
+| .4 | D1, B-05 | §3.4 classes | – |
+| .5 | D2 | §9.2, §19.9 | – |
+| .6 | D3 | §8.2 `ARG`, §8.5 | – |
+| .7 | D4, B-39 | B1, §12, §16 | – |
+| .8 | D5 | §7.5(a) | – |
+| .9 | D6, B-49 | §6, §22 (`T-BORROW` deleted), ISA qborrow in actions | ISA-9 efficiency |
+| .10 | D8, B-19 | §6.3 | – |
+| .11 | D9 | §5.1 | – |
+| .12 | D10, B-12 | §14.4 | – |
+| .13 | D11, B-17, B-51 | §11, §4.5 | – |
+| .14 | D14, B-41 | §8.7 | – |
+| .15 | D16, B-45 | §13 | – |
+| .16 | D19, B-53 | §19.8 | – |
+| .17 | D21, B-32 | §8 | G-15 efficiency |
+| .18 | B-06 | §3.4 | – |
+| .19 | B-07 | §3.4, §6.5 | BLK-1 (ISA-4) |
+| .20 | B-08 | §9.5 | BLK-2 (ISA-1) |
+| .21 | B-11 | §3.6 | – |
+| .22 | B-16 | §4.3, §4.4 | – |
+| .23 | B-22 | §6.4, §14.2 | – |
+| .24 | B-23 | §6.2 | – |
+| .25 | B-24 | §5, §6.4 | BLK-1 for unbounded counts |
+| .26 | B-26 | §5, §6.4 | – |
+| .27 | B-27 | §5.2 | – |
+| .28 | B-29 | §6.4 | – |
+| .29 | B-30 | §6.6 | – |
+| .30 | B-33 | §7.2, B17 | – |
+| .31 | B-37 | §7.4, §10 | – |
+| .32 | B-38 | §7.5(b) | BLK-4 (new ISA-12) |
+| .33 | B-42 | §9, §17 | – |
+| .34 | B-54 | §19.7 | – |
+| .35 | O-01 | §14.2, §4.4 | – |
+| .36 | O-02 | §15 | – |
+| .37 | O-03 | §14.3 | – |
+| .38 | O-04 | §19.2 | – |
+| .39 | O-06 | §14.5, §14.6, §20 | G-16 efficiency |
+| .40 | O-07 | §8.5, §19.6 | G-12 efficiency |
+| -566 | C1 | §21 | – |
+| -j88 | C2 | §21 | – |
+| -cjb | C3 | §21 | – |
+| -25h | C4 | §1.4 | – |
+| -ape | C5 | §21 | – |
+| -u6a | C6 | §21 | – |
+| -kdj | C7 | §14.4, §21 | – |
