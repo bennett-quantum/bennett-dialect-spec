@@ -58,6 +58,14 @@ static uint32_t *m_cnt;
 static uint64_t *memx_max;
 static uint64_t *v_h;
 static uint32_t *v_cnt;
+/* per-instance alignment against the reference run (k-th execution of a site) */
+#define REF_CAP (1ull << 25)
+static int is_ref;
+static uint64_t *ref_stream;            /* private, reference run only: (id, value) pairs */
+static uint64_t ref_stream_len;
+static uint32_t *v_dcnt, *m_dcnt;       /* private: instances differing from the reference */
+static uint32_t *s_vref_cnt, *s_mref_cnt, *s_vdi_max, *s_mdi_max;
+static uint64_t *s_vref_off, *s_mref_off, *s_vref_vals, *s_mref_vals;
 static uint32_t *trace;
 #define TRACE_CAP (1ull << 27)
 static uint64_t trace_len, trace_hash;
@@ -138,6 +146,11 @@ void prof_init(uintptr_t image_lo, uintptr_t image_len, uintptr_t heap_lo) {
   uint32_t nv = __prof_nvals;
   s_vh = shm(8ull * nv); s_vcnt_max = shm(4ull * nv); s_vdiff_v = shm(nv); s_vdiff_c = shm(nv);
   v_h = priv(8ull * nv); v_cnt = priv(4ull * nv);
+  ref_stream = priv(16ull * REF_CAP);
+  v_dcnt = priv(4ull * nv); m_dcnt = priv(4ull * nm);
+  s_vref_cnt = shm(4ull * nv); s_vref_off = shm(8ull * nv); s_vdi_max = shm(4ull * nv);
+  s_mref_cnt = shm(4ull * nm); s_mref_off = shm(8ull * nm); s_mdi_max = shm(4ull * nm);
+  s_vref_vals = shm(8ull * REF_CAP); s_mref_vals = shm(8ull * REF_CAP);
   memx_max = shm(8ull * nm);
   s_union = alloc_pt(1); s_inter = alloc_pt(1);
   s_aset = shm(sizeof(as_t) * AS_SLOTS); s_aset_n = shm(8);
@@ -151,6 +164,23 @@ void prof_init(uintptr_t image_lo, uintptr_t image_len, uintptr_t heap_lo) {
 static inline uint64_t mix(uint64_t h, uint64_t v) {
   h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
   return h * 0xff51afd7ed558ccdULL;
+}
+
+/* id < 2^31: value site; id | 2^31: memory site */
+static inline void inst(uint32_t id, uint32_t k, uint64_t v) {
+  if (is_ref) {
+    if (ref_stream_len >= REF_CAP) { fprintf(stderr, "ref stream overflow\n"); _exit(3); }
+    ref_stream[2 * ref_stream_len] = id;
+    ref_stream[2 * ref_stream_len + 1] = v;
+    ref_stream_len++;
+    return;
+  }
+  if (id >> 31) {
+    uint32_t m = id & 0x7fffffff;
+    if (k >= s_mref_cnt[m] || s_mref_vals[s_mref_off[m] + k] != v) m_dcnt[m]++;
+  } else {
+    if (k >= s_vref_cnt[id] || s_vref_vals[s_vref_off[id] + k] != v) v_dcnt[id]++;
+  }
 }
 
 static inline void mark(uintptr_t a, uint64_t n, int write) {
@@ -191,6 +221,7 @@ void __prof_exit(uint32_t fid) {
 }
 void __prof_ld(void *p, uint32_t sz, uint32_t mid) {
   if (!active) return;
+  inst(mid | 0x80000000u, m_cnt[mid], (uintptr_t)p);
   n_ld++; b_ld += sz; m_cnt[mid]++;
   m_ah[mid] = mix(m_ah[mid], (uintptr_t)p);
   aset_add(mid, (uintptr_t)p);
@@ -198,6 +229,7 @@ void __prof_ld(void *p, uint32_t sz, uint32_t mid) {
 }
 void __prof_st(void *p, uint32_t sz, uint32_t mid, uint64_t v) {
   if (!active) return;
+  inst(mid | 0x80000000u, m_cnt[mid], (uintptr_t)p);
   n_st++; b_st += sz; m_cnt[mid]++;
   m_ah[mid] = mix(m_ah[mid], (uintptr_t)p);
   m_vh[mid] = mix(m_vh[mid], mix((uintptr_t)p, v));
@@ -206,6 +238,7 @@ void __prof_st(void *p, uint32_t sz, uint32_t mid, uint64_t v) {
 }
 void __prof_memx(void *d, void *s, uint64_t n, uint32_t kind, uint32_t mid) {
   if (!active) return;
+  inst(mid | 0x80000000u, m_cnt[mid], mix((uintptr_t)d, mix((uintptr_t)s, n)));
   n_memx++; b_memx += n; m_cnt[mid]++;
   memx_rows += 3 + 3 * ((n + 7) / 8);   /* lifted word loop: load, store, step per 8 bytes */
   m_ah[mid] = mix(mix(m_ah[mid], (uintptr_t)d), mix((uintptr_t)s, n));
@@ -219,6 +252,7 @@ void __prof_memx(void *d, void *s, uint64_t n, uint32_t kind, uint32_t mid) {
 }
 void __prof_val(uint32_t vid, uint64_t bits) {
   if (!active) return;
+  inst(vid, v_cnt[vid], bits);
   v_cnt[vid]++;
   v_h[vid] = mix(v_h[vid], bits);
 }
@@ -229,6 +263,7 @@ static uint64_t c_rowid, c_ref;
 void prof_child_begin(uint64_t rowid, uint64_t ref) {
   c_rowid = rowid; c_ref = ref;
   shim_alloc_count = shim_free_count = shim_alloc_bytes = shim_live_bytes = shim_peak_live = 0;
+  is_ref = H->nruns == 0;
   sp_entry = sp_min = (uintptr_t)__builtin_frame_address(0);
   H->stack_hi = sp_entry + 4096;
   H->stack_lo = sp_entry - (64u << 20);
@@ -277,6 +312,24 @@ void prof_child_end(uint8_t result) {
     }
     if (n > 0 && m_cnt[i] != s_mcnt_max[i] && (m_cnt[i] || s_mcnt_max[i])) s_cdiff[i] = 1;
     if (m_cnt[i] > s_mcnt_max[i]) s_mcnt_max[i] = m_cnt[i];
+  }
+  if (is_ref) {
+    uint64_t off = 0;
+    for (uint32_t i = 0; i < __prof_nvals; i++) { s_vref_cnt[i] = v_cnt[i]; s_vref_off[i] = off; off += v_cnt[i]; }
+    uint64_t moff = 0;
+    for (uint32_t i = 0; i < nm; i++) { s_mref_cnt[i] = m_cnt[i]; s_mref_off[i] = moff; moff += m_cnt[i]; }
+    if (off > REF_CAP || moff > REF_CAP) { fprintf(stderr, "ref values overflow\n"); _exit(3); }
+    /* scatter in execution order: the k-th instance of a site lands at off + k */
+    uint32_t *cur_v = (uint32_t *)priv(4ull * __prof_nvals), *cur_m = (uint32_t *)priv(4ull * nm);
+    for (uint64_t j = 0; j < ref_stream_len; j++) {
+      uint32_t id = (uint32_t)ref_stream[2 * j];
+      uint64_t v = ref_stream[2 * j + 1];
+      if (id >> 31) { uint32_t m = id & 0x7fffffff; s_mref_vals[s_mref_off[m] + cur_m[m]++] = v; }
+      else s_vref_vals[s_vref_off[id] + cur_v[id]++] = v;
+    }
+  } else {
+    for (uint32_t i = 0; i < __prof_nvals; i++) if (v_dcnt[i] > s_vdi_max[i]) s_vdi_max[i] = v_dcnt[i];
+    for (uint32_t i = 0; i < nm; i++) if (m_dcnt[i] > s_mdi_max[i]) s_mdi_max[i] = m_dcnt[i];
   }
   for (uint32_t i = 0; i < __prof_nvals; i++) {
     if (n == 0) s_vh[i] = v_h[i];
@@ -373,15 +426,15 @@ void prof_report(const char *dir) {
   fclose(f);
   snprintf(path, sizeof path, "%s/mem.tsv", dir);
   f = fopen(path, "w");
-  fprintf(f, "mid\tmaxcnt\taddr_differs\tval_differs\tcnt_differs\n");
+  fprintf(f, "mid\tmaxcnt\taddr_differs\tval_differs\tcnt_differs\taddr_diff_inst_max\n");
   for (uint32_t i = 0; i < __prof_nmem; i++)
-    if (s_mcnt_max[i]) fprintf(f, "%u\t%u\t%u\t%u\t%u\n", i, s_mcnt_max[i], s_adiff[i], s_vdiff[i], s_cdiff[i]);
+    if (s_mcnt_max[i]) fprintf(f, "%u\t%u\t%u\t%u\t%u\t%u\n", i, s_mcnt_max[i], s_adiff[i], s_vdiff[i], s_cdiff[i], s_mdi_max[i]);
   fclose(f);
   snprintf(path, sizeof path, "%s/val.tsv", dir);
   f = fopen(path, "w");
-  fprintf(f, "vid\tmaxcnt\tval_differs\tcnt_differs\n");
+  fprintf(f, "vid\tmaxcnt\tval_differs\tcnt_differs\tdiff_inst_max\n");
   for (uint32_t i = 0; i < __prof_nvals; i++)
-    if (s_vcnt_max[i]) fprintf(f, "%u\t%u\t%u\t%u\n", i, s_vcnt_max[i], s_vdiff_v[i], s_vdiff_c[i]);
+    if (s_vcnt_max[i]) fprintf(f, "%u\t%u\t%u\t%u\t%u\n", i, s_vcnt_max[i], s_vdiff_v[i], s_vdiff_c[i], s_vdi_max[i]);
   fclose(f);
   {  /* distinct addresses per memory site (dst and src counted separately) */
     uint32_t nm = __prof_nmem;

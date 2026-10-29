@@ -85,19 +85,25 @@ def structured(P, n_image, Pbig=None, page=4096):
             if s["mid"] in sites:
                 t = sites[s["mid"]]
                 t["maxcnt"] = max(t["maxcnt"], s["maxcnt"])
+                t["diff_inst"] = max(t.get("diff_inst", t["maxcnt"]), s.get("diff_inst", s["maxcnt"]))
                 for k in ("distinct_dst", "distinct_src", "memx_max_bytes"):
                     t[k] = max(t[k], s[k])
             else:
                 sites[s["mid"]] = dict(s)
         P = dict(P, superposed_address_sites=list(sites.values()))
-        for k in ("values_varying_by_category",):
+        for k in ("values_varying_by_category", "value_instances_differing_by_category"):
+            if k not in P:
+                continue
             merged = dict(P[k])
             for c, n in Pbig[k].items():
                 merged[c] = max(merged.get(c, 0), n)
             P[k] = merged
         P["values_varying_total"] = max(P["values_varying_total"], Pbig["values_varying_total"])
+        if "value_instances_differing_total" in P:
+            P["value_instances_differing_total"] = max(P["value_instances_differing_total"],
+                                                       Pbig["value_instances_differing_total"])
         P["rows_varying"] = max(P["rows_varying"], Pbig["rows_varying"])
-    vc = P["values_varying_by_category"]
+    vc = P.get("value_instances_differing_by_category", P["values_varying_by_category"])
     t_val = 0
     for cat, n in vc.items():
         if cat == "muldiv":
@@ -110,7 +116,7 @@ def structured(P, n_image, Pbig=None, page=4096):
     t_mem = 0
     qrom_pages = 0
     for s in P["superposed_address_sites"]:
-        n = s["maxcnt"]
+        n = s.get("diff_inst", s["maxcnt"])   # instances whose address differs from the reference
         if s["kind"] in ("memcpy", "memmove"):
             nbytes = s["memx_max_bytes"]
             if s["distinct_src"] > 1:
@@ -129,7 +135,8 @@ def structured(P, n_image, Pbig=None, page=4096):
             t_mem += n * 2 * D * (1 + 8 * s["size"])
     written = sum(P["footprint"]["union_written"])
     q = {"superposed memory (union of written bytes x 8)": written * 8,
-         "garbage, no pebbling (varying values x 64)": P["values_varying_total"] * 64}
+         "garbage, no pebbling (differing value instances x 64)":
+             P.get("value_instances_differing_total", P["values_varying_total"]) * 64}
     return {"toffoli_values": t_val, "toffoli_predication": t_pred, "toffoli_memory": t_mem,
             "toffoli_per_oracle": 2 * (t_val + t_pred + t_mem), "qrom_pages": qrom_pages,
             "qubits": q, "qubits_total": sum(q.values())}

@@ -159,7 +159,12 @@ def analyze(d):
     if os.path.exists(vp):
         vals = tsv(vp)
         qv = collections.Counter(); cv = collections.Counter(); qfn = collections.Counter()
+        qi = collections.Counter(); qifn = collections.Counter()
         for v in vals:
+            if "diff_inst_max" in v:   # per-instance alignment (k-th execution vs reference)
+                meta = V[int(v["vid"])]
+                qi[meta["cat"]] += int(v["diff_inst_max"])
+                qifn[F[B[meta["bid"]]["fid"]]["name"]] += int(v["diff_inst_max"])
             meta = V[int(v["vid"])]
             w = ROW_WEIGHT.get(meta["cat"], 1)
             if meta["cat"] == "switch_cases":
@@ -175,6 +180,11 @@ def analyze(d):
         S["values_varying_total"] = sum(qv.values())
         S["values_invariant_total"] = sum(cv.values())
         S["values_varying_by_function"] = dict(qfn.most_common(20))
+        if qi:
+            S["value_instances_differing_by_category"] = dict(qi.most_common())
+            S["value_instances_differing_total"] = sum(qi.values())
+            S["value_instances_differing_by_function"] = dict(qifn.most_common(20))
+            S["value_instances_total"] = sum(int(v["maxcnt"]) for v in vals)
     ap = os.path.join(d, "addrsets.tsv")
     if os.path.exists(ap):
         aset = {int(a["mid"]): a for a in tsv(ap)}
@@ -189,7 +199,8 @@ def analyze(d):
                          "size": meta["size"], "maxcnt": int(m["maxcnt"]),
                          "distinct_dst": int(a["distinct_addr"]), "distinct_src": int(a["distinct_src"]),
                          "memx_max_bytes": int(a["memx_max_bytes"]),
-                         "val_differs": m["val_differs"] == "1"})
+                         "val_differs": m["val_differs"] == "1",
+                         "diff_inst": int(m.get("addr_diff_inst_max", m["maxcnt"]))})
         rows.sort(key=lambda r: -r["maxcnt"] * max(r["distinct_dst"], r["distinct_src"]))
         S["superposed_address_sites"] = rows
     return S

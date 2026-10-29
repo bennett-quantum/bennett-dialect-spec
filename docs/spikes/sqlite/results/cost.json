@@ -29,18 +29,18 @@
   "structured": {
    "qrom_pages": 8177,
    "qubits": {
-    "garbage, no pebbling (varying values x 64)": 2285056,
+    "garbage, no pebbling (differing value instances x 64)": 272192,
     "superposed memory (union of written bytes x 8)": 465144
    },
-   "qubits_total": 2750200,
-   "toffoli_memory": 93676826,
-   "toffoli_per_oracle": 201619700,
+   "qubits_total": 737336,
+   "toffoli_memory": 18412312,
+   "toffoli_per_oracle": 39780848,
    "toffoli_predication": 928512,
-   "toffoli_values": 6204512
+   "toffoli_values": 549600
   },
-  "structured_time_units_sequential_M=1": 27557380596000,
-  "structured_toffoli_total_M=1": 162102238800,
-  "structured_toffoli_total_M=11698": 1411337900
+  "structured_time_units_sequential_M=1": 5437246304640,
+  "structured_toffoli_total_M=1": 31983801792,
+  "structured_toffoli_total_M=11698": 278465936
  },
  "assumptions": {
   "B_MARGIN": 1.1,

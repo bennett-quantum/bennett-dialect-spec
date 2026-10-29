@@ -71,6 +71,9 @@ int main(int argc, char **argv) {
   uint64_t cap = N / stride + 8, n = 0;
   uint64_t *rows = calloc(cap, sizeof *rows);
   for (uint64_t r = 0; r <= N + 1; r += (r == 0 || r >= N) ? 1 : stride) rows[n++] = r;
+  {  /* reference run (the first child) = a middle rowid, not the absent row 0 */
+    uint64_t t = rows[0]; rows[0] = rows[n / 2]; rows[n / 2] = t;
+  }
   size_t used_before = shim_arena_used();
   prof_init((uintptr_t)g_db_image, (uintptr_t)g_db_image_len, shim_arena_base());
   int bad = prof_run_all(f, rows, n, ref);
