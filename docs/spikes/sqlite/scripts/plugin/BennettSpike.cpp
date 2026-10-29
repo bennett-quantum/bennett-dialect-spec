@@ -136,15 +136,37 @@ struct InventoryPass : PassInfoMixin<InventoryPass> {
 
       std::map<std::string, int64_t> ops, calls, intr, fp, icalls, globals, loadw, storew, vec;
       int64_t nbb = 0, ninst = 0, mprime = F.arg_size(), allocaBytes = 0, dynAlloca = 0;
+      int64_t valueBits = 0, maxValueBits = 0, maxPhis = 0, maxPhiBits = 0, maxCallArgs = 0, maxCallArgBits = 0;
+      auto bitsOf = [&](Type *T) -> int64_t {
+        if (T->isPointerTy()) return DL.getPointerSizeInBits();
+        if (T->isVoidTy() || T->isLabelTy() || T->isMetadataTy() || T->isTokenTy()) return 0;
+        return (int64_t)DL.getTypeSizeInBits(T).getFixedValue();
+      };
+      for (Argument &A : F.args()) { valueBits += bitsOf(A.getType()); }
       int64_t vaStart = 0, vaArg = 0, asmCalls = 0, maxSwitch = 0, switches = 0, nAtomic = 0,
               nVolatile = 0, nVarargCalls = 0, nIndirectBr = 0, nUnreachable = 0, nInvoke = 0;
       json::Array vecEx, asmEx;
       for (BasicBlock &BB : F) {
         nbb++;
+        int64_t phis = 0, phiBits = 0;
+        for (PHINode &P : BB.phis()) { phis++; phiBits += bitsOf(P.getType()); }
+        maxPhis = std::max(maxPhis, phis);
+        maxPhiBits = std::max(maxPhiBits, phiBits);
         for (Instruction &I : BB) {
           if (isa<DbgInfoIntrinsic>(I)) continue;
           ninst++;
-          if (!I.getType()->isVoidTy()) mprime++;
+          if (!I.getType()->isVoidTy()) {
+            mprime++;
+            int64_t b = bitsOf(I.getType());
+            valueBits += b;
+            maxValueBits = std::max(maxValueBits, b);
+          }
+          if (auto *CB = dyn_cast<CallBase>(&I); CB && !isa<IntrinsicInst>(I)) {
+            int64_t ab = 0;
+            for (auto &A : CB->args()) ab += bitsOf(A->getType());
+            maxCallArgs = std::max<int64_t>(maxCallArgs, CB->arg_size());
+            maxCallArgBits = std::max(maxCallArgBits, ab);
+          }
           ops[I.getOpcodeName()]++;
           std::string k = fpKey(I);
           if (!k.empty()) fp[k]++;
@@ -217,6 +239,12 @@ struct InventoryPass : PassInfoMixin<InventoryPass> {
       O["nbb"] = nbb;
       O["ninst"] = ninst;
       O["mprime"] = mprime;
+      O["value_bits"] = valueBits;
+      O["max_value_bits"] = maxValueBits;
+      O["max_phis_block"] = maxPhis;
+      O["max_phi_bits_block"] = maxPhiBits;
+      O["max_call_args"] = maxCallArgs;
+      O["max_call_arg_bits"] = maxCallArgBits;
       O["ops"] = toObj(ops);
       O["calls"] = toObj(calls);
       O["icalls"] = toObj(icalls);
@@ -272,6 +300,10 @@ struct ProfPass : PassInfoMixin<ProfPass> {
     FunctionCallee FSt = M.getOrInsertFunction("__prof_st", VoidT, Ptr, I32, I32, I64);
     FunctionCallee FMemx = M.getOrInsertFunction("__prof_memx", VoidT, Ptr, Ptr, I64, I32, I32);
     FunctionCallee FDynA = M.getOrInsertFunction("__prof_alloca", VoidT, I64);
+    FunctionCallee FVal = M.getOrInsertFunction("__prof_val", VoidT, I32, I64);
+    uint32_t valId = 0;
+    std::string valTab = "#val\tvid\tbid\tcat\n";
+    raw_string_ostream VT(valTab);
 
     std::vector<Function *> Fns;
     for (Function &F : M)
@@ -333,6 +365,19 @@ struct ProfPass : PassInfoMixin<ProfPass> {
                  op == Instruction::URem || op == Instruction::SRem) ? C_MULDIV : C_ARITH;
           }
           if (c != C_SWITCH_CASES) cnt[c]++;
+
+          // value tracking: integer/pointer results up to 64 bits
+          Type *RT = I->getType();
+          if ((RT->isIntegerTy() && RT->getIntegerBitWidth() <= 64) || RT->isPointerTy()) {
+            if (!I->isTerminator()) {
+              Instruction *At = isa<PHINode>(I) ? &*BB->getFirstInsertionPt() : I->getNextNode();
+              IRBuilder<> BV(At);
+              Value *Bits = RT->isPointerTy() ? BV.CreatePtrToInt(I, I64) : BV.CreateZExt(I, I64);
+              BV.CreateCall(FVal, {BV.getInt32(valId), Bits});
+              VT << "V\t" << valId << "\t" << bid << "\t" << CatName[c] << "\n";
+              valId++;
+            }
+          }
 
           // instrumentation of memory operations
           IRBuilder<> B(I);
@@ -399,7 +444,7 @@ struct ProfPass : PassInfoMixin<ProfPass> {
       fnMprime.push_back(ConstantInt::get(I32, mprime));
       fnAlloca.push_back(ConstantInt::get(I32, allocaBytes));
     }
-    OS << BT.str() << MT.str();
+    OS << BT.str() << MT.str() << VT.str();
 
     auto emitArr = [&](const char *name, std::vector<Constant *> &v) {
       if (v.empty()) v.push_back(ConstantInt::get(I32, 0));
@@ -415,6 +460,7 @@ struct ProfPass : PassInfoMixin<ProfPass> {
     emitScalar("__prof_nblocks", bbId);
     emitScalar("__prof_nmem", memId);
     emitScalar("__prof_nfuncs", fnId);
+    emitScalar("__prof_nvals", valId);
     return PreservedAnalyses::none();
   }
 };

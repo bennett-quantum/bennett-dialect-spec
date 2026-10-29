@@ -142,6 +142,11 @@ def summarize(funcs, globs, root):
     for n in defined:
         f = funcs[n]
         tot["blocks"] += f["nbb"]; tot["insts"] += f["ninst"]; tot["mprime"] += f["mprime"]
+        tot["value_bits"] += f["value_bits"]
+        for k in ("max_value_bits", "max_phis_block", "max_phi_bits_block", "max_call_args",
+                  "max_call_arg_bits"):
+            if f[k] > tot[k]:
+                tot[k] = f[k]; tot[k + "_in"] = n
         tot["alloca_static_bytes"] += f["alloca_static_bytes"]
         tot["alloca_dynamic"] += f["alloca_dynamic"]
         tot["va_start"] += f["va_start"]; tot["va_arg"] += f["va_arg"]
@@ -173,7 +178,7 @@ def summarize(funcs, globs, root):
         big.append((f["ninst"], f["nbb"], f["max_switch_cases"], n))
         for g, k in f["globals"].items():
             gref[g] += k
-    S["totals"] = dict(tot)
+    S["totals"] = {k: v for k, v in tot.items()}
     S["ops"] = dict(ops.most_common())
     S["load_bytes"] = dict(sorted(loadb.items(), key=lambda kv: int(kv[0])))
     S["store_bytes"] = dict(sorted(storeb.items(), key=lambda kv: int(kv[0])))

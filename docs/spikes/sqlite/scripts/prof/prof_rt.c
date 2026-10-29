@@ -20,7 +20,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-extern const uint32_t __prof_nblocks, __prof_nmem, __prof_nfuncs;
+extern const uint32_t __prof_nblocks, __prof_nmem, __prof_nfuncs, __prof_nvals;
 extern const uint32_t __prof_bb_ninst[], __prof_fn_mprime[], __prof_fn_alloca[];
 extern uint64_t shim_alloc_count, shim_free_count, shim_alloc_bytes, shim_live_bytes, shim_peak_live;
 
@@ -55,6 +55,9 @@ static page_t *pt_get(page_t *t, uint64_t pg, int create) {
 static uint32_t *bbcnt;
 static uint64_t *m_ah, *m_vh;
 static uint32_t *m_cnt;
+static uint64_t *memx_max;
+static uint64_t *v_h;
+static uint32_t *v_cnt;
 static uint32_t *trace;
 #define TRACE_CAP (1ull << 27)
 static uint64_t trace_len, trace_hash;
@@ -86,7 +89,29 @@ static uint64_t *s_ah, *s_vh;
 static uint32_t *s_mcnt_max;
 static uint8_t *s_adiff, *s_vdiff, *s_cdiff;
 static uint32_t *s_ref_trace;
-static page_t *s_union, *s_inter;   /* r = any-touch bits, w = write bits */
+static uint64_t *s_vh;
+static uint32_t *s_vcnt_max;
+static uint8_t *s_vdiff_v, *s_vdiff_c;
+static page_t *s_union, *s_inter;
+/* distinct (memory site, address) pairs over all rowids */
+#define AS_SLOTS (1ull << 25)
+typedef struct { uint64_t addr; uint32_t mid1; uint32_t pad; } as_t;
+static as_t *s_aset;
+static uint64_t *s_aset_n;
+static inline void aset_add(uint32_t mid, uint64_t addr) {
+  uint64_t k = addr * 0x9E3779B97F4A7C15ULL ^ ((uint64_t)mid * 0xC2B2AE3D27D4EB4FULL);
+  uint64_t h = (k >> 20) & (AS_SLOTS - 1);
+  for (;;) {
+    as_t *e = &s_aset[h];
+    if (e->mid1 == mid + 1 && e->addr == addr) return;
+    if (e->mid1 == 0) {
+      e->mid1 = mid + 1; e->addr = addr;
+      if (++*s_aset_n > AS_SLOTS / 2) { fprintf(stderr, "address set too full\n"); _exit(3); }
+      return;
+    }
+    h = (h + 1) & (AS_SLOTS - 1);
+  }
+}   /* r = any-touch bits, w = write bits */
 static int s_inter_init;
 
 static void *shm(size_t n) {
@@ -110,7 +135,12 @@ void prof_init(uintptr_t image_lo, uintptr_t image_len, uintptr_t heap_lo) {
   s_ah = shm(8ull * nm); s_vh = shm(8ull * nm); s_mcnt_max = shm(4ull * nm);
   s_adiff = shm(nm); s_vdiff = shm(nm); s_cdiff = shm(nm);
   s_ref_trace = shm(4ull * TRACE_CAP);
+  uint32_t nv = __prof_nvals;
+  s_vh = shm(8ull * nv); s_vcnt_max = shm(4ull * nv); s_vdiff_v = shm(nv); s_vdiff_c = shm(nv);
+  v_h = priv(8ull * nv); v_cnt = priv(4ull * nv);
+  memx_max = shm(8ull * nm);
   s_union = alloc_pt(1); s_inter = alloc_pt(1);
+  s_aset = shm(sizeof(as_t) * AS_SLOTS); s_aset_n = shm(8);
   bbcnt = priv(4ull * nb); m_ah = priv(8ull * nm); m_vh = priv(8ull * nm); m_cnt = priv(4ull * nm);
   trace = priv(4ull * TRACE_CAP);
   touched = alloc_pt(0);
@@ -163,6 +193,7 @@ void __prof_ld(void *p, uint32_t sz, uint32_t mid) {
   if (!active) return;
   n_ld++; b_ld += sz; m_cnt[mid]++;
   m_ah[mid] = mix(m_ah[mid], (uintptr_t)p);
+  aset_add(mid, (uintptr_t)p);
   mark((uintptr_t)p, sz, 0);
 }
 void __prof_st(void *p, uint32_t sz, uint32_t mid, uint64_t v) {
@@ -170,6 +201,7 @@ void __prof_st(void *p, uint32_t sz, uint32_t mid, uint64_t v) {
   n_st++; b_st += sz; m_cnt[mid]++;
   m_ah[mid] = mix(m_ah[mid], (uintptr_t)p);
   m_vh[mid] = mix(m_vh[mid], mix((uintptr_t)p, v));
+  aset_add(mid, (uintptr_t)p);
   mark((uintptr_t)p, sz, 1);
 }
 void __prof_memx(void *d, void *s, uint64_t n, uint32_t kind, uint32_t mid) {
@@ -178,9 +210,17 @@ void __prof_memx(void *d, void *s, uint64_t n, uint32_t kind, uint32_t mid) {
   memx_rows += 3 + 3 * ((n + 7) / 8);   /* lifted word loop: load, store, step per 8 bytes */
   m_ah[mid] = mix(mix(m_ah[mid], (uintptr_t)d), mix((uintptr_t)s, n));
   m_vh[mid] = mix(m_vh[mid], n);
+  aset_add(mid, (uintptr_t)d);
+  if (s) aset_add(mid, (uintptr_t)s | (1ull << 62));   /* source addresses tagged */
+  if (n > memx_max[mid]) memx_max[mid] = n;
   if (s) mark((uintptr_t)s, n, 0);
   mark((uintptr_t)d, n, 1);
   (void)kind;
+}
+void __prof_val(uint32_t vid, uint64_t bits) {
+  if (!active) return;
+  v_cnt[vid]++;
+  v_h[vid] = mix(v_h[vid], bits);
 }
 void __prof_alloca(uint64_t n) { if (active) dyn_alloca_bytes += n; }
 
@@ -237,6 +277,12 @@ void prof_child_end(uint8_t result) {
     }
     if (n > 0 && m_cnt[i] != s_mcnt_max[i] && (m_cnt[i] || s_mcnt_max[i])) s_cdiff[i] = 1;
     if (m_cnt[i] > s_mcnt_max[i]) s_mcnt_max[i] = m_cnt[i];
+  }
+  for (uint32_t i = 0; i < __prof_nvals; i++) {
+    if (n == 0) s_vh[i] = v_h[i];
+    else if (s_vh[i] != v_h[i]) s_vdiff_v[i] = 1;
+    if (n > 0 && v_cnt[i] != s_vcnt_max[i] && (v_cnt[i] || s_vcnt_max[i])) s_vdiff_c[i] = 1;
+    if (v_cnt[i] > s_vcnt_max[i]) s_vcnt_max[i] = v_cnt[i];
   }
   if (n == 0) {
     memcpy(s_ref_trace, trace, 4 * trace_len);
@@ -331,6 +377,27 @@ void prof_report(const char *dir) {
   for (uint32_t i = 0; i < __prof_nmem; i++)
     if (s_mcnt_max[i]) fprintf(f, "%u\t%u\t%u\t%u\t%u\n", i, s_mcnt_max[i], s_adiff[i], s_vdiff[i], s_cdiff[i]);
   fclose(f);
+  snprintf(path, sizeof path, "%s/val.tsv", dir);
+  f = fopen(path, "w");
+  fprintf(f, "vid\tmaxcnt\tval_differs\tcnt_differs\n");
+  for (uint32_t i = 0; i < __prof_nvals; i++)
+    if (s_vcnt_max[i]) fprintf(f, "%u\t%u\t%u\t%u\n", i, s_vcnt_max[i], s_vdiff_v[i], s_vdiff_c[i]);
+  fclose(f);
+  {  /* distinct addresses per memory site (dst and src counted separately) */
+    uint32_t nm = __prof_nmem;
+    uint64_t *dd = calloc(nm, 8), *ds = calloc(nm, 8);
+    for (uint64_t i = 0; i < AS_SLOTS; i++) {
+      as_t *e = &s_aset[i];
+      if (!e->mid1) continue;
+      if (e->addr >> 62) ds[e->mid1 - 1]++; else dd[e->mid1 - 1]++;
+    }
+    snprintf(path, sizeof path, "%s/addrsets.tsv", dir);
+    f = fopen(path, "w");
+    fprintf(f, "mid\tdistinct_addr\tdistinct_src\tmemx_max_bytes\n");
+    for (uint32_t i = 0; i < nm; i++)
+      if (dd[i]) fprintf(f, "%u\t%lu\t%lu\t%lu\n", i, dd[i], ds[i], memx_max[i]);
+    fclose(f);
+  }
   uint64_t U[4][2] = {{0}}, I[4][2] = {{0}};
   count_pt(s_union, U);
   count_pt(s_inter, I);
