@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "b_dialect_spec",
+  "project_id": "def0232e-9487-4b4b-b6dd-505431d2a039"
+}

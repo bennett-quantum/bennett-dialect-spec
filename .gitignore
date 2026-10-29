@@ -6,3 +6,10 @@ target/
 # Cargo.lock is kept for libraries; .beads/ is NOT ignored
 corpus/legality/results/raw/
 __pycache__/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
