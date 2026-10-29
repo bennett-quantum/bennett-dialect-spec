@@ -10,8 +10,10 @@ typedef uint8_t (*oracle_fn)(uint64_t rowid);
 extern const char *const QUERY;
 void gen_row(uint64_t rowid, row_t *r);
 int ref_match(uint64_t n, uint64_t rowid);
+void host_rows(uint64_t n);            /* row data only (no SQLite) */
 void host_setup(uint64_t n);           /* rows + database image */
 void host_setup_prepared(void);        /* V2 host connection + statement */
+uint8_t oracle_on_image(unsigned char *img, long long len, uint64_t rowid);
 uint8_t oracle(uint64_t rowid);        /* V1: the rung-4 oracle */
 uint8_t oracle_prepared(uint64_t rowid);
 uint8_t oracle_rebuild(uint64_t rowid);

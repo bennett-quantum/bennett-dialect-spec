@@ -135,11 +135,16 @@ uint64_t g_nrows;
 static sqlite3 *g_host_db;      /* host connection (V2) */
 static sqlite3_stmt *g_host_stmt;
 
-void host_setup(uint64_t n) {
-  int rc;
+/* Row data only (pure C, does not touch SQLite). */
+void host_rows(uint64_t n) {
   g_nrows = n;
   g_rows = calloc(n ? n : 1, sizeof(row_t));
   for (uint64_t i = 0; i < n; i++) gen_row(i + 1, &g_rows[i]);
+}
+
+void host_setup(uint64_t n) {
+  int rc;
+  host_rows(n);
 
   sqlite3 *db;
   rc = sqlite3_open(":memory:", &db);
@@ -179,16 +184,22 @@ static uint8_t run_query(sqlite3 *db, uint64_t rowid) {
 
 /* V1: the rung-4 oracle. Self-contained: everything SQLite allocates is
  * allocated and freed inside the call; the only classical inputs are the
- * read-only database image and its length. */
-__attribute__((noinline)) uint8_t oracle(uint64_t rowid) {
+ * read-only, position-independent database file image and its length.
+ * oracle_on_image is the region entry: `img` is bound to the oracle's `in`
+ * interface region (ISA §5.1, §7.2), `len` is a classical argument, `rowid`
+ * is the superposed input.  oracle(rowid) is the same with the host's image. */
+__attribute__((noinline)) uint8_t oracle_on_image(unsigned char *img, sqlite3_int64 len,
+                                                  uint64_t rowid) {
   sqlite3 *db;
   if (sqlite3_open(":memory:", &db) != SQLITE_OK) { sqlite3_close(db); return ORACLE_ERR; }
   uint8_t out = ORACLE_ERR;
-  if (sqlite3_deserialize(db, "main", g_db_image, g_db_image_len, g_db_image_len,
-                          SQLITE_DESERIALIZE_READONLY) == SQLITE_OK)
+  if (sqlite3_deserialize(db, "main", img, len, len, SQLITE_DESERIALIZE_READONLY) == SQLITE_OK)
     out = run_query(db, rowid);
   if (sqlite3_close(db) != SQLITE_OK) out = ORACLE_ERR;
   return out;
+}
+__attribute__((noinline)) uint8_t oracle(uint64_t rowid) {
+  return oracle_on_image(g_db_image, g_db_image_len, rowid);
 }
 
 /* V2: statement prepared before entry; the oracle binds, steps and resets. */
