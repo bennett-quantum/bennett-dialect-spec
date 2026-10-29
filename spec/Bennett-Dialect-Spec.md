@@ -3336,10 +3336,13 @@ efficiency item). Every service is declared in `devices.services` (ISA §9.1, §
 
 ### 11.5 Fault codes reported from CC
 
-ISA 0.8 does not say which code a CC trap reports (ISA-7, §25.2). `__bennett_nz_fault(C)` in CC
-therefore lowers to `hostcall bennett.fault` with the 8-byte payload C, then `trap`: the driver's
-host stub records C as the run's fault code. In R it lowers to `trap`; the R fault record's code
-is the ISA's until ISA-7 is settled (§25.2).
+ISA 0.8 does not specify which code a CC trap reports. `__bennett_nz_fault(C)` in
+CC lowers to `hostcall bennett.fault` with a payload holding C, then `trap`; the service
+records C in the run's fault statistics. A host call is forbidden in R and a generic R trap
+cannot preserve arbitrary C. Typed R faults therefore have dependency blocker BLK-5 =
+ISA-7 (§25.1), verdict blocked:BD-B-ISA7 at affected points. Required operation: R fault C
+terminates with fault record code C, performs no subsequent source effect and preserves
+reversible prefix history. No ISA 0.8 generic-trap path is claimed to implement this contract.
 
 ### 11.6 Examples
 
@@ -3453,7 +3456,7 @@ rules are replaced (outline §12.2); they are kept as anchors.
 | N31 | **inline asm and target intrinsics** | the §15 tables |
 | N32 | **floating point** | the soft-float rewrite of §13.1–§13.2 (after N21) |
 | N33 | **extended FP formats and libm intrinsics** | §13.3–§13.5 |
-| N34 | **R-tier budget instrumentation points** | a call of `__bennett_rt_rstep()` is *not* inserted; N34 marks the R variants' function entries and loop latches with the metadata `!bennett.rstep` (kept by N3) for the R lowering's counters (§17.6) |
+| N34 | **R-tier budget instrumentation points** | a call of `__bennett_rt_rstep()` is *not* inserted; N34 marks each counted R instruction with metadata `!bennett.rstep` (kept by N3); lowering checks/charges before that instruction (§17.6). Batching must preserve the same first fault and effect prefix |
 | N35 | **platform hooks** | §20.3 (MMIO routing), §20.4 (interrupt poll points), only under a platform profile |
 
 The other generic intrinsics are rows of §12.8 (integer), §13 (floating point), §14 (control
@@ -6433,19 +6436,47 @@ instruction is one frame of the R history (ISA §7.4).
 
 In an oracle region a fault is the F_B outcome (ISA §5.2). In an action region it is TDL-8's. In
 other device code the run ends `FAILED` with that fault record (ISA §10); CC reports the code by
-§11.5; for R code the record is an R fault record (ISA §7.4; ISA-7, ISA-8 in §25.2).
+§11.5; for R code the required typed record depends on BLK-5/ISA-7 (§25.1);
+ISA-8 (§25.2) separately governs status delivery and reverse eligibility.
 
 ### 17.6 The R tier
 
-- The R lowering inserts a **step counter**: one step per executed materialised LLVM instruction
-  other than `phi`, debug intrinsics and the N34 marks, counted at the marks of N34 (function
-  entries and loop latches) by the number of instructions of the blocks executed since the
-  previous mark. Heap bytes are counted by the allocator, depth at function entry. These define
-  the R budget unit on the materialised module, independent of the plugin (outline B5).
-- Exhaustion of the R budget (§9.3) is `__bennett_nz_fault(1)`, `(2)` or `(3)`, lowered to `trap`
-  (§11.5), and the run ends `FAILED`.
+- The R lowering inserts a **step counter**. Before each counted materialised LLVM
+  instruction, check that one step remains, then consume it before execution; otherwise
+  raise code 1 before executing the instruction. Count every instruction except phi,
+  debug intrinsics and N34 marks, including straight-line suffixes and returns. Batching
+  is permitted only if it has the identical first-fault boundary and effect-tape prefix
+  as these per-instruction checks. Heap/depth checks likewise precede mutation.
+- Exhaustion is `__bennett_nz_fault(1)`, `(2)` or `(3)`, with the typed-fault contract of
+  §17.5. On ISA 0.8 R sites needing this code preservation are blocked:BD-B-ISA7 (§25.1),
+  not claimed implemented by a generic trap. Affected fault points stop before later effects.
 - R faults end the run (ISA §4.1); §25.2 records ISA-8 (fault status to the CC caller,
   reverse-eligibility of faulted runs).
+
+```text state=r-budget-prefix at=0
+source R body: console.write("x"); return; steps=0
+fault code=1 before first counted instruction; console=empty; tape prefix=empty
+```
+
+```llvm example=r-fault-code verdict=blocked:BD-B-ISA7
+define internal void @fail(ptr %e) {
+  call void @__bennett_nz_fault(i64 2)
+  unreachable
+}
+define void @top() {
+  call void @__bennett_reversible(ptr @fail, ptr null, ptr null)
+  ret void
+}
+```
+
+```text blocker=r-fault-code
+BD-B-ISA7 @fail call @__bennett_nz_fault(2): ISA 0.8 generic R trap cannot preserve C; BLK-5 (ISA-7) R fault C terminates with record code C, no later effects, reversible prefix history retained
+```
+
+```text state=r-fault-code at=1
+required code=2; no subsequent source effect; prefix history intact
+ISA 0.8 status=blocked:BD-B-ISA7; generic trap code is not claimed equivalent
+```
 
 ### 17.7 The native comparison build
 
@@ -7462,11 +7493,32 @@ kernel's handler; a trap return restores them and resumes the user fiber.
 
 ### 20.6 User processes
 
+N35 translates **all guest memory accesses** in translation-enabled effective privilege
+contexts through the modelled satp and Sv39 page tables/permissions, including supervisor
+kernel accesses and user accesses (and effective privilege selected by MPRV for data).
+Bare/physical accesses use physical addresses. Runtime model helpers and page-table walks
+access physical backing storage directly, and are excluded from reinstrumentation.
+LLVM guest pointers remain virtual values through GEP, ptrtoint and comparisons; translate
+only on memory access. The layout records virtual data/code addresses and their physical
+backing. A physical RAM address and every permitted virtual alias name the same backing
+byte. Indirect dispatch and trap resumption preserve this mapping: A(F), stvec and sepc
+retain guest virtual code addresses, resolved through the code-address map after Sv39
+validation. Translation failures deliver the modelled guest page/access trap before memory
+mutation; they are not accidental accesses to an unallocated high host/device address.
+Runtime helpers avoid a second translation. These rules apply equally to CC/R and L variants.
+
 User programs are built to bitcode and linked into the device program under the comparison layout
 (§19.5); their ELF images on the disk image are the same link, so entry and function addresses
 are A(F). `exec` and `sret` to user mode dispatch the user entry by A(F); user loads and stores go
 through a **soft-MMU**: N35 instruments the functions of the user compartment with an Sv39 walk
 over the modelled `satp`, page faults delivered through §20.4.
+
+```text state=sv39-kernel-alias at=2
+RAM physical P=0x80000000 holds 0x12
+supervisor satp=Sv39; valid writable kernel V=0xffffffe000000000 maps to P
+store 0x34 through V; load P -> 0x34; load V -> 0x34; no code 7
+reverse store -> both P and V read 0x12; page-table state restored
+```
 
 ### 20.7 Platform spike (mechanics)
 
@@ -7591,7 +7643,7 @@ rejection without one may not exist (standing rule).
 
 ### 22.2 Blocker reports
 
-`BD-B-ISA4` (BLK-1), `BD-B-ISA1` (BLK-2), `BD-B-ISA12` (BLK-4), in the
+`BD-B-ISA4` (BLK-1), `BD-B-ISA1` (BLK-2), `BD-B-ISA12` (BLK-4), `BD-B-ISA7` (BLK-5), in the
 format of §25.1. A blocker report is not a rejection (§1.6).
 
 ### 22.3 Run-time traps
@@ -7651,13 +7703,16 @@ reject, refuse, fault or no effect for something the north star promises.
 ### 25.1 Blockers
 
 A **blocker** is a capability the dialect fully specifies whose stated case has no realisation on
-ISA 0.8. No rung of NS §8 depends on any of them (outline part C). The maintainer ruled
+ISA 0.8. BLK-3 has been retired by §8.7. Unlike the original outline list,
+BLK-5 can affect typed fault points in R-tier rungs; successful executions remain covered.
+The maintainer ruled
 (2026-10-29) that ISA 0.9 waits until this dialect is council-accepted.
 
 | Id | Code | NS capability | Affected case | ISA 0.8 realisation that exists | Exact ISA change |
 |---|---|---|---|---|---|
 | **BLK-1** = ISA-4 | `BD-B-ISA4` | NS §3.1 handle tables; §4.1, §4.2 dynamic allocation ("real allocation"); Bennett.jl vectors of qubits; adjoints of generations whose register set is known only at run time | allocation sites whose handles reach memory with no finite instance bound (§6.5); register widths with value set ⊤ (§3.4); a Co width with an unbounded value set (TDL-10) | direct `qreg` values for handles that stay out of memory; static register files with dispatch for bounded sites (§6.5) | (i) a dynamic-width type `qreg[*]`; `q = qreg.new cls n` with n an `i64` value yields `qreg[*]`; `w = qreg.width q`. (ii) Binding a `qreg[*]` to a `wire[n]` or `region[A,W]` slot checks the width at the call: CC trap, R fault `FAULT_UB_TRAP`, on a mismatch. (iii) `id = qreg.id q` (non-consuming; the §10 launch id) and `q = qreg.from_id id` (yields `qreg[*]`; a trap if the id is not live, is viewed or is consumed). History frames: `qreg.id` is pure; `qreg.from_id` records the handle reference |
 | **BLK-2** = ISA-1 | `BD-B-ISA1` | NS §4.2 "run-time budgets come from the host or from measurement results" | budget fields computed on the device (§9.5 case 3) | pre-minted finite sets; stub-minted copies of launch arguments (§9.5) | a CC instruction `tk = budget.mint @region s h st d` (`i64` operands) with the ISA §5.4 validation of `bennett_budget` as a CC trap; the token is scoped to the run; an impure history frame recording the token |
+| **BLK-5** = ISA-7 | `BD-B-ISA7` | NS §4.2 named fault outcomes and R reversible prefixes | typed R faults, including budget codes 1/2/3 and explicit __bennett_nz_fault(C) | CC hostcall reports C; generic R trap stops execution but does not satisfy typed reporting | R `fault C`: terminate with fault record code C, no later source effect, retain reversible prefix history; specify the implicit trap-cause-to-code table (div0 5, overflow 6, memory 7, trap 4, allocation failure 2) |
 | **BLK-4** = new ISA-12 (audit B-38) | `BD-B-ISA12` | NS §4.2 quantum allocation inside reversible-tier code | `qalloc`/`qborrow`/`qfree` in an R closure with no finite instance bound (§7.5b); entry-state transfer from R code (§8.5) | hoisting to the CC caller with a static count (§7.5b) | permit `qreg.new`, `qreg.free`, `qreg.slice` and `qreg.concat` in R; the R history records them; the reversal of `qreg.new` is `qreg.free` with the cleanliness obligation (simulator check; hardware per ISA §17 item 14); the reversal of `qreg.free` is `qreg.new` (clean); `measure` stays CC-only |
 
 **Blocker report** (one line per blocker point, in processing order, in the outputs, §19.9):
@@ -7673,9 +7728,7 @@ outside them, `hostcall bennett.fault` with code 4 and the blocker's code as pay
 
 No capability is lost; two implementations could differ until each is fixed in ISA 0.9:
 
-- **ISA-7**: a table from CC/R trap cause to ISA §5.4 code (division by zero 5, MIN/−1 6, memory 7,
-  `trap` 4, allocation failure 2) and a CC/R `fault C` instruction. The dialect uses `hostcall
-  bennett.fault` in CC meanwhile (§11.5).
+- **ISA-7** is a capability dependency blocker, BLK-5 (§25.1), not a wording-only item.
 - **ISA-8**: an R call returns a fault status to its CC caller; runs ending in an R fault are
   reverse-eligible.
 - **ISA-3 editorial**: the JCS spelling of `args` types: the ISA §16.2 type spelling as JSON strings

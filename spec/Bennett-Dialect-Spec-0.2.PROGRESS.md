@@ -202,3 +202,6 @@ Version 0.2.1 per spec/README.md; ISA 0.8 unchanged. No push.
 | B4 | resolved | this interface group commit (see git log) |
 | D02-18 | resolved | this interface group commit (see git log) |
 | D02-19 | resolved | this interface group commit (see git log) |
+| D02-20 | resolved | this R/platform group commit (see git log) |
+| D02-21 | resolved | this R/platform group commit (see git log) |
+| D02-22 | resolved | this R/platform group commit (see git log) |

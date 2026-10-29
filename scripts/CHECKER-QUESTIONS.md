@@ -60,3 +60,11 @@ Implement common all-projection wide delivery, chunked snapshot release, stack b
 replay/adoption, sampled universal budget obligation, and parameterised in-place CC
 expansion (inplace-param-quantum now accepts; BLK-3 retired). Candidate-pair witness
 accepts with two trap bodies. Never alter spec vectors to fit old checker behavior.
+
+## Q7 — Round-1 R budget/fault and platform (editor)
+
+N34/§17.6 charge before each counted instruction. New BLK-5=ISA-7 requires
+blocked:BD-B-ISA7 at typed R fault sites, including r-fault-code. Do not substitute
+generic trap code. §20.6 translates kernel and user Sv39 accesses; add the alias
+and reverse-state vector. r-budget-prefix, r-fault-code and sv39-kernel-alias
+state witnesses require executor adapters; no source effects after first fault.
