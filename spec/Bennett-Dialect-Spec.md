@@ -1,6 +1,6 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.1
+# Bennett LLVM Dialect — Specification, draft 0.2.2
 
-**Date:** 2026-10-29. **Status:** draft 0.2.1 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
+**Date:** 2026-10-29. **Status:** draft 0.2.2 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
 2026-10-29 at its end) revised after council round 1 on 0.2; awaiting round 2. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
@@ -11,9 +11,9 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.1: markers 0.2, handles 0.2, regions 0.2.1, oracle-abi 0.2.1, tdl 0.2.1,
-effects 0.2.1, norm 0.2.1, map 0.2.1, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2.1`) is the compatibility unit (§23): drafts are not compatible
+**Versioning.** Dialect 0.2.2: markers 0.2, handles 0.2, regions 0.2.1, oracle-abi 0.2.1, tdl 0.2.1,
+effects 0.2.1, norm 0.2.2, map 0.2.1, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+The **full version string** (`0.2.2`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -1715,7 +1715,7 @@ Only the rules the north star requires:
   removal requires the complete instrument (outcomes and correlations included) to be
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). The coverage report has a
-  `lowered` entry with source `dialect-0.2.1:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.2:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -2846,7 +2846,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.1.
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.2.
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -3410,7 +3410,7 @@ hostcall: service=bennett.dev.console.write payload=6f6b0a reply=empty
 
 The ENTROPY-bound oracle of rung 8 is §16.8.
 
-## 12. Materialised normalisation (norm 0.2.1)
+## 12. Materialised normalisation (norm 0.2.2)
 
 ### 12.1 Scope, order and naming
 
@@ -3664,7 +3664,7 @@ The validator inspects the materialised device variants and rejects (`BD-E-RESID
 | V7 | a shift whose amount is not a constant < W, unless the shift's only use is as the false operand of a `select` whose true operand is 0 and whose condition is `icmp uge` of the same amount and the constant W |
 | V8 | `extractelement`/`insertelement` with a non-constant index outside the N15 pattern (only before N21; after N21 no vector remains, V13) |
 | V9 | a floating-point instruction other than `fneg`, `bitcast`, `load`, `store`, `select` and `phi` of a floating-point value, or a call of a floating-point intrinsic other than `llvm.fabs` and `llvm.copysign` (after N32/N33; 0.1's V9 is inverted) |
-| V10 | an operand or result of type `half`, `bfloat`, `x86_fp80`, `fp128` or `ppc_fp128` other than in `bitcast`, `load`, `store`, `select` and `phi` (after N33) |
+| V10 | an operand or result of type `half`, `bfloat`, `x86_fp80`, `fp128` or `ppc_fp128` other than in the bit-exact forms retained by §13.1 (`fneg`, `llvm.fabs`, `llvm.copysign`, `bitcast`, `load`, `store`, `select`, `phi`) or value transport through function parameters, call arguments/results, `ret`, `insertvalue` and `extractvalue` (§16.2–§16.4); calls remain subject to V4, V9 and V12 (after N32/N33) |
 | V11 | an `alloca` (after N24; replaces 0.1's V11) |
 | V12 | in an L or R variant, a call of a function without a definition other than a primitive, a runtime entry point defined in the link, or a trapped call already replaced by F(8) |
 | V13 | a value of vector type |
@@ -3816,18 +3816,20 @@ define double @f(double %x) {
 }
 ```
 
-**V10.** An extended-format load and bitcast are allowed. The negative follows
-the literal V10 whitelist, which excludes half fneg. This conflicts with the
-retained-operation contract of §13.1 and the all-format map of §16.4;
-`b-dialect-spec-7u1` records the conflict. The expected rejection below exposes
-that literal rule, not a decision to remove extended-format fneg support.
-Reconciliation of the full V10 boundary remains open; neither rule is silently
-changed by this witness.
+**V10.** V10 must permit every bit-exact operation retained by §13.1 and every
+carrier transport admitted by §16, for all seven floating-point formats. For
+`half`, `fneg` maps carrier bits b to b xor 0x8000, preserving NaN payload and
+quiet/signaling bits; it is not arithmetic to rewrite or reject. The positive
+retains it between load and bitcast. The negative instead retains `fadd half`,
+which N32 must rewrite to `__bennett_sf_add_f16` on i16 carriers. The interface
+witness also retains `llvm.fabs`/`llvm.copysign` and transports a half value
+through a defined call, return and aggregate; none is a V10 residue.
 
 ```llvm example=validator-v10-clean verdict=accept mode=validate
 define i16 @f(ptr %p) {
   %v = load half, ptr %p
-  %r = bitcast half %v to i16
+  %n = fneg half %v
+  %r = bitcast half %n to i16
   ret i16 %r
 }
 ```
@@ -3835,9 +3837,26 @@ define i16 @f(ptr %p) {
 ```llvm example=validator-v10-residue verdict=reject:BD-E-RESIDUAL mode=validate
 define i16 @f(ptr %p) {
   %v = load half, ptr %p
-  %n = fneg half %v
+  %n = fadd half %v, %v
   %r = bitcast half %n to i16
   ret i16 %r
+}
+```
+
+```llvm example=validator-v10-carriers verdict=accept mode=validate
+declare half @llvm.fabs.f16(half)
+declare half @llvm.copysign.f16(half, half)
+
+define internal half @identity(half %x) {
+  ret half %x
+}
+define half @f(half %x, half %sign) {
+  %a = call half @llvm.fabs.f16(half %x)
+  %c = call half @llvm.copysign.f16(half %a, half %sign)
+  %v = call half @identity(half %c)
+  %agg = insertvalue { half, i1 } zeroinitializer, half %v, 0
+  %r = extractvalue { half, i1 } %agg, 0
+  ret half %r
 }
 ```
 
@@ -8285,14 +8304,14 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.1;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.2;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
-pipeline, normaliser_version: "0.2.1"}` and `bindings.dialect_mapping_version = "0.2.1"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.1:<rule id>` (e.g. `dialect-0.2.1:N33`); the
+pipeline, normaliser_version: "0.2.2"}` and `bindings.dialect_mapping_version = "0.2.1"`; the coverage
+report (ISA §13), whose `source` field is `dialect-0.2.2:<rule id>` (e.g. `dialect-0.2.2:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
 hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
@@ -8305,7 +8324,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.1"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.2"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`):
 
@@ -8703,14 +8722,14 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.1`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.2`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
-- Sub-artefacts retain ABI 0.2 where unchanged; `regions`, `oracle-abi`, `tdl`, `effects`,
-  `norm`, `map`, `platform` and `driver` are revised to `0.2.1`: `markers` (§3), `handles` (§6), `regions` (§7), `oracle-abi` (§8),
-  `tdl` (§10), `effects` (§11), `norm` (§12–§15; the certificate's `normaliser_version`), `map`
-  (§16; the certificate's `dialect_mapping_version`), `asm` (§15), `platform` (§20), `driver`
-  (§19), `corpus` (§21).
+- `norm` (§12–§15; the certificate's `normaliser_version`) is revised to `0.2.2` for
+  the V10 correction. Unchanged sub-artefacts keep their versions: `markers` (§3),
+  `handles` (§6), `asm` (§15) and `corpus` (§21) at `0.2`; `regions` (§7), `oracle-abi`
+  (§8), `tdl` (§10), `effects` (§11), `map` (§16; the certificate's
+  `dialect_mapping_version`), `platform` (§20) and `driver` (§19) at `0.2.1`.
 - Every semantic change bumps the version; the reference objects and hashes of §16 depend on the
   ISA version string, the map and the layout, and change with any of them (0.1's hashes changed
   with the wrapper form of §16.2).
@@ -8903,7 +8922,7 @@ compute expected artefacts only (P-3).
 | `validator-v7-clean`, `validator-v7-residue` | V7 | parse, validate | LLVM 18/20/23; independent validator |
 | `validator-v8-clean`, `validator-v8-residue` | V8 | parse, validate | LLVM 18/20/23; independent validator |
 | `validator-v9-clean`, `validator-v9-residue` | V9 | parse, validate | LLVM 18/20/23; independent validator |
-| `validator-v10-clean`, `validator-v10-residue` | V10 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v10-clean`, `validator-v10-residue`, `validator-v10-carriers` | V10 | parse, validate | LLVM 18/20/23; independent validator |
 | `validator-v11-clean`, `validator-v11-residue` | V11 | parse, validate | LLVM 18/20/23; independent validator |
 | `validator-v12-clean`, `validator-v12-residue` | V12 | parse, validate | LLVM 18/20/23; independent validator |
 | `validator-v13-clean`, `validator-v13-residue` | V13 | parse, validate | LLVM 18/20/23; independent validator |
@@ -8934,9 +8953,10 @@ compute expected artefacts only (P-3).
 a concrete witness and an index row. Index discovery alone is not P-2 execution.
 The frozen checker cannot execute five normalisation transforms, five binding/
 indirectbr maps, or seven driver/platform state scenarios; its seven driver/
-platform coverage rows are hard-coded to fail. Three validator negative cases
-also remain red: two missed rejections and the V10 normative conflict
-(`b-dialect-spec-7u1`). These remain loud failures, tracked by
+platform coverage rows are hard-coded to fail. Two validator negative cases
+remain red as missed rejections. The V10 conflict (`b-dialect-spec-7u1`) is
+resolved in §12.4: bit-exact extended-format forms accept; residual arithmetic
+rejects. The other gaps remain loud failures, tracked by
 `b-dialect-spec-1jb` and the verification table in the companion progress file.
 The R-budget state retains its BLK-5 verdict and expected ISA-0.9 result; the
 frozen state dispatcher still executes the ISA-0.8 probe instead of routing

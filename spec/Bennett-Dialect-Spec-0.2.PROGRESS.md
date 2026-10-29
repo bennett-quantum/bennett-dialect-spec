@@ -205,6 +205,7 @@ Version 0.2.1 per spec/README.md; ISA 0.8 unchanged. No push.
 | D02-20 | resolved | 40a4962 |
 | D02-21 | resolved | 40a4962 |
 | D02-22 | resolved | 40a4962 |
+| V10 / b-dialect-spec-7u1 | resolved: retain all-format bit operations and carrier transport; full dialect/norm 0.2.2 | this commit |
 
 ### Round-1 final verification (2026-10-29)
 
@@ -400,3 +401,54 @@ Tracking: notes on b-dialect-spec-1jb and b-dialect-spec-bz6; new bug
 b-dialect-spec-7u1. All remain open because the freeze gate is not green.
 Append-only checker questions Q9–Q13 (plus final Q14) record the required follow-up.
 Generated .beads/issues.jsonl stays outside the owned-path commits.
+
+## V10 post-round correction (2026-10-29, b-dialect-spec-7u1)
+
+The coverage-follow-up reports above describe the pre-correction 0.2.1 baseline.
+This correction resolves the normative conflict, not the other freeze-gate gaps.
+
+Before editing, re-derived both readings by hand and recorded them in a Beads note:
+
+- Literal V10: load half and bitcast are exceptions, but fneg half is not, so the
+  old residue witness rejects. The same reading also excludes the retained
+  fabs/copysign calls and extended-format calls, returns and aggregate transport.
+  Removing those forms would contradict §13.1's unchanged row, §13.3's all-seven-
+  format contract, §16's carrier map and NS §3.2's bit-exact promise. It narrows scope.
+- Retained-operation reading: N32/N33 remove arithmetic/comparison/conversion;
+  §13.1's bit operations and §16's transport remain. For half carrier bits b,
+  fneg is b xor 0x8000, including NaNs. Residual fadd half must still reject:
+  its materialised replacement uses __bennett_sf_add_f16 on i16 carriers.
+
+Deciding sentence: **V10 must permit every bit-exact operation retained by §13.1
+and every carrier transport admitted by §16, for all seven floating-point formats.**
+Rule 10 selects the second reading; there are not two non-narrowing alternatives.
+
+Edited only the V10 exception row, its explanation/witnesses and Appendix B,
+plus the version labels required by spec/README.md and §23. The positive now
+retains fneg half; the negative retains fadd half instead. New indexed
+validator-v10-carriers accepts fabs/copysign plus defined-call/return/aggregate
+transport. V4/V9/V12 still apply to calls. §13.1 and §16.4 are unchanged.
+Full dialect and norm advance to 0.2.2 because a normative rejection changed;
+unchanged sub-artefacts, ISA 0.8, map 0.2.1, reference objects and hashes stay put.
+
+Verification, headless, project TMPDIR, Python -B, LLVM stdin/stdout only:
+
+- Reproduced the pre-edit mismatch: old V10 residue declared reject, checker accepts.
+- All 190 tagged LLVM blocks verify on LLVM 18/20/23: 570/570.
+- All three V10 verdicts match the read-only checker: accept/reject/accept.
+- Seven-format probes cover retained bit operations, load/store/select/phi,
+  bitcast, parameters, defined calls, returns and aggregate field transport;
+  each accepts, and its fadd variant rejects. All 14 modules verify on all
+  three majors (42/42). These are supplemental probes, not new spec examples.
+- Independent LLVM instcombine folds agree with b xor 0x8000 on ten half bit
+  patterns per major (30/30), including signed zero, infinities and signaling/
+  quiet NaNs with nonzero payloads.
+- Current 0.2 cross-reference checker: 1310/1310. The legacy 0.1 helper reports
+  the same seven failures as e74d70c; it is not the current cross-reference gate.
+
+The full preflight was not run: it writes under checker-owned scripts/.tmp and
+may build scripts/.isa-ref, which are read-only for this editor. Manifest/checker
+version synchronization to 0.2.2 is tracked as b-dialect-spec-bvy for their owner;
+SPEC_VERSIONS.toml and scripts were not edited. The full freeze gate is not
+claimed green. Original finding 7u1 is resolved; no push. Beads export remains
+outside the commits; the orchestrator owns the session worklog.
