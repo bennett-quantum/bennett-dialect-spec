@@ -111,6 +111,17 @@ entry:
             value['popped']=[7,0]
             with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(value)))
 
+    def test_round3_stale_generation(self):
+        from dialect_round3 import check_state
+        import json
+        value={'physical_slots':1,'equal':False,'stale_code':4,'second_value':0,'live_after':0}
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            b={'attrs':{'state':'handle-stale-generation','at':'0'},'body':json.dumps(value)}
+            check_state(runner,b)
+            value['stale_code']=0
+            with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(value)))
+
     def test_round2_r_entry_classification(self):
         for name in ('region-reversible-marker','region-reversible-qalloc-static','effect-console-r'):
             with self.subTest(example=name):self.assertEqual(v.recognise(d.with_decls(self.block('example',name)['body']),rmode=self.block('example',name)['attrs'].get('rmode'))[0],'blocked:BD-B-ISA7')

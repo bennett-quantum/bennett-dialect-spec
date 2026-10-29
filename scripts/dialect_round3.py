@@ -6,7 +6,7 @@ from dialect_check_v02 import equal
 from dialect_state import run_native
 from dialect_tdl import Session, assert_view, add_constant, object_text
 
-STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place', 'co-observe-write-observe', 'handle-setjmp-interproc', 'shadow-stack-liveness'}
+STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place', 'co-observe-write-observe', 'handle-setjmp-interproc', 'shadow-stack-liveness', 'handle-stale-generation'}
 
 
 def stack_probe(runner, name, width):
@@ -165,4 +165,23 @@ printf("[%u,%u]\\n",0,ss_check(&replay,UINT64_MAX,2));return 0;}'''
             for x in args:argv+=['--arg',str(x)]
             got=runner.isa.call('run-oracle',paths[args[1]],'ref','--input','',*argv,'--mem','physical=07'+'00'*15,'--budget','1000,0,256,8')
             equal(name,key+' payload/code',v[key],[int(got['payload']),int(got['code'])])
+    elif name == 'handle-stale-generation':
+        from dialect_check_v02 import recognise
+        ir=runner.block('example',name)['body']
+        verdict,analysis=recognise(d.with_decls(ir))
+        equal(name,'source remains accepted','accept',verdict)
+        equal(name,'reference physical bound',[v['physical_slots']],list(analysis.instance_bounds.values()))
+        src='''#include <setjmp.h>
+#include <stdlib.h>
+static jmp_buf fault;static uintptr_t next,current;static unsigned live,value,code;
+void *__bennett_qalloc(uint64_t cls,uint64_t width){(void)cls;if(live||width!=1)abort();
+current=++next;live=1;value=0;return (void*)current;}
+void __bennett_qfree(void*h){if(!live||(uintptr_t)h!=current)abort();if(value)abort();live=0;}
+void __bennett_gate(uint32_t op,void*h,uint64_t bit){if(!live||(uintptr_t)h!=current){code=4;longjmp(fault,1);}
+if(op!=1||bit)abort();value^=1;}
+extern void stale_generation(void);extern unsigned generation_equal;
+int main(void){if(!setjmp(fault))stale_generation();unsigned second=value;
+if(live)__bennett_qfree((void*)current);
+printf("[%u,%u,%u,%u]\\n",generation_equal,code,second,live);return 0;}'''
+        run_native(runner,name,ir,src,[[int(v['equal']),v['stale_code'],v['second_value'],v['live_after']]])
     else:raise d.Fail('unimplemented round-3 state '+name)

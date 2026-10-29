@@ -1096,8 +1096,11 @@ and rejected this program).
 ### 6.1 Representation
 
 A handle is an ordinary `ptr` in address space 0. In device memory and in integers a handle is
-its **register tag**: an opaque value below 2^pw that the plugin assigns to each root (§6.5),
-nonzero and distinct from the tag of every other live handle. ISA 0.8 has no instruction that
+its **register tag**: an opaque value below 2^pw assigned to an allocation generation
+(§6.5), nonzero and distinct from every identity still observable through live or stale
+copies. Physical slots are reusable storage, never allocation identity. A tag MUST NOT
+be recycled while an observable stale copy can remain; integer wrap is not permission
+to alias generations. Copies continue to denote their original generation after free. ISA 0.8 has no instruction that
 reads a `qreg`'s launch id (BLK-1's `qreg.id` would add one), so tags are the plugin's. At the
 host–device boundary a handle is the ISA launch register id (`bennett_qreg`, ISA §10), which the
 launch binds to a `qreg` parameter or result (§6.6). Neither value may influence a result other
@@ -1134,7 +1137,8 @@ handle (a stale copy, a freed register) traps at the marker (`T-DEAD`, §18.3).
 
 `icmp eq` and `icmp ne` of a handle with `null`, or with another handle-derived value, compare
 **identity**: a live handle is never null, and two handles are equal iff they denote the same
-register. The result is not handle-derived. In CC it lowers to `icmp` on register tags. This
+allocation generation, including when comparing a freed identity with a later allocation
+in the same physical slot. The result is not handle-derived. In CC it lowers to `icmp` on register tags. This
 covers C `if (!q)` and Rust's `Option<Handle>` niche (audit D8). *(non-normative)* A comparison
 is a classical observation of identity, not of the register's content; ids are unique, so it
 equals the native comparison of the two handle values.
@@ -1167,13 +1171,19 @@ realises each allocation site s (a `qalloc` or `qborrow` call) in one of two way
   environment passing"; §25.2 records that ISA §3.3's transition table should name CC `call`,
   `ret` and `br` operands of `qreg` type). Every execution of s creates a new dynamic instance,
   so loops and recursion need no bound.
-- **Static register file.** Otherwise a **root** is a pair (s, instance index k < N(s)). For
-  each root the plugin keeps one CC `qreg` variable, threaded like a direct handle through every
+- **Static register file.** Otherwise a physical **slot** is a pair (s, instance
+  index k < N(s)); ROOT(s) is static provenance, not run-time identity. For
+  each slot the plugin keeps one CC `qreg` variable, threaded like a direct handle through every
   CC variant that may use it; `qalloc` at s picks a free instance index at run time and executes
   `qreg.new cls n` into that variable (one variable per member of the width dispatch domain,
-  §3.4); the value stored in memory is the root's register tag (§6.1). A marker operand whose
-  provenance holds several roots is dispatched by comparing its tag with the tags of the live
-  candidate roots (compare tree, §14.2). A direct handle that is converted to an integer
+  §3.4). The default CC table holds each slot's current generation tag and liveness;
+  a fresh-tag allocator gives every allocation a new identity (§6.1), stored in memory.
+  A marker operand is dispatched by matching its full tag against current live candidate
+  slots (compare tree, §14.2); a missing or retired generation traps T-DEAD before
+  changing any register. Free retires the identity even if the slot is immediately reused.
+  Recycle tags only after old copies are proven unobservable, never by slot reuse alone.
+  This table and allocator use ordinary classical operations, without qreg.id.
+  N(s) bounds simultaneous physical slots, not the number of historical identities. A direct handle that is converted to an integer
   (`ptrtoint`, a store) gets a tag in the same way.
 
 **Reference instance bound** of a site s in function F with a static register file:
@@ -1256,6 +1266,46 @@ BD-B-ISA4 @G qalloc: ancestor setjmp continuation re-entry; BLK-1 (ISA-4); requi
 
 ```text state=handle-setjmp-interproc at=0
 {"verdict":"blocked:BD-B-ISA4","instances":2,"distinct":true,"live_after":0,"trap":0,"max_live":2}
+```
+
+**Reused slot, stale identity.** Both iterations allocate at the same site and
+free before re-entry/return, with ROOT memory only in nonescaping allocas: N(s)=1.
+The saved first-generation handle is unequal to the second and traps T-DEAD/code 4
+at its first gate, before changing the second register. Two X gates cannot hide
+the invalid first use. Runtime fault cleanup then releases the clean second slot.
+
+```llvm example=handle-stale-generation verdict=accept
+@generation_equal = global i32 0
+define void @stale_generation() {
+entry:
+  %saved = alloca ptr
+  %slot = alloca ptr
+  br label %loop
+loop:
+  %i = phi i32 [0, %entry], [%next, %first]
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %slot
+  %isfirst = icmp eq i32 %i, 0
+  br i1 %isfirst, label %first, label %second
+first:
+  store ptr %h, ptr %saved
+  call void @__bennett_qfree(ptr %h)
+  %next = add i32 %i, 1
+  br label %loop
+second:
+  %old = load ptr, ptr %saved
+  %eq = icmp eq ptr %old, %h
+  %e = zext i1 %eq to i32
+  store i32 %e, ptr @generation_equal
+  call void @__bennett_gate(i32 1, ptr %old, i64 0)
+  call void @__bennett_gate(i32 1, ptr %old, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=handle-stale-generation at=0
+{"physical_slots":1,"equal":false,"stale_code":4,"second_value":0,"live_after":0}
 ```
 
 A width with VS = ⊤ is BLK-1 likewise (§3.4). In R code, which cannot allocate registers on ISA
@@ -8002,8 +8052,8 @@ Adjoint of `copy F -> G` is qxor F G then qfree G, not another allocation.
 ### 18.3 Marker rules
 
 Wire `h.i` is wire i of handle h; n(h) its width. A wire is **named** by an event when it is one of
-the event's operand wires. The conditions are checked when the marker is called, against H, and H
-is updated then; Q changes only when an event is applied. A failed condition is a run-time trap:
+the event's operand wires. The conditions are checked when the marker is called, against H, including generation-specific identity and liveness (not physical-slot
+liveness alone), and H is updated then; Q changes only when an event is applied. A failed condition is a run-time trap:
 fault code 4 (§17.5) with the named diagnostic (§22.2).
 
 | Marker | Conditions (trap) | Effect |
@@ -9653,6 +9703,7 @@ with the ISA-0.9 obligation recorded and explicitly not executed on ISA 0.8.
 | `co-loop-identity`, `co-loop-adj-overwritten` | TDL-7, TDL-10, §18.2 | state | Rust run-action; native inverse-domain check |
 | `generation-cancel`, `nested-cl-view`, `fault-output-lifetime`, `co-loop-adjoint`, `deferred-channel-adj`, `co-store-release` | TDL-2, TDL-7–TDL-11, §18.2–§18.4 | state | native lifecycle; Rust run-action |
 
+| `handle-stale-generation` | §6.1–§6.5, §18.3 T-DEAD | parse, recognise, state | LLVM reference N(s); native generation-tag dispatch |
 | `handle-setjmp-interproc` (+ blocker/state) | §6.5, §7.5(b), BLK-1/4 | parse, recognise, blocker, state | LLVM; interprocedural reference bound; native setjmp |
 | `handle-setjmp-reentry` (+ blocker/state) | §6.5, BLK-1 | parse, recognise, blocker, state | LLVM; reference bound; native setjmp |
 | `region-reversible-marker`, `region-reversible-qalloc-static`, `effect-console-r`, `sjlj-two-frames`, `fiber-pingpong`, `exit-status`, `platform-uart-write` (+ blocker) | BLK-5 | recognise, blocker; existing success execution | ISA-0.8 classification, ISA-0.9 K5 dependency |

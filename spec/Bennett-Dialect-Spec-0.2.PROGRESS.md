@@ -555,3 +555,8 @@ witness uses two distinct live slots. Theme C 3303a5b / response c7523ab.
 Theme E resolved SOL-R3-02: logical stack frame checks precede physical accesses,
 charged materialised helper and replay metadata. Red-green state regression passes
 on native push/pop/restore/replay and Rust helper. Theme D 1a511c5 / dd22119.
+
+Theme F resolved SOL-R3-03: physical slots and generation identities separated;
+N(s)=1 accepted stale-generation module traps 4 before changing the replacement,
+equality false. Native original LLVM witness passes clang 18/23 and mutation test.
+Theme E 90fa101 / response 9cc0bff.
