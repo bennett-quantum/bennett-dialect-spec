@@ -136,7 +136,7 @@ Sections keep 0.1's numbering where they correspond. New material is inserted as
     - `inplace(ptr g, ptr ginv, ptr budget, ptr desc)`, with the same descriptor and the
       in-place register bound as `INOUT`.
   - **New: `void __bennett_observe(ptr p, i64 len)`.** A computational-basis measurement of the
-    bytes [p, p+len) of classical memory whose coherence state is Co (§10.6). Afterwards they
+    bytes [p, p+len) of classical memory whose coherence state is Co (TDL-11). Afterwards they
     are Cl and hold the outcome. It is the only way that superposed classical memory reaches
     classical code without a handle (NS §4.2, "outputs leave through measurement after exit").
   - **New: `void __bennett_qprep(ptr h, ptr src, i64 nbytes)`.** XOR of classical bytes into
@@ -237,7 +237,7 @@ Sections keep 0.1's numbering where they correspond. New material is inserted as
 
   A function may get several tiers.
 - **§4.3 Polyvariant cloning (closes B-16).**
-  - Each (function, tier, coherence signature §10.2) pair is a **variant**.
+  - Each (function, tier, coherence signature, TDL-2) pair is a **variant**.
   - H keeps the original. Device variants are clones.
   - Clones share all globals: data is never cloned. There is one classical memory (NS §3.2).
   - 0.1's `BD-E-DEVICE-ADDRESS` is deleted.
@@ -312,7 +312,7 @@ Sections keep 0.1's numbering where they correspond. New material is inserted as
   - indirect-call candidates (§14.2);
   - handle provenance (§6);
   - descriptor kinds (§8.2);
-  - objects that may become Co (§10.2);
+  - objects that may become Co (TDL-2);
   - objects an oracle may read (entry-state transfer, §8.5).
 
 **Lowers to:** analysis only. **Reuses:** 0.1 §5.2 bases and propagation tables, rewritten as
@@ -383,7 +383,7 @@ points-to rules. **Closes:** `.11`, `.25`, `.26`, `.27`, `.30` (with §7.2).
 
   "The region kind is fixed by the marker" stays, but only for the *interface* (TDL-1): the
   body is partitioned by content (§10). The sentence "the plugin never outlines source code"
-  is deleted. The plugin outlines coherent slices (§10.3).
+  is deleted. The plugin outlines coherent slices (TDL-3).
 - **§7.2 Candidate sets and dispatch.** Decision 3 with the type fallback (audit B-33):
   - RR(v) is the §5 value set of the region operand, restricted to functions.
   - Where the analysis gives ⊤, RR(v) = every function of the required type whose address is
@@ -520,7 +520,7 @@ trap.
     `(ins..) (mem..) (args..)`).
   - **Library bijections** (bennett-arith adders, xor, rotate, modular add and multiply with
     their stated conditions) are permutation actions, not `qinplace`. They take quantum and
-    classical parameters on ISA 0.8 directly (§10.5).
+    classical parameters on ISA 0.8 directly (TDL-5b).
   - **Verification:**
     - exhaustive on the reference interpreter for N ≤ the configured width (default 24 bits,
       `-bennett-inplace-exhaustive-bits`);
@@ -698,6 +698,10 @@ anchors.
     ISA §3.1 "angles are literals or classical args".
   - A Co trip count of a gate-issuing loop is padded to the budget and unrolled in the event
     list, with per-iteration flags kept as history. G-14 is the efficient form.
+  - A `qalloc`/`qborrow` whose `n` is Co allocates the maximum of n's value set: padded to its
+    bound (NS §4.2, "an allocation whose size depends on a qubit is padded to its bound").
+    Gates on wires at or beyond the run-time n are predicated off. An unbounded value set is
+    BLK-1.
 - **TDL-11 After the region.**
   - Code that reads an object whose bit is Co, inside the closure of a later region entry, is
     part of that region's coherent slices.
@@ -1019,7 +1023,7 @@ reaches the ISA except as `f64` rotation angles (ISA §3.1).
   - edge moves via `lift.parmov` as in 0.1.
 - **§16.5 Header, hash, F_B.**
   - Reference-oracle signature: `in` = IN widths, `tgt`, F = 4, `mem` = MEM_IN, ENTROPY,
-    BLOCK, the snapshot and the arena regions, `args` = ARG types in the §16.2 JCS spelling
+    BLOCK, the snapshot and the arena regions, `args` = ARG types spelled as ISA §16.2 types in JCS strings
     (the ISA-3 editorial item).
   - Hash per ISA §9.2.
   - F_B per ISA §5.2 with the four-component budget.
@@ -1080,7 +1084,7 @@ reaches the ISA except as `f64` rotation angles (ISA §3.1).
   - Q: quantum state over live wires, including arena wires;
   - H: the handle table;
   - G: recorders;
-  - K: the coherence bits (§10.2);
+  - K: the coherence bits (TDL-2);
   - T: device-model state and tape.
 
   Superposed classical bytes are wires of the arena; C holds the Cl shadow.
@@ -1120,6 +1124,11 @@ reaches the ISA except as `f64` rotation angles (ISA §3.1).
     closed-unit mode (§19.7).
   - The plugin links `bennett-runtimes` and `bennett-arith` bitcode of the link's major before
     S2.
+  - Bitcode sources (NS §3.3):
+    - Rust `std`: the bitcode embedded in rlibs (`.llvmbc`) is extracted where present and
+      readable by §19.8; otherwise `-Zbuild-std`;
+    - the Julia runtime: the runtimes' shim bitcode;
+    - every remaining call without bitcode: a §4.5 `trapped` coverage line.
 - **§19.2 Mode `--bennett-tier=reversible --bennett-entry=<sym>`:**
   - The whole program is the device program in tier R.
   - A CC launch stub fetches argv/envp bytes with `hostcall bennett.argv`, then calls the R
