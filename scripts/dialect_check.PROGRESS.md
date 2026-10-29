@@ -375,3 +375,14 @@ version-positive test ran red before updating the checker to 0.2.2; now green.
 The full gate on the reconciled spec passed **2311/2311**, zero failed/blocked.
 Manifest integration is independently tracked by **b-dialect-spec-bvy**:
 SPEC_VERSIONS.toml remains 0.2.1 and is outside this implementer's owned paths.
+
+## Dependency refresh during final verification
+
+ISA HEAD advanced from 8503d81 to 667e494 (CLI update dc46d07 and handoff).
+Strengthened immutable snapshot reuse: checkout commit participates in snapshot
+identity; an already-ready Interpreter rebuilds when HEAD changes; a HEAD move
+during copy/build fails loudly; command documentation is read from the executable's
+own immutable snapshot rather than the old source alias. A real offline Rust
+fixture regression ran red, then passed after moving a temporary repository HEAD
+and proving the same Interpreter executes the new revision. No ISA repo edits.
+Re-running the final gate on this updated committed dependency.

@@ -153,3 +153,18 @@ Exact ids/reasons and the full per-family table are in the spec progress file.
 V10 remains a normative conflict (7u1); the other gaps and BLK-5 routing require
 checker work outside this editor's read-only boundary. Round 2 is not ready.
 No examples/checks weakened or removed; version remains 0.2.1; no push.
+
+## Q15 — freeze adapter execution and version integration (implementer)
+
+Sections: §12.4, §17.6, §19.3–§19.8, §20, Appendix B.
+Section coverage requires successful scenario execution and index evidence;
+parsing alone cannot satisfy the seven driver/platform rows. Materialised BLK-5
+witnesses are classified by their report role, not example name. The R-budget
+state obligation is checked as a blocker verdict on ISA 0.8; its full ISA-0.9
+expected result is recorded with executed=false, never substituted by host fuel.
+V12 defaults to no external link definitions: standalone normalisation microvectors
+supply an explicit runtime/arith link environment; runtime-like names alone do
+not establish a definition. Following the user's clarification, V10 was validated
+only after the editor committed 976e4bb (full dialect/norm 0.2.2), including its
+new carrier witness. Checker version handling follows that commit. Manifest
+integration remains the other owner's b-dialect-spec-bvy task.

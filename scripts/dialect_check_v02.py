@@ -138,16 +138,19 @@ class Interpreter:
     def __init__(self):
         self.exe = ISA_DIR / 'source' / 'target' / 'debug' / 'bennett-isa-ref'
         self.ready = False
+        self.commit = None
 
     def build(self):
-        if self.ready:
+        commit=read_commit(ISA_SOURCE.parent)
+        if self.ready and self.commit==commit:
             return
+        self.ready=False
         # Content fingerprints catch concurrent uncommitted command additions too.
         paths = sorted(p for p in ISA_SOURCE.rglob('*') if p.is_file() and
                        not any(x in ('target','.tmp','.git','.beads') for x in p.relative_to(ISA_SOURCE).parts) and
                        (p.suffix == '.rs' or p.name in ('Cargo.toml', 'Cargo.lock', 'README.md')))
         before = {str(p.relative_to(ISA_SOURCE)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
-        fingerprint = hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest()
+        fingerprint = hashlib.sha256(json.dumps({'commit':commit,'files':before}, sort_keys=True).encode()).hexdigest()
         ISA_DIR.mkdir(parents=True,exist_ok=True)
         # Content-addressed immutable snapshots keep a later build from deleting
         # the executable another checker process is still using.
@@ -161,17 +164,20 @@ class Interpreter:
                     shutil.copytree(ISA_SOURCE, source, ignore=shutil.ignore_patterns('target', '.git', '.tmp', '.beads'))
                 copied = {k: hashlib.sha256((source / k).read_bytes()).hexdigest() for k in before}
                 after = {str(p.relative_to(ISA_SOURCE)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
-                if before != after or before != copied:
+                if before != after or before != copied or read_commit(ISA_SOURCE.parent)!=commit:
                     raise d.Fail('interpreter sources changed during snapshot; rerun to take a consistent copy')
                 command(['cargo', 'build', '--offline', '--manifest-path', source / 'Cargo.toml'], timeout=120)
-                stamp.write_text(json.dumps({'commit': read_commit(ISA_SOURCE.parent),
+                stamp.write_text(json.dumps({'commit': commit,
                     'source_sha256': fingerprint, 'files': before}, indent=2) + '\n')
             (ISA_DIR/'BUILD.json').write_text(stamp.read_text())
+        if read_commit(ISA_SOURCE.parent)!=commit:
+            raise d.Fail("interpreter HEAD moved during build; rerun for a consistent snapshot")
+        self.commit=commit
         self.ready = True
 
     def call(self, verb, *args):
         self.build()
-        readme = (ISA_DIR / 'source' / 'README.md').read_text()
+        readme = (self.exe.parents[2] / 'README.md').read_text()
         if verb in ('run-cc', 'reverse', 'run-action', 'run-program') and not re.search(r'(?:`|bennett-isa-ref )' + verb + r'\s', readme+'\n'+command([self.exe,'--help'])):
             raise Unavailable(verb, shlex.join(['bennett-isa-ref', verb, *map(str, args)]), CLI_BEAD)
         output = command([self.exe, verb, *args], timeout=180)

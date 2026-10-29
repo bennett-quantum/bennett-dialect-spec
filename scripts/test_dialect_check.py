@@ -272,6 +272,30 @@ class ContractTests(unittest.TestCase):
             b=self.block('state','r-budget-prefix')
             with self.assertRaises(d.Fail):r_budget_prefix(runner,dict(b,body=b['body'].replace('code=1','code=2')))
 
+    def test_interpreter_rebuilds_when_head_moves(self):
+        from pathlib import Path
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            repo=Path(tmp)/'isa';src=repo/'reference-interpreter';(src/'src').mkdir(parents=True)
+            (src/'Cargo.toml').write_text('[package]\nname="bennett-isa-ref"\nversion="0.0.0"\nedition="2021"\n')
+            (src/'README.md').write_text('Snapshot fixture\n')
+            v.command(['git','-C',repo,'init','--quiet'])
+            def commit(revision):
+                (src/'src'/'main.rs').write_text('fn main() { println!("{{\\"revision\\":'+str(revision)+'}}"); }'.replace('\\"','\\\"'))
+                v.command(['git','-C',repo,'add','.'])
+                v.command(['git','-C',repo,'-c','user.name=Checker test','-c','user.email=checker@example.invalid','commit','--quiet','-m',str(revision)])
+            commit(1)
+            with patch.object(v,'ISA_SOURCE',src),patch.object(v,'ISA_DIR',Path(tmp)/'snapshot'):
+                interpreter=v.Interpreter()
+                self.assertEqual(interpreter.call('hash','unused')['revision'],1)
+                first=interpreter.exe
+                commit(2)
+                self.assertEqual(interpreter.call('hash','unused')['revision'],2)
+                self.assertNotEqual(first,interpreter.exe)
+                import json
+                receipt=json.loads((v.ISA_DIR/'BUILD.json').read_text())
+                self.assertEqual(receipt['commit'],v.read_commit(repo))
+
     def test_view_pass_guard_does_not_reject_filenames(self):
         self.assertEqual(v.command(['/bin/true','compute-view-event-1.bisa']),'')
         for flag in ('-passes=view-cfg','-view-cfg','-passes=function(view-dom)'):
