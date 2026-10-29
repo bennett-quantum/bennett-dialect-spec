@@ -33,6 +33,18 @@ class ContractTests(unittest.TestCase):
                 else:wrong['bijective']=True
                 with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
 
+    def test_round3_deferred_placement(self):
+        from dialect_round3 import adjoint_records, check_state
+        import json
+        events=[('record','a','w'),('cx','w','t'),('h','a')]
+        self.assertEqual(adjoint_records(events),[('h','a'),('record','a','w'),('cx','w','t')])
+        self.assertEqual(adjoint_records([('record','a','w'),('h','a')]),[('h','a'),('record','a','w')])
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            b={'attrs':{'state':'deferred-channel-adj-place','at':'0'},'body':json.dumps({'zero_then_H':[0.5,0.5],'plus_joint_zero':1,'record_retained':True,'trap':0})}
+            check_state(runner,b)
+            with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body'].replace('[0.5, 0.5]','[1, 0]')))
+
     def test_round2_r_entry_classification(self):
         for name in ('region-reversible-marker','region-reversible-qalloc-static','effect-console-r'):
             with self.subTest(example=name):self.assertEqual(v.recognise(d.with_decls(self.block('example',name)['body']),rmode=self.block('example',name)['attrs'].get('rmode'))[0],'blocked:BD-B-ISA7')

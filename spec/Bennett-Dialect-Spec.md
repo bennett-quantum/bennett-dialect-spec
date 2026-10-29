@@ -1773,7 +1773,8 @@ Only the rules the north star requires:
   outermost action returns, and measure it there before the next source operation. Earlier
   removal requires the complete instrument (outcomes and correlations included) to be
   unchanged; an open window alone never justifies quncopy. These channel outputs are
-  separate from clean workspace (TDL-7). The coverage report has a
+  separate from clean workspace (TDL-7). Standalone adj uses the deterministic
+  latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
   `lowered` entry with source `dialect-0.2.4:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
@@ -7873,10 +7874,17 @@ compile an event list into one ISA action when that action satisfies ISA §6.
 ↔ `sdg`; `t` ↔ `tdg`; `rx θ` ↦ `rx −θ` (and `ry`, `rz`); `qalloc` ↔ `qfree` of the same wires;
 `inplace G G′ B X` ↦ `inplace G′ G B X`; `perm P` ↦ the library inverse of P. Control sets are
 unchanged. Ordinary workspace qcopy and quncopy are mutual adjoints. A deferred-measurement
-qcopy is a channel record and is never adjointed to quncopy: standalone adj(f) emits
-qcopy onto a fresh retained record before every adjointed event that depends on it;
-independent records use original source order, with placement constrained before their
-first reversed consumer. In compute(f,use), E_f's records survive E_u and adjoint(E_f),
+qcopy is a channel record and is never adjointed to quncopy. In standalone adj(f),
+keep non-record events in reverse-list order. Insert each fresh retained record
+immediately before its earliest reversed consumer, after every reversed event preceding
+that consumer. A record without consumers stays at its reversed source position.
+Records in the same insertion gap follow original source order, with record producers
+before dependent records. Thus record placement is deterministic, including when
+noncommuting events change its source. For local sources, hoist required unconditional
+inverse allocations before their copies and retain the sources through their last use;
+this lifetime extension does not commute a copy across an arbitrary quantum operation.
+Optimisations MUST preserve this complete instrument and the §7.5(a) measurement boundary.
+In compute(f,use), E_f's records survive E_u and adjoint(E_f),
 which reuses these wires without copying or uncopying them, and measurement is at the
 first §7.5(a) boundary after compute returns.
 
@@ -8009,6 +8017,18 @@ inside compute. This keeps the computation without inventing an inverse.
 
 ```text state=co-loop-adj-overwritten at=0
 {"entry":[2,2],"compute_restored":[2,2],"collision":true,"bijective":false,"trap":0}
+```
+
+**Adjoint channel interleaving.** For f = measure(a); if(m) X(t); H(a),
+with deferred measure, the forward list is [qcopy a->w, CX(w,t), H(a)].
+The standalone adjoint instrument is exactly [H(a), qcopy a->w, CX(w,t)].
+With a=|+>, t=0 this gives a=t=w=0; with a=t=0 and a final H(a),
+P(a=0)=P(a=1)=1/2. The record remains until the §7.5(a) boundary.
+Copy-at-entry would instead give P(a=0)=1 for the second probe, so these
+vectors distinguish the previously allowed schedules.
+
+```text state=deferred-channel-adj-place at=0
+{"zero_then_H":[0.5,0.5],"plus_joint_zero":1,"record_retained":true,"trap":0}
 ```
 
 **Round-2 action lifecycle witnesses.** In generation-cancel the source is qalloc(0,1),
@@ -9511,6 +9531,7 @@ with the ISA-0.9 obligation recorded and explicitly not executed on ISA 0.8.
 
 | `entry-allocation-only`, `arena-logical-bounds` | §8.5, TDL-4, §16.2–§16.4 | state | native seed; Rust lifted helper |
 
+| `deferred-channel-adj-place` | §7.5(a), §18.2 | state | Rust run-action with deterministic record scheduler |
 | `co-loop-identity`, `co-loop-adj-overwritten` | TDL-7, TDL-10, §18.2 | state | Rust run-action; native inverse-domain check |
 | `generation-cancel`, `nested-cl-view`, `fault-output-lifetime`, `co-loop-adjoint`, `deferred-channel-adj`, `co-store-release` | TDL-2, TDL-7–TDL-11, §18.2–§18.4 | state | native lifecycle; Rust run-action |
 

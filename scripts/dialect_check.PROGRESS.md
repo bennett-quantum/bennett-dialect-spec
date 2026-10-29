@@ -526,3 +526,7 @@ Theme A resolved SOL-R3-01, R3-CODEX-01, BD3-R3-1 and both regressions.
 and cannot invent a standalone inverse. Red-green loop unittest passed; new state
 adapters execute Rust run-action and native exhaustive collision validation.
 Full freeze pending the remaining themes; no green full-gate claim yet.
+
+Theme B resolved R3-CODEX-02 / BD3-R3-2: deterministic latest-before-consumer
+channel instrument. Red-green scheduler/state test passes on both council inputs.
+Theme A commit 8e56d56; response 2412c4c.

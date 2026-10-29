@@ -6,7 +6,33 @@ from dialect_check_v02 import equal
 from dialect_state import run_native
 from dialect_tdl import Session, assert_view, add_constant
 
-STATES = {'co-loop-identity', 'co-loop-adj-overwritten'}
+STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place'}
+
+
+def adjoint_records(events):
+    """Reverse ordinary events; insert channel records at their latest consumer gap.
+
+    This microvector grammar has self-adjoint ordinary events. Recursive record
+    producers are inserted first, source order breaks ties at one gap.
+    """
+    records={e[2]:e for e in events if e[0]=='record'}
+    emitted=set();active=set();out=[]
+    def emit(record):
+        target=record[2]
+        if target in emitted:return
+        if target in active:raise d.Fail('cyclic channel-record dependency')
+        active.add(target)
+        if record[1] in records:emit(records[record[1]])
+        active.remove(target);emitted.add(target);out.append(record)
+    for event in reversed(events):
+        if event[0]=='record':
+            emit(event)  # unused records keep their reversed source position
+        else:
+            needed=set(event[1:])
+            for record in records.values():
+                if record[2] in needed:emit(record)
+            out.append(event)
+    return out
 
 
 def check_state(runner, block):
@@ -51,5 +77,25 @@ for(unsigned x=0;x<4;x++)for(unsigned z=0;z<4;z++){
             q.apply(flags,adjoint=True);q.free('c0');q.free('c1')
             want=v['compute_restored'] if x==2 else [x,x]
             assert_view(q,['x','z'],{tuple(want):1})
+        equal(name,'trap',0,v['trap'])
+    elif name == 'deferred-channel-adj-place':
+        events=adjoint_records([('record','a','w'),('cx','w','t'),('h','a')])
+        for prep in ('zero','plus'):
+            q=Session(runner,name+prep)
+            for n in ('a','t','w'):q.alloc(n,1)
+            if prep=='plus':q.apply(['h a[0]'])
+            for op,*args in events:
+                if op=='record':q.apply([f'cx {args[0]}[0] {args[1]}[0]'])
+                elif op=='h':q.apply([f'h {args[0]}[0]'])
+                elif op=='cx':q.apply([f'cx {args[0]}[0] {args[1]}[0]'])
+                else:raise d.Fail('unknown adjoint microvector operation '+op)
+            if prep=='plus':
+                prob=sum(abs(a)**2 for (key,_),a in q.view(['a','t','w']).items() if key==(0,0,0))
+                equal(name,'plus input joint zero',v['plus_joint_zero'],round(prob,12))
+            else:
+                q.apply(['h a[0]']);probs=[0.,0.]
+                for (key,_),amp in q.view(['a']).items():probs[key[0]]+=abs(amp)**2
+                equal(name,'zero input then H',v['zero_then_H'],[round(x,12) for x in probs])
+            equal(name,'channel retained',v['record_retained'],'w' in q.widths)
         equal(name,'trap',0,v['trap'])
     else:raise d.Fail('unimplemented round-3 state '+name)
