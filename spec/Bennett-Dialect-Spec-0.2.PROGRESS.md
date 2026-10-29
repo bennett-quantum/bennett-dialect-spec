@@ -237,6 +237,7 @@ changes, so version remains 0.2.1. ISA 0.9 draft 61550b4 is reference-only.
 
 | Finding | Change | Verification |
 |---|---|---|
+| P-1 / b-dialect-spec-1jb: bindings/transfer/indirectbr | Six hand-derived objects, LLVM/linkmap/run companions and index rows | all six object checks and run blocks pass; replay maps exactly; five maps fail |
 | P-1 / b-dialect-spec-1jb: V2–V16/PT12 | 15 clean/residual validator pairs and qalloc ROOT return witness, all indexed | parse 522/522; recognise 112/115; V4/V10/V12 missed rejections |
 | P-1 / b-dialect-spec-1jb: N0/N12/N15/N25/N34/N35 | Six hand-derived normalisation pairs and Appendix B rows; no rule narrowed | N12 passes; five missing transforms fail loudly |
 
@@ -261,3 +262,23 @@ and PT12 ROOT return pass. Negative V4 (ctlz true), V10 (half fneg) and V12
 (undefined nonprimitive call in materialised L/R) incorrectly accept; retained
 as failing obligations. V8 negative also triggers V13, so this does not claim
 an independent pre-N21 V8-pattern implementation. No normative text was fixed.
+
+| bindings/transfer/indirectbr | selected parse,map,check,run-oracle,coverage | 697 pass / 12 fail / 0 blocked (709); parse 540/540, check/run 15/15 each, map 9/14, coverage 118/125 |
+
+Report: `scripts/.tmp/coverage-bindings.json`. The six hand-authored objects
+were checked/hashed/run independently with Rust before insertion; Python only
+serialised symbol/layout facts and inserted the executor's interface hashes.
+Hand-derived successes: OUT byte 9 / 10 rows; CLOCK 3 / 16 rows; BLOCK first-byte
+42 or 255 / 16 rows; CONSOLE 120 / 27 rows; replay byte 7 / 16 rows; indirectbr
+7 or 9 / 9 or 12 rows, no-match code 4 / 10 rows (the failing path never executes
+wrapper retval). Clock store rematerialises its global-address operand per map
+row conventions; no commoning optimisation is assumed. The replay object maps
+byte-exactly, isolating caller-mutated G replay with k=0; general allocation/stack
+replay remains covered by the earlier runtime vectors, not claimed here.
+
+Five frozen mapper gaps remain: OUT explicitly raises checker-unimplemented;
+BLOCK ignores its interface and model-state prologue; CLOCK ignores counter
+initialisation; CONSOLE omits buffer/prologue/output delivery; indirectbr explicitly
+raises checker-unimplemented. The binding objects and their expectations remain
+unchanged to expose these gaps. Seven hard-coded driver/platform coverage failures
+remain regardless of examples (dialect_meta.coverage sets them False).

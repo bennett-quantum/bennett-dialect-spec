@@ -5586,6 +5586,392 @@ else `^b<x>`; the **edge block** `^b<i>.e<x>` holds the edge moves (i → x) and
 blocks, and per indirect call its leaves, default and continuation) in creation order, then its
 edge blocks in ascending successor index.
 
+Checked binding and transfer objects. These are finite materialised runtime
+microvectors: they exercise one binding or transfer boundary, without claiming
+to implement the general runtime. In the following descriptors, `tgt=8` is the
+reference variant's output slice width; `binding-out-byte` and
+`binding-console-byte` have null source return targets, as stated in their
+derivations. Device-only descriptors have no parameter bindings before `;dev=`.
+
+
+**`binding-out-byte`.** OUT(1) supplies a fresh byte, which f overwrites with 9. With a null return target the only output is that byte. The wrapper allocates, calls and loads it: ten rows in all (including the four callee rows). Heap budget 1 suffices; no caller byte is written.
+
+```llvm lift=binding-out-byte region=@f desc=OUT(1);tgt=8
+define internal void @f(ptr %p) {
+  store i8 9, ptr %p, align 1
+  ret void
+}
+```
+
+```text linkmap=binding-out-byte
+null_size=4096 heap_base=4096 heap_limit_max=1 globals=none budget-table: stack max 128, heap max 1
+```
+
+```isa object=binding-out-byte
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"53e80acd1ae1e915b3ce43f8d91c744d9f7c805920e0b1080d4d84c29ea75d91","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"d6d4b832fb8db9fc5b958869e19e2e40b09f48bdae7b025ad992dc158a03c85f","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":1,"tier":"q"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) () ()
+regs { c0:reg[64], w0:reg[64], r:reg[1], t0:reg[8] }
+^entry():
+c0 = lift.const.i64 1
+w0 = lift.alloc c0
+r = lift.call @L1 (w0)
+lift.boundscheck w0 1
+t0 = lift.load.i8 w0
+lift.retval t0
+lproc @L1 (a0:reg[64]) (r:reg[1]) () () ()
+regs { c0:reg[8] }
+^b0():
+c0 = lift.const.i8 9
+lift.boundscheck a0 1
+lift.store.i8 a0 c0
+lift.ret r
+
+section layout
+{"A_tab":0,"H":13,"S_cells":7,"globals":{},"heap_base":4096,"heap_limit_max":1,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=binding-out-byte
+input= budget=64,1,128,8 -> code=0 payload=9 steps=10
+```
+
+**`binding-clock-read`.** CLOCK(3) denotes initial c=3. This materialised clock read returns the old counter and advances its private copy to 4. Every invocation starts at 3. Four prologue rows, one call, ten callee rows and one return total 16; the store materialises its global-address operand anew.
+
+```llvm lift=binding-clock-read region=@f desc=;dev=CLOCK(3);tgt=8
+@__bennett_dev_clock_c = internal global i64 0
+define internal i8 @f() {
+  %c = load i64, ptr @__bennett_dev_clock_c, align 8
+  %n = add i64 %c, 1
+  store i64 %n, ptr @__bennett_dev_clock_c, align 8
+  %r = trunc i64 %c to i8
+  ret i8 %r
+}
+```
+
+```text linkmap=binding-clock-read
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @__bennett_dev_clock_c -> G1 base=4096 size=8
+budget-table: stack max 128, heap max 0
+```
+
+```isa object=binding-clock-read
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"27a8a0403bffc1938a3fe9ab8b05327d7ab4c826cf8e81ff8c6357cd158cbf73","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"96dc6b23dc45a2ae237008b19b5d4b6ec1d142e94329871d57cf797199dfbe48","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":8,"tier":"q"}},"2":{"interface_hash":"3a60742cd66a29ff962e5c5d7d7826179e62c216f129a53f18177fac4416f0e8","kind":"data","name":"G1","signature":{"abi":"0.8","kind":"data","size":8,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) () ()
+regs { d0:reg[64], d1:reg[64], r:reg[8] }
+^entry():
+d0 = lift.const.i64 3
+d1 = lift.addr @G1
+lift.boundscheck d1 8
+lift.store.i64 d1 d0
+r = lift.call @L1 ()
+lift.retval r
+lproc @L1 () (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], c1:reg[64], v1:reg[64], c2:reg[64], v2:reg[8] }
+^b0():
+c0 = lift.addr @G1
+lift.boundscheck c0 8
+v0 = lift.load.i64 c0
+c1 = lift.const.i64 1
+v1 = lift.add v0 c1
+c2 = lift.addr @G1
+lift.boundscheck c2 8
+lift.store.i64 c2 v1
+v2 = lift.trunc.i8 v0
+lift.ret v2
+
+section data
+G1 0000000000000000
+
+section layout
+{"A_tab":0,"H":13,"S_cells":7,"globals":{"G1":{"base":4096,"image":"G1","size":8}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=binding-clock-read
+input= budget=64,0,128,8 -> code=0 payload=3 steps=16
+```
+
+**`binding-block-byte`.** BLOCK(0) denotes one 512-byte sector (A-prime=0). With an empty overlay, the first-byte projection of sector 0 reads k0[0]. This binding microvector inlines that projection; it does not claim coverage of overlay writes. Input byte 0x2a therefore yields 42; 0xff yields 255. Eight prologue rows, call, six callee rows and return total 16.
+
+```llvm lift=binding-block-byte region=@f desc=;dev=BLOCK(0);tgt=8
+@__bennett_dev_block_base = internal global ptr null
+@__bennett_dev_block_nsect = internal global i64 0
+define internal i8 @f() {
+  %p = load ptr, ptr @__bennett_dev_block_base, align 8
+  %r = load i8, ptr %p, align 1
+  ret i8 %r
+}
+```
+
+```text linkmap=binding-block-byte
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @__bennett_dev_block_base -> G1 base=4096 size=8
+global @__bennett_dev_block_nsect -> G2 base=4104 size=8
+budget-table: stack max 128, heap max 0
+```
+
+```isa object=binding-block-byte
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"04f3ca145a1ffc46dcd99ba50776a7a63cb538e5482bfa0ddff4249e4a0d58b4","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[{"A":9,"W":8,"role":"in"}],"tgt":8,"tier":"q"}},"1":{"interface_hash":"f446e3af7690839e9a32c9a63b7bd87030b2d874ce5bc6fb426fbced076df0f0","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":8,"tier":"q"}},"2":{"interface_hash":"3a60742cd66a29ff962e5c5d7d7826179e62c216f129a53f18177fac4416f0e8","kind":"data","name":"G1","signature":{"abi":"0.8","kind":"data","size":8,"tier":"-"}},"3":{"interface_hash":"152c175d592378069aaf67055e1d0ae1481a51cebce1e9f4f5d2b239ef7a253e","kind":"data","name":"G2","signature":{"abi":"0.8","kind":"data","size":8,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) (k0:region[9,8] in) ()
+regs { d0:reg[64], d1:reg[64], d2:reg[64], d3:reg[64], r:reg[8] }
+^entry():
+d0 = lift.addr @k0
+d1 = lift.addr @G1
+lift.boundscheck d1 8
+lift.store.i64 d1 d0
+d2 = lift.const.i64 1
+d3 = lift.addr @G2
+lift.boundscheck d3 8
+lift.store.i64 d3 d2
+r = lift.call @L1 ()
+lift.retval r
+lproc @L1 () (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], v1:reg[8] }
+^b0():
+c0 = lift.addr @G1
+lift.boundscheck c0 8
+v0 = lift.load.i64 c0
+lift.boundscheck v0 1
+v1 = lift.load.i8 v0
+lift.ret v1
+
+section data
+G1 0000000000000000
+G2 0000000000000000
+
+section layout
+{"A_tab":2,"H":14,"S_cells":7,"globals":{"G1":{"base":4096,"image":"G1","size":8},"G2":{"base":4104,"image":"G2","size":8}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{"k0":{"base":8192}}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=binding-block-byte
+input= mem=k0:2a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 budget=64,0,128,8 -> code=0 payload=42 steps=16
+input= mem=k0:ff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 budget=64,0,128,8 -> code=0 payload=255 steps=16
+```
+
+**`binding-console-byte`.** CONSOLE(1) denotes L=1, with a non-null one-byte output register and null return target. The materialised one-byte write appends x (120), advancing n from 0 to 1; delivery XORs 0x78 into the output without a host effect. Twelve prologue rows, call, eleven callee rows and three delivery rows total 27.
+
+```llvm lift=binding-console-byte region=@f desc=;dev=CONSOLE(1);tgt=8
+@__bennett_dev_console_buf = internal global ptr null
+@__bennett_dev_console_L = internal global i64 0
+@__bennett_dev_console_n = internal global i64 0
+define internal void @f() {
+  %p = load ptr, ptr @__bennett_dev_console_buf, align 8
+  store i8 120, ptr %p, align 1
+  store i64 1, ptr @__bennett_dev_console_n, align 8
+  ret void
+}
+```
+
+```text linkmap=binding-console-byte
+null_size=4096 heap_base=8192 heap_limit_max=1
+global @__bennett_dev_console_buf -> G1 base=4096 size=8
+global @__bennett_dev_console_L -> G2 base=4104 size=8
+global @__bennett_dev_console_n -> G3 base=4112 size=8
+budget-table: stack max 128, heap max 1
+```
+
+```isa object=binding-console-byte
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"82aa872187094d2e3f204da439cb5060bacd5c7c9234aafdc90da40940bd74b5","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"e7ae395ec28f1ca3f2f30e81046b4b4a79ae95295a900a5d687daae2177486db","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":1,"tier":"q"}},"2":{"interface_hash":"3a60742cd66a29ff962e5c5d7d7826179e62c216f129a53f18177fac4416f0e8","kind":"data","name":"G1","signature":{"abi":"0.8","kind":"data","size":8,"tier":"-"}},"3":{"interface_hash":"152c175d592378069aaf67055e1d0ae1481a51cebce1e9f4f5d2b239ef7a253e","kind":"data","name":"G2","signature":{"abi":"0.8","kind":"data","size":8,"tier":"-"}},"4":{"interface_hash":"9d3aca04351c878d6876df5bd35776f57012ffe2e47eee3cec4c6105684a9550","kind":"data","name":"G3","signature":{"abi":"0.8","kind":"data","size":8,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) () ()
+regs { d0:reg[64], d1:reg[64], d2:reg[64], d3:reg[64], d4:reg[64], d5:reg[64], r:reg[1], t0:reg[8] }
+^entry():
+d0 = lift.const.i64 1
+d1 = lift.addr @G2
+lift.boundscheck d1 8
+lift.store.i64 d1 d0
+d2 = lift.alloc d0
+d3 = lift.addr @G1
+lift.boundscheck d3 8
+lift.store.i64 d3 d2
+d4 = lift.const.i64 0
+d5 = lift.addr @G3
+lift.boundscheck d5 8
+lift.store.i64 d5 d4
+r = lift.call @L1 ()
+lift.boundscheck d2 1
+t0 = lift.load.i8 d2
+lift.retval t0
+lproc @L1 () (r:reg[1]) () () ()
+regs { c0:reg[64], v0:reg[64], c1:reg[8], c2:reg[64], c3:reg[64] }
+^b0():
+c0 = lift.addr @G1
+lift.boundscheck c0 8
+v0 = lift.load.i64 c0
+c1 = lift.const.i8 120
+lift.boundscheck v0 1
+lift.store.i8 v0 c1
+c2 = lift.const.i64 1
+c3 = lift.addr @G3
+lift.boundscheck c3 8
+lift.store.i64 c3 c2
+lift.ret r
+
+section data
+G1 0000000000000000
+G2 0000000000000000
+G3 0000000000000000
+
+section layout
+{"A_tab":2,"H":14,"S_cells":7,"globals":{"G1":{"base":4096,"image":"G1","size":8},"G2":{"base":4104,"image":"G2","size":8},"G3":{"base":4112,"image":"G3","size":8}},"heap_base":8192,"heap_limit_max":1,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=binding-console-byte
+input= budget=64,1,128,8 -> code=0 payload=120 steps=27
+```
+
+**`entry-replay-byte`.** This explicit replay microvector has no heap allocations (snapshot k=0); G contains one caller-mutated byte at snapshot offset 8. MEM_IN(4) supplies the 16-byte snapshot, and the defined replay helper copies that byte into G1 before f reads it. The caller snapshot is unchanged. Initial image G1=0 is overridden by caller byte 7, giving payload 7 in 16 rows. This isolates replay of G, not the general allocation/stack replay loop.
+
+```llvm lift=entry-replay-byte region=@f desc=MEM_IN(4);tgt=8
+@g = internal global i8 0
+define internal i8 @f(ptr %s) {
+  call void @__bennett_rt_entry_replay(ptr %s)
+  %r = load i8, ptr @g, align 1
+  ret i8 %r
+}
+define internal void @__bennett_rt_entry_replay(ptr %s) {
+  %p = getelementptr i8, ptr %s, i64 8
+  %v = load i8, ptr %p, align 1
+  store i8 %v, ptr @g, align 1
+  ret void
+}
+```
+
+```text linkmap=entry-replay-byte
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @g -> G1 base=4096 size=1
+budget-table: stack max 128, heap max 0
+```
+
+```isa object=entry-replay-byte
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"4b46bebe4a5a235b4e45a2e1f4718dd88b733c97a8b6d2343cbb557889107cb2","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[{"A":4,"W":8,"role":"in"}],"tgt":8,"tier":"q"}},"1":{"interface_hash":"8e9a3ee563fdedce6920d5630062ed936202eff72f00dc2c256c25b782fda397","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":8,"tier":"q"}},"2":{"interface_hash":"a0f418bf7f4380dc92d0f8c085c90cbb65ff9239740d439b682e28f292060802","kind":"lproc","name":"L2","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":1,"tier":"q"}},"3":{"interface_hash":"b50c81820686bbeffee04bef717194a246cce129dfe075cd83f7236bf6b9e02d","kind":"data","name":"G1","signature":{"abi":"0.8","kind":"data","size":1,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) (m0:region[4,8] in) ()
+regs { w0:reg[64], r:reg[8] }
+^entry():
+w0 = lift.addr @m0
+r = lift.call @L1 (w0)
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[8]) () () ()
+regs { t0:reg[1], c0:reg[64], v0:reg[8] }
+^b0():
+t0 = lift.call @L2 (a0)
+c0 = lift.addr @G1
+lift.boundscheck c0 1
+v0 = lift.load.i8 c0
+lift.ret v0
+lproc @L2 (a0:reg[64]) (r:reg[1]) () () ()
+regs { c0:reg[64], v0:reg[64], v1:reg[8], c1:reg[64] }
+^b0():
+c0 = lift.const.i64 8
+v0 = lift.add a0 c0
+lift.boundscheck v0 1
+v1 = lift.load.i8 v0
+c1 = lift.addr @G1
+lift.boundscheck c1 1
+lift.store.i8 c1 v1
+lift.ret r
+
+section data
+G1 00
+
+section layout
+{"A_tab":1,"H":14,"S_cells":7,"globals":{"G1":{"base":4096,"image":"G1","size":1}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{"m0":{"base":8192}}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=entry-replay-byte
+input= mem=m0:00000000000000000700000000000000 budget=64,0,128,8 -> code=0 payload=7 steps=16
+```
+
+**`indirectbr-two-blocks`.** The two address-taken blocks have values B(f)=4096 and B(f)+1=4097. The address object has two bytes. An IN(64,zext) pointer selects the first or second block and returns 7 or 9. Any other address reaches fault 4. The unused ptrtoint of the block object keeps its address explicitly in the reference closure. Success counts are wrapper 2 + address rows 2 + compare path 3 or 6 + return 2: 9 and 12 rows. No-match executes only the wrapper call, address rows 2, compares 6 and fault 1, for 10 rows; wrapper retval never executes.
+
+```llvm lift=indirectbr-two-blocks region=@f desc=IN(64,zext);tgt=8
+@__bennett_rt_blk.f = internal global [2 x i8] zeroinitializer
+@labels = internal constant [2 x ptr] [ptr blockaddress(@f, %one), ptr blockaddress(@f, %two)]
+define internal i8 @f(ptr %dest) {
+entry:
+  %base = ptrtoint ptr @__bennett_rt_blk.f to i64
+  indirectbr ptr %dest, [label %one, label %two]
+one:
+  ret i8 7
+two:
+  ret i8 9
+}
+```
+
+```text linkmap=indirectbr-two-blocks
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @__bennett_rt_blk.f -> G1 base=4096 size=2
+budget-table: stack max 128, heap max 0
+```
+
+```isa object=indirectbr-two-blocks
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"a2580fd9aee33acb7501709e08ccc38d57944b716c9aca371f0b2fc93554362c","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[64],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"73ab604536abee68a6e99408a725c680a91a5657c05ba02d6eff32e42385d528","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":8,"tier":"q"}},"2":{"interface_hash":"859dd54c2d35a0e71d8b1dd716104a495ddff4d99bf475cfecb9a338e9e21130","kind":"data","name":"G1","signature":{"abi":"0.8","kind":"data","size":2,"tier":"-"}}}
+
+section functions
+oracle @ref (x0:wire[64] in) (tgt:wire[8]) (fault:wire[4]) () ()
+regs { r:reg[8] }
+^entry():
+r = lift.call @L1 (x0)
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], c1:reg[64], t0:reg[1], c2:reg[64], t1:reg[1], c3:reg[8], c4:reg[8] }
+^b0():
+c0 = lift.addr @G1
+v0 = lift.mov c0
+c1 = lift.const.i64 4096
+t0 = lift.icmp.eq a0 c1
+qbranch t0 ^b1 ^b0.s1
+^b0.s1():
+c2 = lift.const.i64 4097
+t1 = lift.icmp.eq a0 c2
+qbranch t1 ^b2 ^b0.d
+^b0.d():
+fault 4
+^b1():
+c3 = lift.const.i8 7
+lift.ret c3
+^b2():
+c4 = lift.const.i8 9
+lift.ret c4
+
+section data
+G1 0000
+
+section layout
+{"A_tab":0,"H":13,"S_cells":7,"globals":{"G1":{"base":4096,"image":"G1","size":2}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=indirectbr-two-blocks
+input=4096 budget=64,0,128,8 -> code=0 payload=7 steps=9
+input=4097 budget=64,0,128,8 -> code=0 payload=9 steps=12
+input=4098 budget=64,0,128,8 -> code=4 payload=0 steps=10
+```
+
 ### 16.5 Runtime oracles, identity and F_B
 
 The CC tier's entry-state transfer (§8.5) and TDL (§10) use three families of runtime oracles,
@@ -8325,6 +8711,13 @@ compute expected artefacts only (P-3).
 | `validator-v16-clean`, `validator-v16-residue` | V16 | parse, validate | LLVM 18/20/23; independent validator |
 
 | `pt12-root-return` | PT12 | parse, recognise | LLVM 18/20/23; points-to recogniser |
+
+| `binding-out-byte` | §8.2 OUT, §8.6 | parse, map, check, run-oracle | LLVM; isa-ref |
+| `binding-block-byte` | §8.3 BLOCK, §11.3 | parse, map, check, run-oracle | LLVM; isa-ref |
+| `binding-clock-read` | §8.3 CLOCK, §11.3 | parse, map, check, run-oracle | LLVM; isa-ref |
+| `binding-console-byte` | §8.3 CONSOLE, §11.3 | parse, map, check, run-oracle | LLVM; isa-ref |
+| `entry-replay-byte` | §8.5 entry-state transfer | parse, map, check, run-oracle | LLVM; isa-ref |
+| `indirectbr-two-blocks` | §14.9 indirectbr | parse, map, check, run-oracle | LLVM; isa-ref |
 
 **Rule ids without an example yet** (the check fails on them, P-1, until examples land): N0, N12,
 N15, N25, N34, N35; V2–V16; PT12; the `OUT` binding's object (`oracle-wide-out` is recognised

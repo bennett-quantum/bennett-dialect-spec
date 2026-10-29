@@ -106,3 +106,13 @@ propagation through a defined function. Selected gate: 522/522 parses, 112/115
 verdicts, 112/125 index coverage. Negative V4 ctlz true, V10 half fneg and V12
 unresolved callee currently accept incorrectly. Keep their expected rejections.
 V8's negative is also V13: the checker has no separate pre-N21 pattern check.
+
+## Q11 — binding objects, replay and indirectbr (editor)
+
+New six lift/linkmap/object/run sets: binding-out-byte, binding-block-byte,
+binding-clock-read, binding-console-byte, entry-replay-byte, indirectbr-two-blocks.
+All independent object checks and runs pass; entry-replay-byte maps exactly.
+Keep five map failures: OUT wrapper unimplemented, missing BLOCK/CLOCK/CONSOLE
+prologues/delivery, indirectbr unimplemented. These are model boundary microvectors,
+not full runtime implementations. Coverage is now 118/125; seven driver/platform
+rows are hard-coded False and need discovery plus execution, never removal.
