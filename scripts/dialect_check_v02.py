@@ -332,6 +332,7 @@ class Runner:
         self.blocks, self.spec, self.tmp, self.selected = blocks, spec, Path(tmp), selected
         self.rows = []
         self.trace_cache = {}
+        self.scenario_evidence = set()
         self.tc = d.toolchains()
         self.frontends = frontend_bins()
         self.isa = Interpreter()
@@ -456,6 +457,12 @@ class Runner:
         self.check('asm','asm-0.2','§15',lambda:check_asm(self))
         for line,doc,ref,ok in xrefs(self.spec):
             self.check('xrefs',f'line-{line}/{doc}-§{ref}','§1.5',lambda ok=ok:equal('xref','§1.5',True,ok))
+        from dialect_driver import SCENARIOS, check_scenario
+        for name in SCENARIOS.values():
+            # Coverage executes its witnesses even in a coverage-only gate.
+            if not self.selected or self.selected & {"state","coverage"}:
+                self.check("state" if not self.selected or "state" in self.selected else "coverage",
+                           name,"§19/§20",lambda n=name:check_scenario(self,self.block("state",n)))
         covered,evidence=coverage(self)
         for rule,ok in covered.items():
             self.check('coverage',rule,'P-1',lambda r=rule,ok=ok:equal(r,'P-1 example coverage (b-dialect-spec-gvr)',True,ok))
@@ -505,7 +512,7 @@ class Runner:
                 self.check('trace',ident,'§18.4 ABI 0.2',lambda b=b:trace_check(self,b))
             if 'events' in a:
                 self.check('events',ident,'§18.4',lambda b=b:events_check(self,b))
-            if 'state' in a:
+            if 'state' in a and a['state'] not in SCENARIOS.values():
                 self.check('state',ident,'§18.4',lambda b=b:state_check(self,b))
             if 'tdl' in a:
                 from dialect_tdl import check_tdl
@@ -647,6 +654,8 @@ def action_object(isa,path,name,widths,rows):
 
 def state_check(runner,block):
     a=block['attrs'];ident=a['state'];at=int(a['at'])
+    from dialect_driver import SCENARIOS, check_scenario
+    if ident in SCENARIOS.values():return check_scenario(runner,block)
     from dialect_state import NATIVE_STATES, check_native_state
     if ident in NATIVE_STATES:return check_native_state(runner,block)
     from dialect_tdl import ORIGINAL, compare_original

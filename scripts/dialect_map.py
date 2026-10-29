@@ -292,6 +292,14 @@ class Mapper:
         self.closure(self.entry);wrapper=self.wrapper()
         bodies=[wrapper]+[self.lproc(n) for n in self.names]
         used=set(re.findall(r'lift.addr @(G\d+)', '\n'.join(bodies)))
+        # Pointer initialisers keep their transitive data dependencies live.
+        while True:
+            before=set(used)
+            for name,(g,_,_) in self.globals.items():
+                if g in used:
+                    for ref in re.findall(r'@([-\w.$]+)',self.m.globals[name]['init']):
+                        if ref in self.globals:used.add(self.globals[ref][0])
+            if used==before:break
         globs={g:{'base':base,'image':g,'size':size} for name,(g,base,size) in self.globals.items() if g in used}
         regions={};end=self.heap_base+self.heap
         for name,size in self.regions.items():end=(end+size-1)//size*size;regions[name]={'base':end};end+=size

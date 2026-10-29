@@ -299,3 +299,19 @@ new adapters, real ISA-7 probe, exact arena/aggregate maps and headless guard);
 red and gyl/ofu remain in progress for the editor-owned coverage and ISA-7 work.
 No push, protected file edits or ISA source edits. Generated Beads JSONL is outside
 the owned paths and is intentionally left uncommitted.
+
+## Freeze repair item 1 — driver/platform scenario execution
+
+Read all requested handoffs, Q1–Q14, editor freeze JSON (2303 rows), and beads
+1jb/7u1/bz6. Added seven executable scenario adapters: source-derived oracle
+wrapper and ISA runs; points-to placement with caller promotion and native
+pointer-chain run; comparison layout/images and ISA/native run; snapshot rewrite
+and SHA-256 build record; closed-unit fallback and indirect native call; real
+18/23 bitcode read/link and version negatives; UART console effect and whole-state
+ISA reversal. Fixed transitive pointer-initialiser data retention in the mapper.
+Coverage now requires successful scenario execution plus index evidence.
+Regression was red before implementation; seven scenarios and wrong-expectation
+mutations now pass. Selected gate coverage 125/125, driver 1/1, all seven new
+state adapters pass. R-budget remains the old bz6 probe until item 5.
+No spec or ISA source edits. Snapshot rebuilt offline through the existing
+immutable build path; the runner records its actual dependency commit.

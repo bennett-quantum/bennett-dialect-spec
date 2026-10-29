@@ -200,6 +200,22 @@ class ContractTests(unittest.TestCase):
                 if 'cc-run' in b['attrs']:
                     with self.subTest(example=b['attrs']):check(runner,b,'run-program')
 
+    def test_driver_platform_scenarios(self):
+        from dialect_driver import SCENARIOS, check_scenario
+        from dialect_meta import coverage
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,d.SPEC.read_text(),tmp,{'state','coverage'})
+            for name in SCENARIOS.values():
+                with self.subTest(example=name):
+                    b=self.block('state',name)
+                    check_scenario(runner,b)
+                    with self.assertRaises((v.Mismatch,d.Fail)):
+                        check_scenario(runner,dict(b,body=b['body'].replace('7','6').replace('9','8').replace('78','79')+'\nwrong obligation'))
+            self.assertTrue(all(coverage(runner)[0][section] for section in SCENARIOS))
+            # An index/source tag alone cannot count as executable evidence.
+            runner.scenario_evidence.clear()
+            self.assertTrue(all(not coverage(runner)[0][section] for section in SCENARIOS))
+
     def test_r_budget_dependency_is_probed(self):
         from pathlib import Path
         from dialect_cc import r_budget_prefix

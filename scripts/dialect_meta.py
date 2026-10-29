@@ -101,8 +101,10 @@ def coverage(runner):
     bodies='\n'.join(b['body'] for b in runner.blocks if 'lift' in b['attrs'])
     results['§8.5 entry-state transfer']='__bennett_rt_entry_replay' in bodies
     results['§14.9 indirectbr']='indirectbr ' in bodies
-    for section in [f'19.{i}' for i in range(3,9)]+['20']:
-        results['§'+section]=False  # No such example tag in Appendix B; b-dialect-spec-gvr.
+    from dialect_driver import SCENARIOS
+    for section,name in SCENARIOS.items():
+        results[section]=name in runner.scenario_evidence and name in idx
+        evidence[section]=[name] if results[section] else []
     return results,evidence
 
 
