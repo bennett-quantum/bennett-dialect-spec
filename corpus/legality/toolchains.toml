@@ -1,0 +1,7 @@
+# LLVM tool directories per major used by the legality spike. Fail loud if a listed dir lacks opt/llc.
+[llvm18]
+bin = "/usr/lib/llvm-18/bin"          # system clang 18.1.3 (C/C++ front end)
+[llvm23]
+bin = "/home/tobias/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/bin"  # rustc 1.99.1 llvm-tools
+[llvm20]
+bin = "/home/tobias/.julia/artifacts/21334d62ab8fb1788be32b83ab0373b77916a794/tools"  # Julia 1.13.3 / LLVM 20.1.8jl via LLVM_full_jll 20.1.8 (env ~/.local/share/bennett-llvm20); also has clang-20, ld.lld
