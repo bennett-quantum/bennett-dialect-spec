@@ -269,8 +269,8 @@ def recognise(text, **options):
     try:
         a.s1()
         for version in re.findall(r'!"bennett.dialect", !"([^"\n]+)"', text):
-            if version != "0.2.1":
-                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.1; actual " + version)
+            if version != "0.2.2":
+                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.2; actual " + version)
         a.analyse()
         a.region_rules()
         a.handle_rules()

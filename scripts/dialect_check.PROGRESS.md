@@ -362,3 +362,16 @@ wrong-code mutation. Selected gate: blocker 7/7, coverage 125/125, recognise
 125/125, state 35/35. All 29 unit tests pass against committed spec text.
 Dependency bz6 remains recorded, not asserted implemented. Next: check whether
 editor's V10 commit landed, then validate its committed witnesses and full gate.
+
+## Freeze repair item 6 — committed V10 reconciliation
+
+As instructed, completed the other items, then checked the last three commits
+of the normative spec. Editor commit **976e4bb** landed: V10 now retains all
+bit-exact operations and carrier transport, with residual fadd as the negative,
+and adds validator-v10-carriers. Full dialect/norm is now 0.2.2. No checker-owned
+normative resolution was made. Dedicated tests cover all three committed witnesses,
+fneg in all seven formats, and current versus stale module-version flags. The
+version-positive test ran red before updating the checker to 0.2.2; now green.
+The full gate on the reconciled spec passed **2311/2311**, zero failed/blocked.
+Manifest integration is independently tracked by **b-dialect-spec-bvy**:
+SPEC_VERSIONS.toml remains 0.2.1 and is outside this implementer's owned paths.

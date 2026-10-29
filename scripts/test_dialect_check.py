@@ -50,6 +50,20 @@ class ContractTests(unittest.TestCase):
             with self.subTest(rule=rule), self.assertRaisesRegex(d.Reject, rule):
                 v.validate('define i32 @test(i32 %x) {\n  ' + body + '\n}\n')
 
+    def test_committed_v10_reconciliation(self):
+        # These names come from editor commit 976e4bb, not a checker rewrite.
+        for name in ('validator-v10-clean','validator-v10-carriers'):
+            with self.subTest(example=name):self.assertEqual(v.validate(self.block('example',name)['body']),'accept')
+        with self.assertRaisesRegex(d.Reject,'V9|V10'):
+            v.validate(self.block('example','validator-v10-residue')['body'])
+        for ty in ('half','bfloat','float','double','x86_fp80','fp128','ppc_fp128'):
+            with self.subTest(format=ty):
+                ir=f'define {ty} @f({ty} %x) {{\n %n = fneg {ty} %x\n ret {ty} %n\n}}\n'
+                self.assertEqual(v.validate(ir),'accept')
+        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.2"}\n'
+        self.assertEqual(v.recognise(good)[0],'accept')
+        self.assertEqual(v.recognise(good.replace('0.2.2','0.2.1'))[0],'reject:BD-E-VERSION')
+
     def test_v4_v12_residues_and_clean(self):
         for rule in ('v4','v12'):
             with self.subTest(rule=rule):
