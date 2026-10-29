@@ -237,6 +237,7 @@ changes, so version remains 0.2.1. ISA 0.9 draft 61550b4 is reference-only.
 
 | Finding | Change | Verification |
 |---|---|---|
+| P-1 / b-dialect-spec-1jb: driver/platform | Seven concrete input/state scenarios, eight LLVM modules, index rows | parse 564/564; all new recognition accepts; seven state adapters unavailable and seven coverage rows hard-coded False |
 | P-1 / b-dialect-spec-1jb: bindings/transfer/indirectbr | Six hand-derived objects, LLVM/linkmap/run companions and index rows | all six object checks and run blocks pass; replay maps exactly; five maps fail |
 | P-1 / b-dialect-spec-1jb: V2–V16/PT12 | 15 clean/residual validator pairs and qalloc ROOT return witness, all indexed | parse 522/522; recognise 112/115; V4/V10/V12 missed rejections |
 | P-1 / b-dialect-spec-1jb: N0/N12/N15/N25/N34/N35 | Six hand-derived normalisation pairs and Appendix B rows; no rule narrowed | N12 passes; five missing transforms fail loudly |
@@ -282,3 +283,16 @@ initialisation; CONSOLE omits buffer/prologue/output delivery; indirectbr explic
 raises checker-unimplemented. The binding objects and their expectations remain
 unchanged to expose these gaps. Seven hard-coded driver/platform coverage failures
 remain regardless of examples (dialect_meta.coverage sets them False).
+
+| driver/platform | selected parse,recognise,state,coverage,xrefs | 2139 pass / 10 fail / 8 blocked (2157); state 28/36, coverage 118/125 |
+
+Report: `scripts/.tmp/coverage-driver.json`. All new source modules parse and
+recognise; all 1309 xrefs pass. Each driver operation has a concrete hand-derived
+expected state, not merely a section mention. Seven missing state adapters fail
+explicitly under P-2 (reported as blocked by this checker). The fallback labels
+them “TDL state execution” / b-isa-spec-xam, but all CLI commands exist: missing
+capabilities are synthesis, placement promotion, comparison-link layout, snapshot
+rewrite, closed-unit fallback, mixed-major link, and the platform UART path.
+None can be executed by current families just by adding a tag. In addition,
+coverage unconditionally sets all seven section obligations False, irrespective
+of Appendix B rows. Recorded on 1jb and Q12; never weakened or removed.

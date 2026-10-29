@@ -8375,6 +8375,163 @@ build flags only (NS §0); inventory every asm form, `.S` symbol, MMIO site and 
 SQLite §3 did; fix the row lists of §20.2 and §20.5 and the board constants of §20.1. Until then
 those rows are this section's patterns (§24).
 
+
+Checked driver and platform boundary scenarios. Each state block specifies the
+requested driver operation on the accompanying input, not just a recogniser
+verdict. Missing driver/platform adapters fail under P-2; parsing alone never
+satisfies these scenarios.
+
+**`driver-oracle-synthesis` (§19.3).** The input is an unmodified integer program. Binding x to eight input wires gives wrapping x+1: x=7 gives 8 and x=255 gives 0. The driver-generated descriptor has one IN, an eight-wire target and a four-wire fault; it launches one oracle invocation. This is the synthesis obligation, not an assertion that parsing f executes the driver.
+
+```llvm example=driver-oracle-synthesis verdict=accept
+define i8 @program(i8 %x) {
+  %r = add i8 %x, 1
+  ret i8 %r
+}
+```
+
+```text state=driver-oracle-synthesis at=0
+driver: --bennett-oracle=program --bennett-bind=0:in:8 --bennett-payload=return
+synthesise: nparam=1 IN(8,zext); tgt width=8; fault width=4; one invocation
+input=7 -> code=0 payload=8
+input=255 -> code=0 payload=0
+```
+
+**`driver-pointer-promotion` (§19.4).** The host mutation changes tail.value from 1 to 9. Device code follows head.next and reads 9. Since head contains a pointer the device follows, the shared memory is pointer-rich: mutate and its root main must be promoted to CC. Keeping a native host-only tail store without coherent state would instead leave the image value 1.
+
+```llvm example=driver-pointer-promotion verdict=accept
+%Node = type { ptr, i8 }
+@tail = internal global %Node { ptr null, i8 1 }
+@head = internal global %Node { ptr @tail, i8 0 }
+define internal void @mutate() {
+  %p = getelementptr %Node, ptr @tail, i64 0, i32 1
+  store i8 9, ptr %p
+  ret void
+}
+define internal i8 @device(ptr %p) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %next = load ptr, ptr %p
+  %v = getelementptr %Node, ptr %next, i64 0, i32 1
+  %r = load i8, ptr %v
+  call void @__bennett_qfree(ptr %h)
+  ret i8 %r
+}
+define i8 @main() {
+  call void @mutate()
+  %r = call i8 @device(ptr @head)
+  ret i8 %r
+}
+```
+
+```text state=driver-pointer-promotion at=0
+placement: mutate=CC main=CC device=CC; host retains only system-call proxy
+run: main returns 9; device follows head.next; tail image 1 is not the call-entry value
+```
+
+**`driver-comparison-layout` (§19.5).** The first global occupies [4096,4099), the aligned pointer slot [4104,4112), so heap_base=8192. With heap_limit_max=4194304 the heap ends at 4202496, above 0x400000. With no arena or interfaces, text begins at the next multiple of 0x200000: 6291456 (0x600000). The initial pointer slot contains 4096 in little-endian; native and device layouts must agree.
+
+```llvm example=driver-comparison-layout verdict=accept
+@bytes = internal global [3 x i8] [i8 7, i8 8, i8 9], align 1
+@slot = internal global ptr @bytes, align 8
+define i8 @f() {
+  %p = load ptr, ptr @slot
+  %r = load i8, ptr %p
+  ret i8 %r
+}
+```
+
+```text state=driver-comparison-layout at=0
+driver: data_base=4096 heap_limit_max=4194304; no arena/interface
+layout: bytes=4096 slot=4104 heap_base=8192 heap_end=4202496 text_base=6291456
+slot image=0010000000000000
+native and device: f returns 7; no code/data overlap
+```
+
+**`driver-snapshot-initializer` (§19.6).** The dump supplies the single mutable byte g=7 before materialisation. Its former zero image is replaced by 07; no function outside the closure writes g, so this build-time case needs no call-entry transfer. Both builds return 7 from the same fixed image.
+
+```llvm example=driver-snapshot-initializer verdict=accept
+@g = internal global i8 0
+define i8 @f() {
+  %r = load i8, ptr @g
+  ret i8 %r
+}
+```
+
+```text state=driver-snapshot-initializer at=0
+driver: --bennett-snapshot=dump; dump bytes for @g=07
+materialised global: @g = internal global i8 7
+data image=07; entry read-set requiring transfer=empty; no snapshot register
+native and device: f returns 7; build record includes dump SHA-256
+```
+
+**`driver-closed-unit-fallback` (§19.7).** The entry receives a function pointer, violating the closedness check even though g is defined and address-taken. The requested fast path therefore falls back to the whole-program route; it does not reject the program. Dispatching p=g returns 7 on either route.
+
+```llvm example=driver-closed-unit-fallback verdict=accept
+@address = internal constant ptr @g
+define internal i8 @g() {
+  ret i8 7
+}
+define i8 @entry(ptr %p) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %r = call i8 %p()
+  call void @__bennett_qfree(ptr %h)
+  ret i8 %r
+}
+```
+
+```text state=driver-closed-unit-fallback at=0
+driver: -bennett-closed-unit; entry parameter p supplies function pointer
+closedness=false; selected route=whole-program; verdict=accept
+p=@g -> return 7; same result without -bennett-closed-unit
+```
+
+**`driver-mixed-majors` (§19.8).** Produce the first module with LLVM 18 and the second with LLVM 23. Both have the same datalayout and triple; M=23 reads and links both. The linked result is 3+4=7. Producing either module above envelope M, or changing its triple/datalayout to conflict, instead gives BD-E-VERSION. Parsing these modules separately is not evidence of the mixed-major link.
+
+```llvm example=driver-mixed-majors verdict=accept
+target datalayout = "e-p:64:64"
+target triple = "x86_64-unknown-linux-gnu"
+define i32 @from18() {
+  ret i32 3
+}
+```
+
+```llvm example=driver-mixed-majors-second verdict=accept
+target datalayout = "e-p:64:64"
+target triple = "x86_64-unknown-linux-gnu"
+declare i32 @from18()
+define i32 @main() {
+  %a = call i32 @from18()
+  %r = add i32 %a, 4
+  ret i32 %r
+}
+```
+
+```text state=driver-mixed-majors at=0
+driver: input from18.bc major=18; input from23.bc major=23; envelope newest M=23
+read/link/plugin/runtime/arith major=23; common datalayout=e-p:64:64 triple=x86_64-unknown-linux-gnu
+linked main -> return 7
+conflicting triple or datalayout -> reject:BD-E-VERSION
+input newer than M -> reject:BD-E-VERSION
+```
+
+**`platform-uart-write` (§20).** At the profile UART transmit window 0x10000000, N35 routes the volatile byte store to the model before N9. It appends x (hex 78) to the console tape without a raw unallocated store. With sufficient budgets and no pending interrupt, reverse restores the entry device/CSR state and empty tape. This is a successful platform path; no typed R fault is assumed available in ISA 0.8.
+
+```llvm example=platform-uart-write verdict=accept rmode=@main
+define i32 @main() {
+  %p = inttoptr i64 268435456 to ptr
+  store volatile i8 120, ptr %p, align 1
+  ret i32 0
+}
+```
+
+```text state=platform-uart-write at=0
+driver: --bennett-platform=riscv64-bennett-virt --bennett-tier=reversible --bennett-entry=main
+entry: console=empty tape=empty; interrupts pending=none
+materialisation: entry poll; volatile store -> MMIO helper -> UART model -> console.write
+run: status=COMPLETED result=0 console=78; tape has console.write(78); no code 7
+reverse: status=REVERSED console=empty tape=empty CSR=entry RAM=entry
+```
+
 ## 21. Legality corpus and conformance suites (corpus 0.2)
 
 ### 21.1 The corpus
@@ -8718,6 +8875,14 @@ compute expected artefacts only (P-3).
 | `binding-console-byte` | §8.3 CONSOLE, §11.3 | parse, map, check, run-oracle | LLVM; isa-ref |
 | `entry-replay-byte` | §8.5 entry-state transfer | parse, map, check, run-oracle | LLVM; isa-ref |
 | `indirectbr-two-blocks` | §14.9 indirectbr | parse, map, check, run-oracle | LLVM; isa-ref |
+
+| `driver-oracle-synthesis` | §19.3 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `driver-pointer-promotion` | §19.4 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `driver-comparison-layout` | §19.5 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `driver-snapshot-initializer` | §19.6 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `driver-closed-unit-fallback` | §19.7 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `driver-mixed-majors` | §19.8 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `platform-uart-write` | §20 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
 
 **Rule ids without an example yet** (the check fails on them, P-1, until examples land): N0, N12,
 N15, N25, N34, N35; V2–V16; PT12; the `OUT` binding's object (`oracle-wide-out` is recognised

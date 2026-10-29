@@ -116,3 +116,14 @@ Keep five map failures: OUT wrapper unimplemented, missing BLOCK/CLOCK/CONSOLE
 prologues/delivery, indirectbr unimplemented. These are model boundary microvectors,
 not full runtime implementations. Coverage is now 118/125; seven driver/platform
 rows are hard-coded False and need discovery plus execution, never removal.
+
+## Q12 — driver/platform execution and hard-coded coverage (editor)
+
+Seven named source/state scenarios now cover sections 19.3–19.8 and 20 in
+Appendix B. All eight source modules parse/recognise, but state dispatch lacks
+driver/platform adapters and returns TDL state execution unavailable. Its xam
+label is not a missing-CLI claim. Implement the actual driver operations, then
+derive the seven coverage rows from executable evidence: current coverage()
+unconditionally sets each False. Do not remove rows or count parsing as driver
+execution. Selected gate: 2139 pass / 10 fail / 8 blocked, including preexisting
+R-budget state and three newly exposed validator misses. Tracked on 1jb.
