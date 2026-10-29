@@ -1,5 +1,6 @@
-State: skeleton only (2026-10-28); no implementation. 
-Next: Draft spec/ from north star section 3; grow corpus/; implement validator.
-Blockers: none from the ISA spec: draft 0.8 was accepted by the council on 2026-10-28 (../bennett-isa-spec/spec/Bennett-ISA-Spec.md). Start every session from ../bennett/HANDOFF.md.
+State (2026-10-29): legality spike done (docs/spikes/2026-10-28-legality-findings.md, maintainer decisions 1-4); draft 0.1 (spec/Bennett-Dialect-Spec.md) audited and REJECTED for narrowing north-star scope (docs/audit/); SQLite rung-4 spike done: feasible on ISA 0.8 with no ISA change (docs/spikes/sqlite/REPORT.md). Dialect 0.2 outline written and RATIFIED (spec/outline-0.2.md; maintainer rulings at its end: E1-E14, riscv64, ISA 0.9 after dialect acceptance). The 0.2 full text was started and stopped by the maintainer before anything was written: spec/Bennett-Dialect-Spec.md is still 0.1.
+Next: (1) write the 0.2 full text from spec/outline-0.2.md (brief: docs/briefs/2026-10-29-dialect-0.2-fulltext.md); (2) extend scripts/dialect_check.py to execute every 0.2 example against the Rust ISA reference interpreter (needs b-isa-spec-xam); (3) council rounds on 0.2 with ../bennett/docs/council/rubric-isa.md (narrowing is S0). Issues: bd ready; epic b-dialect-spec-8wf (40 narrowings), blocks-rung-4 label for the P0 set.
+Rules: CLAUDE.md rule 10 (no narrowing of north-star scope) and rule 11 (headless; never LLVM view-* passes).
+Start every session from ../bennett/HANDOFF.md.
 Remote: github.com/bennett-quantum/bennett-dialect-spec (pushed).
 See worklog/001_2026-10-28_bootstrap.md.
