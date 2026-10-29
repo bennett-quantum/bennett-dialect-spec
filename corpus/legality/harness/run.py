@@ -605,19 +605,46 @@ def static_analysis(before, after):
         return result
 
 
+HEADLESS_BIN = RAW / 'headless-bin'
+VIEWER_LOG = RAW / 'viewer-attempts.log'
+VIEWERS = ('xdg-open', 'gio', 'gnome-open', 'kde-open', 'kde-open5', 'sensible-browser',
+           'x-www-browser', 'xdot', 'dotty', 'gv', 'evince', 'okular', 'zathura', 'eog',
+           'display', 'open')
+
+
+def headless_env(tmpdir=None):
+    """Environment for every tool the harness runs: no route to the desktop, temp files local.
+
+    Viewer passes (view-cfg, view-dom, view-callgraph, ...) are still enumerated and run. On
+    2026-10-28 they wrote ~80,000 .dot files to /tmp and reached the maintainer's editor through
+    xdg-open over D-Bus: dropping DISPLAY/WAYLAND_DISPLAY alone was not enough. Now D-Bus is
+    dropped too, TMPDIR is the cell directory, and every known viewer resolves first to a stub
+    that logs the attempt to VIEWER_LOG and fails.
+    """
+    HEADLESS_BIN.mkdir(parents=True, exist_ok=True)
+    for name in VIEWERS:
+        stub = HEADLESS_BIN / name
+        if not stub.exists():
+            stub.write_text(f'#!/bin/sh\necho "{name} $*" >> "{VIEWER_LOG}"\nexit 1\n')
+            stub.chmod(0o755)
+    env = dict(os.environ, LLVM_DISABLE_CRASH_REPORT='1')
+    for key in ('DISPLAY', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS', 'BROWSER'):
+        env.pop(key, None)
+    env['PATH'] = f'{HEADLESS_BIN}{os.pathsep}{env.get("PATH", "")}'
+    if tmpdir is not None:
+        env['TMPDIR'] = str(tmpdir)
+    return env
+
+
 def command(argv, directory, label, timeout=30, env_override=None):
     directory = pathlib.Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     out, err = directory / (label + '.stdout'), directory / (label + '.stderr')
     start = time.monotonic()
     timed_out = False
-    env = dict(os.environ, LLVM_DISABLE_CRASH_REPORT='1')
+    env = headless_env(tmpdir=directory)
     env.update(env_override or {})
     new_session = os.environ.get('BENNETT_REDUCER_CHILD') != '1'
-    # Viewer passes are still enumerated and run; prevent a GUI process escaping
-    # the bounded process group. Missing display is an explicit opt diagnostic.
-    env.pop('DISPLAY', None)
-    env.pop('WAYLAND_DISPLAY', None)
     with out.open('wb') as stdout, err.open('wb') as stderr:
         process = subprocess.Popen(list(map(str, argv)), cwd=directory, stdout=stdout,
                                    stderr=stderr, env=env, start_new_session=new_session)
