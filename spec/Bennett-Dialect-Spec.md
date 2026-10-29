@@ -1017,6 +1017,25 @@ An `inttoptr` of a constant gives (EXT, `*`) and, for function-pointer purposes,
 addresses are symbolic `FN` atoms during the analysis, and their numeric values A(F) are fixed
 only by the comparison link (§19.5), after normalisation (S7) and before lifting (S8).
 
+
+PT12 checked ROOT propagation: `make` returns the fresh qalloc ROOT to its caller;
+the caller uses that same identity for a gate and free. This is a direct handle
+realisation, so no stored-instance bound is required. The checked verdict is accept.
+
+```llvm example=pt12-root-return verdict=accept
+define internal ptr @make() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  ret ptr %h
+}
+define void @top() {
+  %h = call ptr @make()
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
 ### 5.3 Value sets
 
 The **value set** VS(v) of an integer or pointer operand is the set of its `INT` and `FN` atoms
@@ -3655,6 +3674,289 @@ The validator inspects the materialised device variants and rejects (`BD-E-RESID
 
 The plugin's validator and `bennett-conformance`'s are implemented independently (NS §3.2); a
 disagreement on any input is a conformance failure of one of them.
+
+
+Checked validator boundary pairs. Each positive is materialised IR accepted by the
+validator, and each negative retains the named forbidden construct (V8 also has V13).
+These test validation, not producer acceptance or executable result delivery.
+
+**V2.** Only the permitted R charge metadata remains; the return is not hidden by a poison assumption.
+
+```llvm example=validator-v2-clean verdict=accept mode=validate
+define i8 @f() {
+  ret i8 7, !bennett.rstep !0
+}
+!0 = !{}
+```
+
+```llvm example=validator-v2-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(ptr %p) {
+  %v = load i8, ptr %p, !range !0
+  ret i8 %v
+}
+!0 = !{i8 0, i8 8}
+```
+
+**V3.** The pointer parameter and its load carry no N4 attributes.
+
+```llvm example=validator-v3-clean verdict=accept mode=validate
+define i8 @f(ptr %p) {
+  %v = load i8, ptr %p
+  ret i8 %v
+}
+```
+
+```llvm example=validator-v3-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(ptr nonnull %p) {
+  %v = load i8, ptr %p
+  ret i8 %v
+}
+```
+
+**V4.** ctlz with false is retained and defines ctlz(0)=8; true must be rejected.
+
+```llvm example=validator-v4-clean verdict=accept mode=validate
+declare i8 @llvm.ctlz.i8(i8, i1 immarg)
+define i8 @f(i8 %x) {
+  %v = call i8 @llvm.ctlz.i8(i8 %x, i1 false)
+  ret i8 %v
+}
+```
+
+```llvm example=validator-v4-residue verdict=reject:BD-E-RESIDUAL mode=validate
+declare i8 @llvm.ctlz.i8(i8, i1 immarg)
+define i8 @f(i8 %x) {
+  %v = call i8 @llvm.ctlz.i8(i8 %x, i1 true)
+  ret i8 %v
+}
+```
+
+**V5.** The formerly undefined byte is an explicit zero; the negative still contains poison.
+
+```llvm example=validator-v5-clean verdict=accept mode=validate
+define i8 @f() {
+  %v = add i8 0, 1
+  ret i8 %v
+}
+```
+
+```llvm example=validator-v5-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f() {
+  %v = add i8 poison, 1
+  ret i8 %v
+}
+```
+
+**V6.** The access is plain, with no freeze, ordering or volatility.
+
+```llvm example=validator-v6-clean verdict=accept mode=validate
+define i8 @f(ptr %p) {
+  %v = load i8, ptr %p, align 1
+  ret i8 %v
+}
+```
+
+```llvm example=validator-v6-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(ptr %p) {
+  %v = load volatile i8, ptr %p, align 1
+  ret i8 %v
+}
+```
+
+**V7.** The shift has exactly one use: false arm of the matching uge/select-zero guard. At s=8, result is zero.
+
+```llvm example=validator-v7-clean verdict=accept mode=validate
+define i8 @f(i8 %x, i8 %s) {
+  %c = icmp uge i8 %s, 8
+  %v = shl i8 %x, %s
+  %r = select i1 %c, i8 0, i8 %v
+  ret i8 %r
+}
+```
+
+```llvm example=validator-v7-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(i8 %x, i8 %s) {
+  %v = shl i8 %x, %s
+  ret i8 %v
+}
+```
+
+**V8.** After N15/N21, dynamic extraction is a scalar select chain: i=0 gives 5, i=1 gives 9, all other indices give 0. No dynamic extract remains.
+
+```llvm example=validator-v8-clean verdict=accept mode=validate
+define i8 @f(i32 %i) {
+  %c0 = icmp eq i32 %i, 0
+  %v0 = select i1 %c0, i8 5, i8 0
+  %c1 = icmp eq i32 %i, 1
+  %r = select i1 %c1, i8 9, i8 %v0
+  ret i8 %r
+}
+```
+
+```llvm example=validator-v8-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(i32 %i) {
+  %v = extractelement <2 x i8> <i8 5, i8 9>, i32 %i
+  ret i8 %v
+}
+```
+
+**V9.** fneg double is the explicitly retained bit operation. fadd is arithmetic requiring N32.
+
+```llvm example=validator-v9-clean verdict=accept mode=validate
+define double @f(double %x) {
+  %v = fneg double %x
+  ret double %v
+}
+```
+
+```llvm example=validator-v9-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define double @f(double %x) {
+  %v = fadd double %x, 1.0
+  ret double %v
+}
+```
+
+**V10.** An extended-format load and bitcast are allowed; half fneg is outside the V10 whitelist even though V9 permits fneg in general.
+
+```llvm example=validator-v10-clean verdict=accept mode=validate
+define i16 @f(ptr %p) {
+  %v = load half, ptr %p
+  %r = bitcast half %v to i16
+  ret i16 %r
+}
+```
+
+```llvm example=validator-v10-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i16 @f(ptr %p) {
+  %v = load half, ptr %p
+  %n = fneg half %v
+  %r = bitcast half %n to i16
+  ret i16 %r
+}
+```
+
+**V11.** N24 backing is explicit: a defined helper supplies the frame address; there is no alloca.
+
+```llvm example=validator-v11-clean verdict=accept mode=validate
+@frame = internal global i8 0
+define internal ptr @frame_base() {
+  ret ptr @frame
+}
+define ptr @f() {
+  %p = call ptr @frame_base()
+  ret ptr %p
+}
+```
+
+```llvm example=validator-v11-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define ptr @f() {
+  %p = alloca i8
+  ret ptr %p
+}
+```
+
+**V12.** The call has a definition in this materialised L/R module and returns 7. The negative calls an unresolved nonprimitive callee.
+
+```llvm example=validator-v12-clean verdict=accept mode=validate
+define internal i8 @g() {
+  ret i8 7
+}
+define i8 @f() {
+  %v = call i8 @g()
+  ret i8 %v
+}
+```
+
+```llvm example=validator-v12-residue verdict=reject:BD-E-RESIDUAL mode=validate
+declare i8 @missing()
+define i8 @f() {
+  %v = call i8 @missing()
+  ret i8 %v
+}
+```
+
+**V13.** Two vector lanes are now scalar loads at offsets 0 and 1; their scalar sum is retained.
+
+```llvm example=validator-v13-clean verdict=accept mode=validate
+define i8 @f(ptr %p) {
+  %a = load i8, ptr %p
+  %q = getelementptr i8, ptr %p, i64 1
+  %b = load i8, ptr %q
+  %r = add i8 %a, %b
+  ret i8 %r
+}
+```
+
+```llvm example=validator-v13-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(ptr %p) {
+  %v = load <2 x i8>, ptr %p
+  %r = extractelement <2 x i8> %v, i32 0
+  ret i8 %r
+}
+```
+
+**V14.** An i129 load is represented by i64, i64 and one byte truncated to its one-bit top limb; no value exceeds 128 bits.
+
+```llvm example=validator-v14-clean verdict=accept mode=validate
+define i1 @f(ptr %p) {
+  %p1 = getelementptr i8, ptr %p, i64 8
+  %p2 = getelementptr i8, ptr %p, i64 16
+  %a = load i64, ptr %p, align 1
+  %b = load i64, ptr %p1, align 1
+  %c = load i8, ptr %p2, align 1
+  %r = trunc i8 %c to i1
+  ret i1 %r
+}
+```
+
+```llvm example=validator-v14-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i1 @f(ptr %p) {
+  %v = load i129, ptr %p, align 1
+  %r = trunc i129 %v to i1
+  ret i1 %r
+}
+```
+
+**V15.** EH has an explicit state test and ordinary branches, with no invoke/landingpad residue. Active=0 returns 7, otherwise 0.
+
+```llvm example=validator-v15-clean verdict=accept mode=validate
+define i8 @f(ptr %active) {
+entry:
+  %a = load i32, ptr %active
+  %c = icmp ne i32 %a, 0
+  br i1 %c, label %fault, label %ok
+fault:
+  ret i8 0
+ok:
+  ret i8 7
+}
+```
+
+```llvm example=validator-v15-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(ptr %ap) {
+  %v = va_arg ptr %ap, i8
+  ret i8 %v
+}
+```
+
+**V16.** The asm result has been replaced by a defined deterministic shim; no target instruction remains.
+
+```llvm example=validator-v16-clean verdict=accept mode=validate
+define internal i64 @clock_value() {
+  ret i64 3
+}
+define i64 @f() {
+  %v = call i64 @clock_value()
+  ret i64 %v
+}
+```
+
+```llvm example=validator-v16-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i64 @f() {
+  %v = call i64 asm sideeffect "rdcycle $0", "=r"()
+  ret i64 %v
+}
+```
 
 ### 12.5 Scalable vectors
 
@@ -8005,6 +8307,24 @@ compute expected artefacts only (P-3).
 | `n-byval-copy` | N25 | parse, normalise | LLVM 18/20/23; Python normaliser |
 | `n-rstep-return` | N34 | parse, normalise | LLVM 18/20/23; Python normaliser |
 | `n-platform-mmio` | N35 | parse, normalise | LLVM 18/20/23; Python normaliser |
+
+| `validator-v2-clean`, `validator-v2-residue` | V2 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v3-clean`, `validator-v3-residue` | V3 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v4-clean`, `validator-v4-residue` | V4 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v5-clean`, `validator-v5-residue` | V5 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v6-clean`, `validator-v6-residue` | V6 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v7-clean`, `validator-v7-residue` | V7 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v8-clean`, `validator-v8-residue` | V8 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v9-clean`, `validator-v9-residue` | V9 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v10-clean`, `validator-v10-residue` | V10 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v11-clean`, `validator-v11-residue` | V11 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v12-clean`, `validator-v12-residue` | V12 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v13-clean`, `validator-v13-residue` | V13 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v14-clean`, `validator-v14-residue` | V14 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v15-clean`, `validator-v15-residue` | V15 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v16-clean`, `validator-v16-residue` | V16 | parse, validate | LLVM 18/20/23; independent validator |
+
+| `pt12-root-return` | PT12 | parse, recognise | LLVM 18/20/23; points-to recogniser |
 
 **Rule ids without an example yet** (the check fails on them, P-1, until examples land): N0, N12,
 N15, N25, N34, N35; V2–V16; PT12; the `OUT` binding's object (`oracle-wide-out` is recognised

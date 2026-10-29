@@ -237,6 +237,7 @@ changes, so version remains 0.2.1. ISA 0.9 draft 61550b4 is reference-only.
 
 | Finding | Change | Verification |
 |---|---|---|
+| P-1 / b-dialect-spec-1jb: V2–V16/PT12 | 15 clean/residual validator pairs and qalloc ROOT return witness, all indexed | parse 522/522; recognise 112/115; V4/V10/V12 missed rejections |
 | P-1 / b-dialect-spec-1jb: N0/N12/N15/N25/N34/N35 | Six hand-derived normalisation pairs and Appendix B rows; no rule narrowed | N12 passes; five missing transforms fail loudly |
 
 ### Verification table
@@ -252,3 +253,11 @@ N15 raises “dynamic extract needs select chain”; N25 leaves byval and omits 
 N34 emits no R marks (rmode attribute ignored); N35 drops volatile without MMIO
 routing/poll (platform attribute ignored). These are checker limitations, not
 permissions to alter the normative output. N12 passes on all three LLVM majors.
+
+| validator/points-to omissions | selected parse,recognise,coverage; headless, repo TMPDIR | 746 pass / 16 fail / 0 blocked (762); 13 remaining coverage rows |
+
+Report: `scripts/.tmp/coverage-validator.json`. All 15 clean validator witnesses
+and PT12 ROOT return pass. Negative V4 (ctlz true), V10 (half fneg) and V12
+(undefined nonprimitive call in materialised L/R) incorrectly accept; retained
+as failing obligations. V8 negative also triggers V13, so this does not claim
+an independent pre-N21 V8-pattern implementation. No normative text was fixed.

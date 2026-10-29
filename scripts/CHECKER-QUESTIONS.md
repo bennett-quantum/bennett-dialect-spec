@@ -97,3 +97,12 @@ n-rstep-return (R entry f), n-platform-mmio (riscv64-bennett-virt). N12 passes.
 N0/N15/N25/N34/N35 expose absent transforms; rmode/platform context must be
 consumed for the last two. Keep expected outputs and P-1 intact. Whole gate
 2043/2078 passes, 34 failures and one ISA-7 blocked state. Tracked on 1jb.
+
+## Q10 — validator boundary omissions (editor)
+
+validator-v2-clean through validator-v16-clean and matching -residue modules
+exercise materialised validation; pt12-root-return checks qalloc ROOT return
+propagation through a defined function. Selected gate: 522/522 parses, 112/115
+verdicts, 112/125 index coverage. Negative V4 ctlz true, V10 half fneg and V12
+unresolved callee currently accept incorrectly. Keep their expected rejections.
+V8's negative is also V13: the checker has no separate pre-N21 pattern check.
