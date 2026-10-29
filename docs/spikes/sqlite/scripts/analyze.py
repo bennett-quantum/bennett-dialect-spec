@@ -212,8 +212,15 @@ def main():
               f"padded={S['padded_structured_rows']:10.0f} heap={S['heap_bytes']['max']:8d} "
               f"depth={S['maxdepth']['max']:3d} fns={S['functions_executed']:4d} "
               f"varyblk={S['blocks_varying']:5d}/{S['blocks_executed']:5d} traces={S['distinct_traces']}")
+    # keep the file small: full per-site lists only where cost.py needs them
+    for name, S in allS.items():
+        full = name.startswith(("deser-N1024", "deser-N1048576"))
+        if not full and "superposed_address_sites" in S:
+            S["superposed_address_sites"] = S["superposed_address_sites"][:20]
+        if name not in ("deser-N1024", "prepared-N1024", "rebuild-N1024"):
+            S.pop("functions_executed_names", None)
     with open(os.path.join(out, "profiles.json"), "w") as f:
-        json.dump(allS, f, indent=1, sort_keys=True)
+        json.dump(allS, f, separators=(",", ":"), sort_keys=True)
 
 
 if __name__ == "__main__":

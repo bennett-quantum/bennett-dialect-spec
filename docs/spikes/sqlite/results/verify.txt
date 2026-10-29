@@ -1,0 +1,22 @@
+variant=deser N=16 image_bytes=8192 checked=18 matches=0 mismatches=0 setup_s=0.003 per_call_us=54.11
+PASS
+variant=deser N=256 image_bytes=16384 checked=258 matches=6 mismatches=0 setup_s=0.000 per_call_us=42.89
+PASS
+variant=deser N=1024 image_bytes=40960 checked=1026 matches=13 mismatches=0 setup_s=0.001 per_call_us=24.08
+PASS
+variant=prepared N=16 image_bytes=8192 checked=18 matches=0 mismatches=0 setup_s=0.000 per_call_us=2.87
+PASS
+variant=prepared N=256 image_bytes=16384 checked=258 matches=6 mismatches=0 setup_s=0.000 per_call_us=1.90
+PASS
+variant=prepared N=1024 image_bytes=40960 checked=1026 matches=13 mismatches=0 setup_s=0.001 per_call_us=1.88
+PASS
+variant=rebuild N=16 image_bytes=8192 checked=18 matches=0 mismatches=0 setup_s=0.000 per_call_us=81.61
+PASS
+variant=rebuild N=256 image_bytes=16384 checked=258 matches=6 mismatches=0 setup_s=0.000 per_call_us=76.13
+PASS
+variant=rebuild N=1024 image_bytes=40960 checked=1026 matches=13 mismatches=0 setup_s=0.001 per_call_us=224.96
+PASS
+variant=prepared N=1048576 image_bytes=33492992 checked=1048578 matches=11698 mismatches=0 setup_s=0.344 per_call_us=0.96
+PASS
+variant=deser N=1048576 image_bytes=33492992 checked=257 matches=2 mismatches=0 setup_s=0.362 per_call_us=18.62
+PASS

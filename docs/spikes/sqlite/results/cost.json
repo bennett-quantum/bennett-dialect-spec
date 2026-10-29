@@ -1,0 +1,93 @@
+{
+ "N2^20": {
+  "grover_iterations_M=1": 804,
+  "grover_iterations_M=11698": 7,
+  "reference": {
+   "A_image": 25,
+   "A_tab": 11,
+   "B": 318549.18368560006,
+   "H": 18,
+   "P": 19,
+   "n_rows": 324224,
+   "qubits": {
+    "alloctab (2^A_tab x (2 ptr + 2))": 266240,
+    "image interface region (2^A x 8)": 268435456,
+    "location stack (monotonic, cells x W_cell)": 171105510.4,
+    "mem (2^H bytes x 8)": 2097152,
+    "register file (all locations of the closure)": 7740131,
+    "step history (B frames)": 235407846.74365845
+   },
+   "qubits_total": 685052336.1436584,
+   "stack_cells": 1336761.8,
+   "static_mem_rows": 68563,
+   "toffoli_per_oracle": 1.3317315675326388e+19,
+   "toffoli_per_step": 20903076129792
+  },
+  "reference_time_units_sequential_M=1": 1.820210706503611e+24,
+  "reference_toffoli_total_M=1": 1.0707121802962417e+22,
+  "reference_toffoli_total_M=11698": 9.322120972728472e+19,
+  "structured": {
+   "qrom_pages": 8177,
+   "qubits": {
+    "garbage, no pebbling (varying values x 64)": 2285056,
+    "superposed memory (union of written bytes x 8)": 465144
+   },
+   "qubits_total": 2750200,
+   "toffoli_memory": 93676826,
+   "toffoli_per_oracle": 201619700,
+   "toffoli_predication": 928512,
+   "toffoli_values": 6204512
+  },
+  "structured_time_units_sequential_M=1": 27557380596000,
+  "structured_toffoli_total_M=1": 162102238800,
+  "structured_toffoli_total_M=11698": 1411337900
+ },
+ "assumptions": {
+  "B_MARGIN": 1.1,
+  "CORES": 32,
+  "F_BITS": 4,
+  "INTERP_ROWS_PER_S": [
+   100000.0,
+   1000000.0,
+   10000000.0
+  ],
+  "PTR": 64,
+  "ROW_SLOT_BITS": 700,
+  "TARGET": "bennett-targets/targets/example-surface-code-d17.json (illustrative)",
+  "TOFFOLI_TIME": 170,
+  "T_ADD64": 128,
+  "T_MOVE64": 64,
+  "T_MUL64": 20000,
+  "W_CELL": 128
+ },
+ "verify_N1024": {
+  "B": 310584.2273239016,
+  "domain_full": 32768,
+  "domain_shared": 1024,
+  "rows_per_basis_input": 621168.4546478032,
+  "wall_s_full_D_at_1e+05_rows_per_s_32_cores": 6360.7649755935045,
+  "wall_s_full_D_at_1e+06_rows_per_s_32_cores": 636.0764975593505,
+  "wall_s_full_D_at_1e+07_rows_per_s_32_cores": 63.60764975593505,
+  "wall_s_per_x_at_1e+05_rows_per_s_32_cores": 198.77390548729701,
+  "wall_s_per_x_at_1e+06_rows_per_s_32_cores": 19.877390548729704,
+  "wall_s_per_x_at_1e+07_rows_per_s_32_cores": 1.9877390548729703
+ },
+ "verify_N256": {
+  "B": 310270.7628751329,
+  "domain_full": 8192,
+  "domain_shared": 256,
+  "grover_iterations": 5,
+  "grover_wall_s_at_1e+05_rows_per_s_32_cores": 248.21661030010634,
+  "grover_wall_s_at_1e+06_rows_per_s_32_cores": 24.821661030010635,
+  "grover_wall_s_at_1e+07_rows_per_s_32_cores": 2.482166103001063,
+  "marked": 6,
+  "oracle_branch_runs": 1280,
+  "rows_per_basis_input": 620541.5257502658,
+  "wall_s_full_D_at_1e+05_rows_per_s_32_cores": 1588.5863059206804,
+  "wall_s_full_D_at_1e+06_rows_per_s_32_cores": 158.85863059206804,
+  "wall_s_full_D_at_1e+07_rows_per_s_32_cores": 15.885863059206805,
+  "wall_s_per_x_at_1e+05_rows_per_s_32_cores": 49.64332206002126,
+  "wall_s_per_x_at_1e+06_rows_per_s_32_cores": 4.964332206002126,
+  "wall_s_per_x_at_1e+07_rows_per_s_32_cores": 0.49643322060021267
+ }
+}
