@@ -173,35 +173,55 @@ Version 0.2.1 per spec/README.md; ISA 0.8 unchanged. No push.
 
 | Blocker id | Status | Commit |
 |---|---|---|
-| D02-11 | resolved | this group commit (see git log) |
-| D02-12 | resolved | this group commit (see git log) |
-| D02-13 | resolved | this group commit (see git log) |
-| BD2-5 | resolved | this group commit (see git log) |
-| D02-14 | resolved | this group commit (see git log) |
-| D02-16 | resolved | this group commit (see git log) |
-| D02-17 | resolved | this group commit (see git log) |
-| BD2-6 | resolved | this group commit (see git log) |
-| BD2-1 | resolved | this TDL group commit (see git log) |
-| BD2-2 | resolved | this TDL group commit (see git log) |
-| D02-02 | resolved | this TDL group commit (see git log) |
-| BD2-4 | resolved | this TDL group commit (see git log) |
-| D02-03 | resolved | this TDL group commit (see git log) |
-| D02-04 | resolved | this TDL group commit (see git log) |
-| D02-05 | resolved | this TDL group commit (see git log) |
-| D02-06 | resolved | this TDL group commit (see git log) |
-| D02-07 | resolved | this TDL group commit (see git log) |
-| D02-08 | resolved | this TDL group commit (see git log) |
-| B1 | resolved | this TDL group commit (see git log) |
-| BD2-3 | resolved | this interface group commit (see git log) |
-| D02-01 | resolved | this interface group commit (see git log) |
-| D02-09 | resolved | this interface group commit (see git log) |
-| D02-10 | resolved | this interface group commit (see git log) |
-| D02-15 | resolved | this interface group commit (see git log) |
-| B2 | resolved | this interface group commit (see git log) |
-| B3 | resolved | this interface group commit (see git log) |
-| B4 | resolved | this interface group commit (see git log) |
-| D02-18 | resolved | this interface group commit (see git log) |
-| D02-19 | resolved | this interface group commit (see git log) |
-| D02-20 | resolved | this R/platform group commit (see git log) |
-| D02-21 | resolved | this R/platform group commit (see git log) |
-| D02-22 | resolved | this R/platform group commit (see git log) |
+| D02-11 | resolved | 25b52ea |
+| D02-12 | resolved | 25b52ea |
+| D02-13 | resolved | 25b52ea |
+| BD2-5 | resolved | 25b52ea |
+| D02-14 | resolved | 25b52ea |
+| D02-16 | resolved | 25b52ea |
+| D02-17 | resolved | 25b52ea |
+| BD2-6 | resolved | 25b52ea |
+| BD2-1 | resolved | 5186b42 |
+| BD2-2 | resolved | 5186b42 |
+| D02-02 | resolved | 5186b42 |
+| BD2-4 | resolved | 5186b42 |
+| D02-03 | resolved | 5186b42 |
+| D02-04 | resolved | 5186b42 |
+| D02-05 | resolved | 5186b42 |
+| D02-06 | resolved | 5186b42 |
+| D02-07 | resolved | 5186b42 |
+| D02-08 | resolved | 5186b42 |
+| B1 | resolved | 5186b42 |
+| BD2-3 | resolved | bf9a5f3 |
+| D02-01 | resolved | bf9a5f3 |
+| D02-09 | resolved | bf9a5f3 |
+| D02-10 | resolved | bf9a5f3 |
+| D02-15 | resolved | bf9a5f3 |
+| B2 | resolved | bf9a5f3 |
+| B3 | resolved | bf9a5f3 |
+| B4 | resolved | bf9a5f3 |
+| D02-18 | resolved | bf9a5f3 |
+| D02-19 | resolved | bf9a5f3 |
+| D02-20 | resolved | 40a4962 |
+| D02-21 | resolved | 40a4962 |
+| D02-22 | resolved | 40a4962 |
+
+### Round-1 final verification (2026-10-29)
+
+All 32 source JSON blocker ids have resolved normative-text entries in the response.
+No declines or text partials; full freeze gate remains incomplete. Group commits are
+listed in the table above. Final consistency fixes also update §9.3/§9.4 generation
+budget summaries, fault collection, version labels, retired BLK-3 references, hidden
+arena base propagation, Q1 candidates and Q2 punctuation, and all-guest Sv39 wording.
+
+- Offline Rust build succeeds. Nine objects check/run, five hash blocks match; new
+  arena O1 payloads 1/6 (10 rows), FP aggregate 1099511627521 (10), entry stack 4112 (42).
+- Selected final gate parse/header/check/hash/run-oracle/xrefs: 1702/1702, exit 0.
+- Full gate: 1939/2029; 90 fail/blocked, compared with baseline 60. The response has the
+  exact family counts. Checker issue b-dialect-spec-ofu, append-only questions Q4–Q8.
+- Direct dialect_check_v02.py exits 0 but has no main; only frontend execution counts.
+- Independent clang18/23 arithmetic, corrected fcmp input/output and ABI vectors,
+  aggregate packing and adopting allocator contract executions pass.
+- New ISA dependency b-dialect-spec-bz6: BLK-5/ISA-7 requires R fault C with exact record
+  code, no later effects, preserved reversible prefix history; no ISA source edits.
+- No push. Only owned files committed; generated Beads export remains uncommitted.

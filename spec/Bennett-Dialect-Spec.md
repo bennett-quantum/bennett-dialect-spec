@@ -1028,7 +1028,7 @@ dispatch purposes), or ⊤. A value set is a precision tool only:
   finite: operation codes and classes (§3.4), binding kinds (§8.4), the function addresses of a
   type (§7.2, §14.2);
 - otherwise it is a blocker case of §25.1: widths (BLK-1), budgets computed on the device
-  (BLK-2), parameters of in-place pairs (BLK-3).
+  (BLK-2), parameters of in-place pairs (§8.7).
 
 ### 5.4 Uses
 
@@ -1594,7 +1594,7 @@ define void @top() {
 }
 ```
 
-## 7. Regions (regions 0.2)
+## 7. Regions (regions 0.2.1)
 
 ### 7.1 Region-entry markers and region kinds
 
@@ -1696,7 +1696,7 @@ Only the rules the north star requires:
   removal requires the complete instrument (outcomes and correlations included) to be
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). The coverage report has a
-  `lowered` entry with source `dialect-0.2:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.1:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -2079,7 +2079,7 @@ deferred-measurement principle.
 A `reversible` call inside an action is a direct call of its body (§7.4); gate markers inside a
 reversible closure act on handles from `env` (§7.5b); measurement there is refused:
 
-```llvm example=region-reversible-in-action verdict=accept candidates=body
+```llvm example=region-reversible-in-action verdict=accept candidates=classical
 define internal void @classical(ptr %e) {
   %p = getelementptr i8, ptr %e, i64 8
   %v = load i64, ptr %p
@@ -2191,7 +2191,7 @@ define void @top(i64 %n) {
 BD-B-ISA12 @rec %h: qalloc in a reversible closure with no instance bound (recursive, live across the recursive call: E = infinity); cannot be hoisted to the CC caller; ISA 0.8 qreg.new is CC only; BLK-4 (new ISA-12) qreg.* in R
 ```
 
-## 8. The oracle interface (oracle-abi 0.2)
+## 8. The oracle interface (oracle-abi 0.2.1)
 
 `__bennett_oracle(f, budget, desc)` applies the lifted oracle of region function f, under the
 budget of §9, to the registers and classical values that the **descriptor** `desc` binds to f's
@@ -2288,15 +2288,15 @@ workspace"). Constant globals, and mutable globals that only the oracle's own L 
 equal their initialisers at every call.
 
 **Realisation on ISA 0.8.** Let R be the abstract objects the oracle closure may load (§5.4),
-minus constant globals, minus mutable globals written by no function outside the L closure. If
-R is empty, nothing is transferred: the oracle's globals start at their data images (ISA §3.7).
-This is rung 4 route A (SQLite §5.2(i)). Translate source read-set objects after
-normalisation to runtime backing allocations. If R includes a caller alloca/frame, snapshot
-its live shadow-stack backing storage and allocation metadata, bytes and addresses. When
-reachability is uncertain, copy all live caller heap and shadow-stack backing allocations.
-Whenever the L closure uses the shadow stack, include its state globals in G and its block
-in Hb with current base, size and stack pointer, even if the source R had no heap object.
-After replay heap_used, atop and these stack-state values equal the caller's call-entry values.
+minus constant globals and mutable globals written by no function outside the L closure.
+Translate source read-set objects after normalisation to runtime backing allocations. If
+R includes a caller alloca/frame, include its live shadow-stack backing storage and metadata,
+bytes and addresses. If reachability is uncertain, include all live caller heap/stack backing
+allocations. Whenever the L closure uses the shadow stack, add its state globals to G and
+its block to Hb with current base, size and stack pointer, even without a source heap object.
+Only after these additions, if R is empty, no transfer runs and globals start at their images
+(ISA §3.7), as in rung 4 route A (SQLite §5.2(i)). After replay heap_used, atop and stack-state
+values equal the caller's call-entry values.
 Otherwise the plugin emits an **entry-state transfer**:
 
 1. **Snapshot.** At the call the caller's tier forms the byte string
@@ -2307,7 +2307,7 @@ Otherwise the plugin emits an **entry-state transfer**:
    object or shadow-stack backing allocation (else empty). S is zero-padded to 2^A_s bytes, where A_s is the smallest exponent with
    2^A_s ≥ 8 + 16·N_alloc + Σ|G| + `heap_limit_max` (N_alloc the allocation-table capacity of
    the layout, §19.5); A_s is static.
-The snapshot bytes S are assembled in a plugin-added unnamed CC global of 2^A_s bytes,
+   The snapshot bytes S are assembled in a plugin-added unnamed CC global of 2^A_s bytes,
    zero-filled before every build; thus all 16-byte leaf loads, including padding, are valid.
 2. **Register.** The CC tier builds a register of 8·2^A_s wires holding S with a **concat
    tree** of A_s − 3 static-width CC functions `B_j` (j = 4, …, A_s): `B_4(p)` executes
@@ -2641,7 +2641,7 @@ define void @top() {
 ```
 
 In-place pairs (§8.7): a verified pair, a wrong inverse, a classical parameter with a finite
-value set (one `qinplace` per value), and a quantum parameter (BLK-3). The descriptor of
+value set (one `qinplace` per value), and a quantum parameter (CC-level expansion). The descriptor of
 `inplace` has `tgt` = null; the INOUT register is `param[0].q`:
 
 ```llvm example=inplace-call verdict=accept candidates=add5,sub5
@@ -2827,6 +2827,8 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.1.
+
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
 
@@ -2862,11 +2864,14 @@ runs of §16.7 need.
 | Region | Budget | Exhaustion |
 |---|---|---|
 | `oracle`, `inplace` | the token of every oracle invocation (ISA §5.4, §10 `bennett_budget`) | F_B = (0, `FAULT_BUDGET_STEPS` / `_HEAP` / `_DEPTH`) on that input (ISA §5.2) |
-| `ctrl`, `adj`, `compute` | the token of **every coherent slice** of the invocation, each with the full record (outline E2) | that slice's fault code, combined into the action's fault register (TDL-8) |
+| `ctrl`, `adj`, `compute` | generation G has its full record; **every coherent slice** separately gets the full token record (TDL-9, outline E2) | generation or slice code, combined into the action fault output (TDL-8) |
 | `reversible`, and the whole-program R mode | an R-tier step, heap and depth counter (§17.6) | the R run ends with a budget fault record (§17.6) |
 | device CC code outside regions | none: classical control is "genuinely dynamic" (NS §4.2) | – |
 
 ### 9.4 The budget unit
+
+Generation G uses the materialised-instruction unit and pre-instruction checks of TDL-9;
+each coherent slice separately uses the reference-row unit below. R uses §17.6.
 
 One step is one reference-interpreter row of the reference object (ISA §14.1): the wrapper of
 §16.2 (including the entry-state replay of §8.5 and the shadow-stack setup of §17.3) and every
@@ -3012,7 +3017,7 @@ it is neither static nor a bitwise copy of a launch argument, and no launch-time
 covers it. Each wire of `%c` measured 1 is reset by an `x`, so `%c` is clean at its `qfree`
 (ISA §3.3).
 
-## 10. Taint-driven lifting under control (tdl 0.2)
+## 10. Taint-driven lifting under control (tdl 0.2.1)
 
 NS §0: "a way to condition a region on a qubit. Everything else is inferred"; NS §3.1 taint row:
 a context-sensitive interprocedural analysis "over data dependence, control dependence and
@@ -3185,7 +3190,8 @@ outputs". Every slice invocation k gets a fresh 4-wire fault register f_k; the u
 invocation uses a second fresh register f′_k, which is then cleaned by `qxor f_k f′_k` (both hold
 the same code) and freed, so f_k holds the slice's code and is retained (TDL-7). At the end of
 the invocation a runtime combine oracle `@firstfault` (§16.5) XORs the first nonzero code of
-f_1, …, f_K in invocation order into the action's **declared fault register** Φ: the budget
+f_1, …, f_K in event order (including generation-budget and virtual-device fault
+registers, not just slice codes) into the action's **declared fault register** Φ: the budget
 record's `fault` field (§9.1), or, when that is null, a register the plugin allocates and
 retains (TDL-7); the CC epilogue's `measure` of a plugin-allocated Φ records the outcome in the
 run's fault statistics, and the certificate reports the rate (`fault_rate`, ISA §12.3). On a
@@ -3266,7 +3272,7 @@ genuine host calls have `fault 8` and a trapped coverage line. Release of outliv
 requires clean/restored state, not unconditional fault 8. Oracle device state stays private
 under §11.3, with declared outputs under §8.6.
 
-## 11. Effects and device models per tier (effects 0.2)
+## 11. Effects and device models per tier (effects 0.2.1)
 
 ### 11.1 Tier table
 
@@ -3385,7 +3391,7 @@ hostcall: service=bennett.dev.console.write payload=6f6b0a reply=empty
 
 The ENTROPY-bound oracle of rung 8 is §16.8.
 
-## 12. Materialised normalisation (norm 0.2)
+## 12. Materialised normalisation (norm 0.2.1)
 
 ### 12.1 Scope, order and naming
 
@@ -4844,7 +4850,7 @@ every A(F) and every other object's bytes, so comparisons and dispatch on them a
 tree over the labels' values to static branches (`qjump` in L, `br` in CC/R); no match is F(4).
 *(non-normative)* LangRef permits a `blockaddress` only in `indirectbr` and in comparisons with
 null; an execution in which its bits influence a result otherwise (printing, hashing) is
-layout-dependent and validated against the reference interpreter (NS §3.2, §17.1).
+layout-dependent and validated against the reference interpreter (NS §3.2; §17.1).
 
 ## 15. Inline asm and target intrinsics (asm 0.2)
 
@@ -4943,13 +4949,13 @@ define internal i64 @w(i64 %fd, i64 %a) {
 declare i64 @__bennett_rt_syscall(i64, i64, i64, i64, i64, i64, i64)
 ```
 
-## 16. The lifting map (map 0.2)
+## 16. The lifting map (map 0.2.1)
 
 The lifting map turns a materialised region function, a binding shape (§8.4) and the link
 layout (§19.5) into the **reference object** of that shape: the ISA object whose oracle `@ref`
 defines F_B and the budget unit by the reference interpreter (ISA §4.2 "Reference body and
 binding", §14.1). It is a function of its inputs alone, so two plugins on the same LLVM version
-and pipeline produce byte-identical reference objects. Its version (`map 0.2`) is the
+and pipeline produce byte-identical reference objects. Its version (`map 0.2.1`) is the
 certificate's `dialect_mapping_version` (ISA §12.3). The plugin's device objects (§17.4) are
 plugin-defined; they MUST be extensionally equal to the reference objects (ISA §5.7, T6; §18.7).
 
@@ -5075,7 +5081,7 @@ arena offset δ is nonzero, `c<j+1> = lift.const.i<pw> δ`, `t<j> = lift.add c<j
 parameter rather than lift.addr @coh. The wrapper materialises @coh once before the
 region call, appends this pw-bit argument after source parameters, and every transitive
 lproc call threads it unchanged. Only functions in the arena-reading closure receive it;
-materialising the base in a lproc uses lift.mov of that parameter. A function `@F` by `c<j> = lift.const.i<pw> <A(F)>`; a constant
+materialising the base in a lproc uses lift.mov of that parameter. Materialise a function `@F` by `c<j> = lift.const.i<pw> <A(F)>`; a constant
 expression by the rows of its instructions, innermost first, into temporaries. The operand then
 reads `c<j>`. Aggregate constants materialise one scalar carrier constant per
 flattened field in field order before packing. A non-constant operand reads the location of its value (`a<i>` for a parameter).
@@ -6192,6 +6198,10 @@ input= mem=coh:0500 arg=0 budget=100,0,32,1 -> code=0 payload=6 steps=10
 
 **FP and aggregate ABI.** The source signature and constant return are:
 
+```text linkmap=fp-aggregate
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 32, heap max 0
+```
+
 ```llvm lift=fp-aggregate region=@p desc=IN(64,zext);tgt=40
 define internal {i8, i32} @p(double %x) {
   ret {i8, i32} {i8 1, i32 -1}
@@ -6458,6 +6468,8 @@ source R body: console.write("x"); return; steps=0
 fault code=1 before first counted instruction; console=empty; tape prefix=empty
 ```
 
+The next module is runtime/materialised IR (reserved primitives are not producer inputs).
+
 ```llvm example=r-fault-code verdict=blocked:BD-B-ISA7
 define internal void @fail(ptr %e) {
   call void @__bennett_nz_fault(i64 2)
@@ -6574,7 +6586,7 @@ fault code 4 (§17.5) with the named diagnostic (§22.2).
 | `compute(f, use, budget, env)` | – | E_f = gen(f, env); the TDL-8 copies of E_f's fault registers; E_u = gen(use, env) with E_f's retained recorder visible (TDL-2); then the events E_f, copies, E_u, adjoint(E_f) |
 | `reversible(f, budget, env)` | no recorder active (else §7.4 applies) | §18.6 |
 | `oracle(f, budget, desc)` | the descriptor's checks (§8.1–§8.4: `T-IFACE`, `T-SIZE`, `T-DEAD`, `T-ALIAS`) | event `oracle` or `wide` of the dispatched shape: on every basis state, outputs ⊕= payload(F_B), fault ⊕= code(F_B) (ISA §5.2), F_B from the reference object of §16 on the entry state of §8.5 |
-| `inplace(g, ginv, budget, desc)` | the descriptor's checks; budget ≥ B_min (`T-BUDGET`) | event `inplace`: x ← g(x; args), the permutation that §8.7 verified (ISA `qinplace`) |
+| `inplace(g, ginv, budget, desc)` | the descriptor's checks; budget ≥ B_min (exhaustive) or B_bound (sampled), `T-BUDGET` | event `inplace`: x ← g(x; args), the permutation that §8.7 verified (ISA `qinplace`) |
 | effect markers | §11 | §11 per tier |
 
 A region operand whose value matches no source of its candidate set traps (`T-REGION`, §7.2); a
@@ -7272,7 +7284,7 @@ define void @top(double %x) {
 }
 ```
 
-## 19. The driver (driver 0.2)
+## 19. The driver (driver 0.2.1)
 
 ### 19.1 Pipeline position and bitcode sources
 
@@ -7407,7 +7419,7 @@ major (NS §3.2).
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
 pipeline, normaliser_version: "0.2.1"}` and `bindings.dialect_mapping_version = "0.2.1"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2:<rule id>` (e.g. `dialect-0.2:N33`); the
+report (ISA §13), whose `source` field is `dialect-0.2.1:<rule id>` (e.g. `dialect-0.2.1:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
 hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
@@ -7435,7 +7447,7 @@ define void @top() {
 !0 = !{i32 1, !"bennett.dialect", !"0.1"}
 ```
 
-## 20. Platform profile `riscv64-bennett-virt` (platform 0.2; rungs 6–7)
+## 20. Platform profile `riscv64-bennett-virt` (platform 0.2.1; rungs 6–7)
 
 NS §5: "The kernel compiles, boots on the VM in the reversible tier with its devices modelled,
 writes a serial console to the tape, and un-boots to the reset vector." This section fixes the
@@ -7510,8 +7522,9 @@ Runtime helpers avoid a second translation. These rules apply equally to CC/R an
 User programs are built to bitcode and linked into the device program under the comparison layout
 (§19.5); their ELF images on the disk image are the same link, so entry and function addresses
 are A(F). `exec` and `sret` to user mode dispatch the user entry by A(F); user loads and stores go
-through a **soft-MMU**: N35 instruments the functions of the user compartment with an Sv39 walk
-over the modelled `satp`, page faults delivered through §20.4.
+through a **soft-MMU**: N35 instruments all guest functions in translation-enabled privilege contexts with an Sv39 walk
+over the modelled `satp`, including supervisor kernel accesses, with guest page faults
+delivered through §20.4.
 
 ```text state=sv39-kernel-alias at=2
 RAM physical P=0x80000000 holds 0x12
@@ -7821,7 +7834,7 @@ compute expected artefacts only (P-3).
 | `qstore-twice` | §6.7 | parse, recognise | LLVM; Python |
 | `region-*` (18, incl. 1 blocker) | §7.1–§7.5, BLK-4 | parse, recognise | LLVM; Python |
 | `oracle-inc8`, `oracle-two-in`, `oracle-two-shapes`, `oracle-wide-out`, `budget-launch-arg`, `budget-device-computed` (+ blocker) | §8.1–§8.6, §9.1, §9.5, BLK-2 | parse, recognise | LLVM; Python |
-| `inplace-*` (4, incl. 1 blocker) | §8.7, BLK-3 | parse, recognise, run-oracle | LLVM; Python; isa-ref `run-oracle` (verification) |
+| `inplace-*` (4) | §8.7 | parse, recognise, run-oracle | LLVM; Python; isa-ref `run-oracle` (verification) |
 | `budget-table=rung4-mini` | §9.2 | driver | Python |
 | `tdl`, `tdl-overwrite`, `tdl-effect`, `tdl-angle` with `tdl=` and `state=` blocks | TDL-1–TDL-12, §18.2–§18.4 | parse, recognise, tdl, run-action | LLVM; Python TDL; isa-ref `run-action` (requested) |
 | `effect-console-r`, `effect-console-cc` | §11.1, §11.2 | parse, recognise, run-cc, reverse | isa-ref `run-cc`, `reverse` (requested) |

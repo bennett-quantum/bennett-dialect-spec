@@ -68,3 +68,24 @@ blocked:BD-B-ISA7 at typed R fault sites, including r-fault-code. Do not substit
 generic trap code. §20.6 translates kernel and user Sv39 accesses; add the alias
 and reverse-state vector. r-budget-prefix, r-fault-code and sv39-kernel-alias
 state witnesses require executor adapters; no source effects after first fault.
+
+## Q8 — Final validation boundaries (editor)
+
+All new ISA objects pass check/hash/run-oracle; all LLVM cells parse. Full checker
+on the first revised snapshot: 1936/2028 pass, 92 fail/blocked (baseline 60).
+The additional vectors intentionally remain obligations, not skips. Most new state/TDL
+rows need run-action. Normalisation has stale frame size and no n-fcmp transform;
+native adapters have no n-fcmp/fp-aggregate/entry-stack case. fp-aggregate now has
+its linkmap companion, but aggregate carrier lifting still needs implementation.
+r-fault-code is explicitly runtime/materialised IR: the recogniser must distinguish
+normaliser primitives from producer-reserved-name errors, then classify ISA-7.
+Final read also fixed Q1's candidates=classical and Q2's semicolon-inherited NS xref,
+and added the missing all-guest privilege scope in the old §20.6 paragraph.
+Independent clang18/23 runs verify packed i1 lane 7, i129 add/sext, n-fcmp input/output
+and ueq/uno ABI values, aggregate packing and replay-adopting allocator contracts.
+The dedicated fcmp ABI seed was used because the owned-path boundary forbids changing
+the checker-owned old predicate seed; no claim is made that the old seed passes.
+
+Final repeat: full gate 1939/2029 (90 failed/blocked); selected
+parse/header/check/hash/run-oracle/xrefs gate 1702/1702. Detailed family counts and
+independent validation are in round-1/response.md. Follow-up b-dialect-spec-ofu.
