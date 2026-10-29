@@ -165,3 +165,19 @@ BLK-1), `budget-device-computed` (BD-B-ISA1, BLK-2), `inplace-param-quantum` (BD
 - `b-dialect-spec-gwf`: ISA 0.9 wording items raised by §25.2.
 
 `.beads/issues.jsonl` was rewritten by `bd` and is left uncommitted (not an owned path).
+
+## Round-1 fixes
+
+Brief: docs/briefs/2026-10-29-dialect-0.2-council-fixes.md; tracking b-dialect-spec-pz7.
+Version 0.2.1 per spec/README.md; ISA 0.8 unchanged. No push.
+
+| Blocker id | Status | Commit |
+|---|---|---|
+| D02-11 | resolved | this group commit (see git log) |
+| D02-12 | resolved | this group commit (see git log) |
+| D02-13 | resolved | this group commit (see git log) |
+| BD2-5 | resolved | this group commit (see git log) |
+| D02-14 | resolved | this group commit (see git log) |
+| D02-16 | resolved | this group commit (see git log) |
+| D02-17 | resolved | this group commit (see git log) |
+| BD2-6 | resolved | this group commit (see git log) |

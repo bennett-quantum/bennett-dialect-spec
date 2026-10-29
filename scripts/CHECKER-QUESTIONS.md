@@ -31,3 +31,11 @@ postpones its exact inventory to the platform spike. Data files retain these as
 `match=mnemonic`, `pattern`, `intrinsic` or `platform-pattern`, with the literal
 constraint description. No exact constraint string is invented. The normaliser
 uses exact syscall constraints; the section prevails over generated data.
+
+## Q4 — Round-1 normalisation fixes (editor)
+
+Dialect revision 0.2.1: PT2/PT6, packed vector memory, partial limbs, fcmp enum,
+returning transfer attributes and GC provenance changed. n-varargs now pushes 32,
+not 24. Add n-fcmp differential vectors and state=normalisation-boundaries/fcmp-abi
+execution. Existing normaliser expectations must follow the corrected rules; never
+remove these examples to restore green. Full baseline already has incomplete families.

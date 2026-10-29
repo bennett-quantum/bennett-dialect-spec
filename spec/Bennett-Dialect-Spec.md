@@ -1,8 +1,8 @@
-# Bennett LLVM Dialect — Specification, draft 0.2
+# Bennett LLVM Dialect — Specification, draft 0.2.1
 
-**Date:** 2026-10-29. **Status:** draft 0.2 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
+**Date:** 2026-10-29. **Status:** draft 0.2.1 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
-2026-10-29 at its end) for the first council round on 0.2; not yet graded. It replaces draft
+2026-10-29 at its end) revised after council round 1 on 0.2; awaiting round 2. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
 to narrow north-star scope in 40 distinct places. Nothing is implemented. It targets the
 Bennett virtual ISA **draft 0.8** (`bennett-isa-spec/spec/Bennett-ISA-Spec.md`, council
@@ -11,9 +11,9 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2: markers 0.2, handles 0.2, regions 0.2, oracle-abi 0.2, tdl 0.2,
-effects 0.2, norm 0.2, map 0.2, asm 0.2, platform 0.2, driver 0.2, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2`) is the compatibility unit (§23): drafts are not compatible
+**Versioning.** Dialect 0.2.1: markers 0.2, handles 0.2, regions 0.2.1, oracle-abi 0.2.1, tdl 0.2.1,
+effects 0.2.1, norm 0.2.1, map 0.2.1, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+The **full version string** (`0.2.1`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -993,17 +993,19 @@ set; unions and inclusions are taken component-wise.
 
 ### 5.2 Rules
 
+Before the fixpoint, seed the initialiser atoms of every global, mutable or constant,
+into its slots. Subsequent stores union additional atoms; they never erase initial contents.
 The analysis is the least fixpoint of the following rules over AV. "Copies" means AV(result) ⊇
 AV(operand) lane by lane; ⊤ absorbs.
 
 | Rule | Instruction or source | Effect |
 |---|---|---|
 | PT1 | `alloca`, global `@G`, allocation-site call | AV ∋ (X, 0) |
-| PT2 | `getelementptr T, ptr p, idx…` | for each (X, o) ∈ AV(p), indices in order: a constant index adds its byte offset under the datalayout (to an exact offset, or to r, lo and hi of a class); a non-constant index with element size s into an array type `[N x E]` that starts at byte offset b of the indexed position turns the offset into the class (b mod s)[b, b + N·s), and into (b mod s)[lo′, hi′) with the union of the extents if it is already a class with the same s; a non-constant index of the GEP's first (pointer) operand, or into a class with a different stride s′, gives (o mod gcd(s, s′)) over the whole object; a class with stride 1 is `*`; `*` stays `*` |
+| PT2 | `getelementptr T, ptr p, idx…` | for each (X, o) ∈ AV(p), constant indices add their datalayout byte offsets; a nonconstant index gives the residue class with the element stride s over the underlying allocation X, restricted only by a sound index-value bound. Array dimensions determine stride, never an index bound. Mixed strides use their gcd; stride 1 is `*`. Unknown allocation extent covers all possible offsets of X; `*` stays `*` |
 | PT3 | `phi`, `select` (value operands), `freeze`, `bitcast`, `addrspacecast` | copies (union) |
 | PT4 | `ptrtoint`, `inttoptr`, `zext`/`sext`/`trunc` of a pointer-width integer to pointer width | copies |
 | PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | shifts each pointer atom's offset by each constant (classes and `*` stay); any other integer operation on a pointer atom gives (X, `*`) for each X; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a `range(lo, hi)` attribute or `!range` metadata (read before N3 removes it) restricts ⊤ to [lo, hi) |
-| PT6 | `load T, ptr p` | for each (X, o) ∈ AV(p): the union of AV(X, o′) over the slots o′ that overlap [o, o + size(T)); for a global X declared `constant`, the atoms of its initialiser at those offsets (`FN(F)` for `ptr @F`, `(G, c)` for a pointer into G, `INT(c)` for integers); for X = EXT, ⊤ |
+| PT6 | `load T, ptr p` | for each (X, o) ∈ AV(p): the union of AV(X, o′) over the slots o′ that overlap [o, o + size(T)); for every global X (mutable or constant), the atoms of its initialiser at those offsets (`FN(F)` for `ptr @F`, `(G, c)` for a pointer into G, `INT(c)` for integers); for X = EXT, ⊤ |
 | PT7 | `store v, ptr p` | AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
 | PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when the offsets and len are constants and [s, s + 1) lies in the copied range, AV(Z, o_d + s − o_s) ⊇ AV(Y, s); else AV(Z, `*`) ⊇ AV(Y, s). Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
 | PT9 | direct call of G, or indirect call with candidate G (§14.2) | AV(parameter i of G) ⊇ AV(argument i); AV(result) ⊇ the union of AV over G's `ret` operands; `byval` arguments copy the pointee's slots into the callee's copy object |
@@ -3387,7 +3389,11 @@ lane order k = 0, 1, …:
   scalar condition, unary `fneg`, `freeze`, calls of elementwise intrinsics): one scalar
   instruction per lane, `%nz.l<k>.r = <op> T %nz.l<k>.a, %nz.l<k>.b`;
 - `load <L x T>, ptr p` → `%nz.p<k>.r = getelementptr T, ptr p, i64 k` and `%nz.l<k>.r = load T,
-  ptr %nz.p<k>.r` with alignment min(original, abi-align(T)); `store` likewise in lane order;
+  ptr %nz.p<k>.r` with alignment min(original, abi-align(T)); `store` likewise in lane order,
+  except packed lanes: for `<L x iM>` with M not a multiple of 8, access the vector's packed
+  byte range, extract lane k from bits [kM, (k+1)M), and pack stores into that same range.
+  Never use scalar allocation stride for these lanes. Masked accesses touch only bytes
+  containing active lanes and preserve inactive bits; padding follows N22;
 - `insertelement`, `extractelement`, `shufflevector` with constant indices: lane renaming; with a
   non-constant index (after N15): a `select` chain over the L lanes in lane order;
 - `llvm.vector.reduce.<op>(v)` with op ∈ {add, mul, and, or, xor, smax, smin, umax, umin, fadd,
@@ -3416,16 +3422,19 @@ lane order k = 0, 1, …:
 
 ### 12.7 Wide integers (N22)
 
-With limbs a_k, b_k (k = 0 … L − 1, i64, the top limb of width N − 64(L − 1)):
+Let w_k = min(64, N − 64k). Limbs a_k, b_k (k = 0 … L − 1) have type i<w_k>.
+Every limb operation, constant and incoming carry uses w_k, with an identity conversion
+when widths agree (in particular an i1 carry into an i1 top limb needs no zext):
 
 - `add`: `%nz.m0.r = add a_0, b_0`, `%nz.c0.r = icmp ult %nz.m0.r, a_0`; for k ≥ 1:
-  `%nz.t<k>.r = add a_k, b_k`, `%nz.z<k>.r = zext i1 %nz.c<k−1>.r to i64`, `%nz.m<k>.r = add
+  `%nz.t<k>.r = add a_k, b_k`, `%nz.z<k>.r = zext i1 %nz.c<k−1>.r to i<w_k>`, `%nz.m<k>.r = add
   %nz.t<k>.r, %nz.z<k>.r` and, for k < L − 1, `%nz.u<k>.r = icmp ult %nz.t<k>.r, a_k`,
   `%nz.v<k>.r = icmp ult %nz.m<k>.r, %nz.t<k>.r`, `%nz.c<k>.r = or i1 %nz.u<k>.r, %nz.v<k>.r`;
 - `sub`: the same with `sub` and borrows `icmp ult a_k, b_k`;
 - `and`, `or`, `xor`: per limb; `icmp`: lexicographic from the top limb (signed on the top
   limb only for signed predicates); `select`, `phi`: per limb; `zext`, `sext`, `trunc`: limb
-  copies with the sign limb `ashr a_top, 63` for `sext`;
+  copies; `sext` extracts the sign at bit w_top − 1, sign-extends the old partial top
+  limb when widening it, and fills each new limb with that sign at its own width;
 - `mul`, `udiv`, `sdiv`, `urem`, `srem`, `shl`, `lshr`, `ashr`: calls of the runtimes entry points
   `__bennett_rt_i<N>_<op>(ptr r, ptr a, ptr b)` on shadow-stack slots holding the limbs (division
   by zero calls `__bennett_nz_fault(5)`, signed MIN / −1 `__bennett_nz_fault(6)`, shifts by ≥ N
@@ -3458,7 +3467,7 @@ With limbs a_k, b_k (k = 0 … L − 1, i64, the top limb of width N − 64(L �
 | `ptrauth.blend(a, d)` | `(a & 0xFFFFFFFFFFFF) | (d << 48)` in i64 |
 | `ptrauth.sign.generic(v, d)` | `0` |
 | `objc.*` | `llvm.objc.<name>` becomes a call of the Objective-C runtime function `objc_<name>` with the same operands (resolved by §4.5); `objc.clang.arc.use`, `objc.clang.arc.noop.use` and `objc.arc.annotation.*` are deleted |
-| `experimental.gc.statepoint(id, n, f, args…)` | a plain call `f(args…)`; `gc.result` → its result; `gc.relocate(token, base, derived)` → the derived pointer of the statepoint's argument list (a non-moving collector); `gc.get.pointer.base(p)` → p; `gc.get.pointer.offset(p)` → 0; `gcroot` deleted; `gcread(o, p)` → `load ptr, ptr p`; `gcwrite(v, o, p)` → `store ptr v, ptr p` |
+| `experimental.gc.statepoint(id, n, f, args…)` | a plain call `f(args…)`; `gc.result` → its result; `gc.relocate(token, base, derived)` → the derived pointer of the statepoint's argument list (a non-moving collector); `gc.get.pointer.base` and `gc.get.pointer.offset` are resolved by the major's LLVM base-pointer analysis before erasing statepoints, preserving the actual allocation base and byte offset of derived pointers (explicit base provenance is carried through phis/selects where needed); `gcroot` deleted; `gcread(o, p)` → `load ptr, ptr p`; `gcwrite(v, o, p)` → `store ptr v, ptr p` |
 | `experimental.patchpoint*(id, n, target, nargs, args…)` | an indirect call of target with the first nargs arguments (§14.2); a null target: nothing |
 | `experimental.deoptimize(args…)` | a call of the runtimes function `__llvm_deoptimize` with the arguments (resolved by §4.5) and `ret` of its result |
 | `init.trampoline`, `adjust.trampoline` | §14.2 (trampolines) |
@@ -3466,6 +3475,21 @@ With limbs a_k, b_k (k = 0 … L − 1, i64, the top limb of width N − 64(L �
 | `callbr.landingpad` | §15.2 |
 
 ### 12.9 Examples
+
+The following vectors fix packed memory, partial limbs and GC provenance. For byte 0x80,
+bit 7 = 1; 2^128−1 carries through two 64-bit limbs into the one-bit limb; −1 sign-fills.
+
+```text state=normalisation-boundaries at=0
+N21: memory[p]=80; load <8 x i1>, extract lane 7 -> 1; bytes read=[p,p+1); code=0
+N22: add i129 (2^128-1), 1 -> limbs=[0x0000000000000000,0x0000000000000000,0x1]
+N22: sext i129 -1 to i256 -> limbs=[0xffffffffffffffff,0xffffffffffffffff,0xffffffffffffffff,0xffffffffffffffff]
+N27: derived p=b+8 -> gc.get.pointer.base(p)=b; gc.get.pointer.offset(p)=8
+PT6: @cb = global ptr @f -> candidates(load @cb)={f}
+PT2: @tab=[@f,@g]; gep [1 x ptr], @tab, 0, i with i=1 -> candidates={g}; code=0
+N24: one 24-byte alloca aligned 16 -> S=ceil(24/16)*16=32; next frame offset=32
+N28: caught throw (source call noreturn) -> returning Bennett replacement, propagation check, catch -> 7
+```
+
 
 ```llvm normalise-in=n-flags
 define internal i32 @f(i32 noundef %a, ptr nonnull align 4 %p) #0 {
@@ -3926,7 +3950,7 @@ part of its bitcode the driver links. B below is the format's suffix, C its carr
 | Instruction | Call (carrier operands in order) | Result |
 |---|---|---|
 | `fadd`, `fsub`, `fmul`, `fdiv`, `frem` | `C @__bennett_sf_{add,sub,mul,div,rem}_B(C, C)` | bitcast |
-| `fcmp <p>` | `i1 @__bennett_sf_cmp_B(C, C, i32 P)`, P the LLVM predicate number: `false` 0, `oeq` 1, `ogt` 2, `oge` 3, `olt` 4, `ole` 5, `one` 6, `ord` 7, `ueq` 8, `ugt` 9, `uge` 10, `ult` 11, `ule` 12, `une` 13, `uno` 14, `true` 15 | `%r` is the call itself |
+| `fcmp <p>` | `i1 @__bennett_sf_cmp_B(C, C, i32 P)`, P the LLVM predicate number: `false` 0, `oeq` 1, `ogt` 2, `oge` 3, `olt` 4, `ole` 5, `one` 6, `ord` 7, `uno` 8, `ueq` 9, `ugt` 10, `uge` 11, `ult` 12, `ule` 13, `une` 14, `true` 15 | `%r` is the call itself |
 | `fptosi`/`fptoui` to iM, `llvm.fptosi.sat`/`llvm.fptoui.sat` to iM | `i128 @__bennett_sf_{fptosi,fptoui}_B(C, i32 M)` | `%r = trunc i128 %nz.i.r to iM` (the call is `%r` when M = 128) |
 | `sitofp`/`uitofp` from iM | `%nz.x.r = sext`/`zext iM a to i128` (omitted when M = 128), `C @__bennett_sf_{sitofp,uitofp}_B(i128)` | bitcast |
 | `fpext`, `fptrunc` from format S to format D; `llvm.convert.to.fp16`, `llvm.convert.from.fp16` | `D_carrier @__bennett_sf_{fpext,fptrunc}_S_D(S_carrier)` | bitcast |
@@ -4010,6 +4034,36 @@ to nearest and raise no flags, as LLVM assumes of the default environment. A `st
 attribute on a marker is benign (§3.6).
 
 ### 13.6 Examples
+
+The unordered bit is predicate bit 3: ueq = 8|1 = 9, uno = 8, une = 8|2|4 = 14.
+
+```llvm normalise-in=n-fcmp
+ define i1 @p(double %a, double %b) {
+   %r = fcmp une double %a, %b
+   ret i1 %r
+ }
+```
+
+```llvm normalise-out=n-fcmp
+ declare i1 @__bennett_sf_cmp_f64(i64, i64, i32)
+ define i1 @p(double %a, double %b) {
+   %nz.0.r = bitcast double %a to i64
+   %nz.1.r = bitcast double %b to i64
+   %r = call i1 @__bennett_sf_cmp_f64(i64 %nz.0.r, i64 %nz.1.r, i32 14)
+   ret i1 %r
+ }
+```
+
+```text native=n-fcmp
+p(0x7ff8000000000000,0x3ff0000000000000)=1
+p(0x3ff0000000000000,0x3ff0000000000000)=0
+```
+
+```text state=fcmp-abi at=0
+__bennett_sf_cmp_f64(0x3ff0000000000000,0x3ff0000000000000,9)=1
+__bennett_sf_cmp_f64(0x3ff0000000000000,0x4000000000000000,8)=0
+```
+
 
 ```llvm normalise-in=n-fmuladd
 define internal double @fm(double %a, double %b, double %c) {
@@ -4325,7 +4379,7 @@ declare void @llvm.va_end(ptr)
 
 define internal i32 @sum(i32 %n, ptr %nz.va) {
 entry:
-  %nz.fp.sum = call ptr @__bennett_rt_ss_push(i64 24, i64 16)
+  %nz.fp.sum = call ptr @__bennett_rt_ss_push(i64 32, i64 16)
   %ap = getelementptr i8, ptr %nz.fp.sum, i64 0
   store i32 48, ptr %ap, align 4
   %nz.vfo.sum.0 = getelementptr i8, ptr %ap, i64 4
@@ -4405,6 +4459,12 @@ top(2147483000) = 2147483320
 va block: slots at offsets 0, 8, 16 hold x, 20, 300, and the sum is x + 320.
 
 ### 14.4 Unwinding (N28: explicit propagation)
+
+N28–N30 remove `noreturn` and incompatible `tail`/`musttail` constraints from every
+transformed nonlocal-transfer definition, declaration and call that now returns normally.
+Returning replacements use dedicated `__bennett_rt_` symbols (including throw, unwind,
+longjmp and exit replacements), so builtin nonreturning assumptions cannot reappear.
+The residual validator rejects any such surviving attribute or constraint.
 
 The runtimes keep the **EH state** in the global `__bennett_rt_eh` of type `{ i32 active, i32
 selector, ptr object }` (active: 0 none, 1 exception, 2 longjmp, 3 fiber switch, 4 exit; §14.5–
@@ -5977,7 +6037,8 @@ these contracts:
 N24 rewrites each function with allocas: `%nz.fp.<f> = call ptr @__bennett_rt_ss_push(i64 S,
 i64 A)` at entry, where the static allocas of the entry block are laid out in instruction order,
 each at the next offset aligned to its alignment, S is the total rounded up to A, the largest
-alignment; each static alloca becomes `getelementptr i8, ptr %nz.fp.<f>, i64 <offset>` with the
+alignment. The pushed frame base is aligned to A; its end (the next frame start
+before any additional alignment) is base + S. Each static alloca becomes `getelementptr i8, ptr %nz.fp.<f>, i64 <offset>` with the
 alloca's name; every other alloca becomes `__bennett_rt_ss_alloca`; `call void
 @__bennett_rt_ss_pop(ptr %nz.fp.<f>)` precedes every `ret` (including the early returns of
 §14.4). `llvm.frameaddress(0)`, `llvm.sponentry`, `llvm.addressofreturnaddress`,
@@ -6876,7 +6937,7 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.1;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
@@ -6896,7 +6957,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.1"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`):
 
@@ -7115,10 +7176,11 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.1`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
-- Sub-artefacts, all at `0.2`: `markers` (§3), `handles` (§6), `regions` (§7), `oracle-abi` (§8),
+- Sub-artefacts retain ABI 0.2 where unchanged; `regions`, `oracle-abi`, `tdl`, `effects`,
+  `norm`, `map`, `platform` and `driver` are revised to `0.2.1`: `markers` (§3), `handles` (§6), `regions` (§7), `oracle-abi` (§8),
   `tdl` (§10), `effects` (§11), `norm` (§12–§15; the certificate's `normaliser_version`), `map`
   (§16; the certificate's `dialect_mapping_version`), `asm` (§15), `platform` (§20), `driver`
   (§19), `corpus` (§21).
