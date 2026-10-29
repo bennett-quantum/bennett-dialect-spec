@@ -466,3 +466,11 @@ Tracking b-dialect-spec-1zy; draft/full norm 0.2.3, ISA 0.8.
 | SOL-R2-02 | resolved | packed vectors, materialisation and memory |
 | R2-CODEX-02 | resolved | packed vectors, materialisation and memory |
 | R2-CODEX-01 | resolved | packed vectors, materialisation and memory |
+| SOL-R2-01 | resolved | action lifecycle group |
+| REG-SOL-TDL9 | resolved | action lifecycle group |
+| R2-CODEX-03 | resolved | action lifecycle group |
+| BD3-1 | resolved | action lifecycle group |
+| BD3-2 | resolved | action lifecycle group |
+| BD3-3 | resolved | action lifecycle group |
+| REG-MUSE-7.7 | resolved | action lifecycle group |
+| BD3-6 | resolved | action lifecycle group |

@@ -1732,6 +1732,10 @@ Only the rules the north star requires:
   blocker point of BLK-4 (`blocked:BD-B-ISA12`, §25.1).
 - **(c) In-place pairs** are verified by §8.7.
 
+Deferred measurement is a channel on adjoint paths as well: the special §18.2 rule
+creates fresh retained records for standalone adj and retains E_f records through compute.
+An open window never authorises quncopy of these records.
+
 ### 7.6 Outlining conventions
 
 - Regions are functions on arrival: the front end outlines (a Julia macro, a clang attribute, a
@@ -2092,8 +2096,7 @@ define void @top() {
 
 *(non-normative)* In `region-measure-deferred` the branch on `%m` is a Co branch (TDL-2), so the
 gate on `%t` is issued under `qpred` of the copy wire (TDL-10): the action is
-`ctl c (qcopy a.0 → w; cx w t.0)` with w released by the region's uncomputation, which is the
-deferred-measurement principle.
+`ctl c (qcopy a.0 → w; cx w t.0)` with w retained and measured at the CC boundary of §7.5(a), including adj/compute paths.
 
 A `reversible` call inside an action is a direct call of its body (§7.4); gate markers inside a
 reversible closure act on handles from `env` (§7.5b); measurement there is refused:
@@ -3069,16 +3072,21 @@ content (TDL-3) and is never rejected for containing classical code.
   Cl → Co when an event is applied (§18.2) that writes X's cells with a non-empty control set or
   with a Co value; Co → Cl by `__bennett_observe` of all of X's bytes (TDL-11); partial observe leaves
   K=Co and the observed cells in their measured basis state. Coverage is tracked since each
-  byte's last write; writes invalidate coverage. Co → Cl also by its release
-  (free, end of lifetime).
+  byte's last write; writes invalidate coverage. Release never changes Co to Cl by fiat:
+  first restore the cells to the basis value equal to the shadow with the invocation's
+  own events, then dematerialise to Cl and release. Otherwise release traps
+  T-TAINT-HOST (code 4), inside or outside generation, before reuse.
 - **Value state.** During a generation (§18.4) every executed SSA value instance is Cl or Co:
   Co iff it is a deferred measurement result (§7.5a), a load of a byte whose **view** (below) is
   Co, the result of an instruction with a Co operand, or a `phi` at the join of a Co branch.
 - **View.** A generation sees outliving memory through a **view**: a byte of object X has view
   Co if K(X) = Co, or if the generation's recorder (or a recorder of an enclosing generation of
   the same invocation) holds an event that writes it with a non-empty control set or with a Co
-  value; otherwise its view is Cl and its value is the shadow updated by the recorder's own
-  classical events. For `compute`, retain gen(f)'s recorder after it ends: it is visible
+  value; otherwise its view is Cl. A child generation inherits the invoking generation's
+  current speculative view: apply visible enclosing recorders' classical updates in
+  execution order, then the child's updates, to the invocation-entry shadow. The enclosing
+  invocation control is added only at event composition, not to this inherited view.
+  This applies to nested ctrl, adj and compute; sibling arm recorders stay isolated until join. For `compute`, retain gen(f)'s recorder after it ends: it is visible
   to gen(use) and adjoint(E_f) construction as part of the same invocation. Its classical
   events update use's Cl view; its predicated or Co-valued writes give use a Co view.
   *(non-normative)* Inside `ctrl(q, f)` the body's own stores are recorded
@@ -3213,14 +3221,14 @@ released. Allocation in a generation is unconditional, like every allocation in 
 adjoint of the event list; `compute` reuses the recording E_f for its uncompute, so masks and
 history match exactly.
 
-**TDL-7 Workspace and declared outcomes.** Non-fault workspace, including Co conditions,
-loop flags and slice data, MUST be cleaned by the adjoint of its exact computing sequence
+**TDL-7 Workspace and declared outcomes.** Non-fault workspace, including temporary Co conditions
+and slice data, MUST be cleaned by the adjoint of its exact computing sequence
 before the invocation returns; `compute` f may retain it only until adjoint(E_f). It is
 never implicitly made an output or measured. Predicate and parameter computation are part
 of TDL-5(b)'s total-bijection check. An uncleanable non-bijective coherent overwrite follows
 TDL-5(d), as ratified E3 requires; an out-of-place oracle or compute/use/uncompute retains
-that computation. Per-slice codes and Φ are explicit declared fault outputs (TDL-8), not
-incidental workspace. Intentional deferred-measurement records (§7.5a) are separate channel
+that computation. Per-slice codes and Φ, and the explicitly declared Co-loop control outputs of TDL-10,
+are retained outcomes with TDL-8 lifetime, not incidental workspace. Intentional deferred-measurement records (§7.5a) are separate channel
 outputs retained until their declared observation boundary, never a cleanup substitute.
 
 **TDL-8 Faults.** NS §4.2: "a quantum action has no fault outcome of its own: any fallible
@@ -3232,8 +3240,14 @@ the invocation a runtime combine oracle `@firstfault` (§16.5) XORs the first no
 f_1, …, f_K in event order (including generation-budget and virtual-device fault
 registers, not just slice codes) into the action's **declared fault register** Φ: the budget
 record's `fault` field (§9.1), or, when that is null, a register the plugin allocates and
-retains (TDL-7); the CC epilogue's `measure` of a plugin-allocated Φ records the outcome in the
-run's fault statistics, and the certificate reports the rate (`fault_rate`, ISA §12.3). On a
+retains (TDL-7); f_k, compute copies g_k and a plugin-allocated Φ are declared fault outputs owned
+by CC. They are exempt from invocation T-LEAK and are neither measured nor freed at
+invocation return or device-entry return. No f_k is freed by firstfault. adjoint(E_f)
+reuses the same f_k wires (f9 in tdl-d); a cleaned f_k may be freed after that reuse.
+The CC epilogue means program end: measure each remaining declared output, report the
+invocation's combined Φ statistics (deduplicate correlated code copies, do not sum their
+rates), apply outcome-conditioned X corrections and free clean. Caller-supplied Φ remains
+caller-owned under §6.6. The certificate reports the rate (`fault_rate`, ISA §12.3). On a
 faulting basis input a slice's payload is the canonical 0 (ISA §5.2). Every event
 consuming a fallible slice result is additionally predicated on that slice's code being zero;
 if multiple results are required, all their codes must be zero. This includes xchg, negative
@@ -3244,9 +3258,14 @@ collection. Thus failed results leave dependent arena writes and gates unchanged
 
 **TDL-9 Budget.** Generation G receives its own full region budget. Before each executed
 materialised LLVM instruction other than phi/debug/mark it checks and consumes one step;
-heap and depth are checked before mutation. Exhaustion stops the generation and emits the
-corresponding fault event under the invocation/path controls; no further source instruction
-executes. Nested G execution consumes the enclosing remaining generation limits as well as
+heap and depth are checked before mutation. Exhaustion is invocation failure, not a
+source leak. No further source instruction executes. Compiler finalisation runs without
+consuming the exhausted generation budget: before applying any recorded event, discard
+the failed invocation's speculative views and recorders, cancel all invocation-owned
+provisional allocations (including nested ones), preserve foreign handles, and emit only
+the corresponding declared fault event under the invocation/path controls. Failed gen(f)
+does not run use; failure of either compute part cancels the still-unapplied composite.
+Normal T-LEAK checks apply only to successfully completed source generation. Nested G execution consumes the enclosing remaining generation limits as well as
 its own limits, so nesting cannot evade a finite bound. Classical twins charge their executed
 instructions. Compilation never runs G to completion to discover an event list: G is a
 bounded CC routine executed at invocation. Every slice invocation's token comes from the region-entry marker's budget
@@ -3265,8 +3284,13 @@ record, each field completed from the budget table (§9); each slice gets the fu
   are literals or classical arguments fixed at region entry".
 - A loop whose trip count is Co is unrolled in the event list up to N = the `steps` field of the
   budget record: iteration i is predicated on the flag c_i (c_1 = the first continuation
-  condition, c_{i+1} = c_i ∧ condition_i, computed by `ccx` into fresh wires); the flags are
-  history (TDL-7); if c_{N+1} may be 1 the invocation records `FAULT_BUDGET_STEPS` under c_{N+1}
+  condition, c_{i+1} = c_i ∧ condition_i, computed by `ccx` into fresh wires). Flags c_i and per-iteration conditions are
+  explicit declared control outputs with TDL-8 lifetime: leak-exempt, unmeasured until
+  program end. Preserve the bounded trajectory inputs needed to reconstruct each
+  iteration's condition, including overwritten condition inputs; compute each condition
+  by a bounded out-of-place slice on that preserved trajectory, not on a later overwritten
+  state. These explicitly declared control records are not implicit incidental history.
+  A loop is a structured event; its adjoint is the special rule of §18.2, not flat ccx reversal; if c_{N+1} may be 1 the invocation records `FAULT_BUDGET_STEPS` under c_{N+1}
   into Φ. G-14 (§25.3) is the efficient form.
 - A `qalloc`/`qborrow` whose n is Co allocates the maximum of n's value set, padded to its bound
   (NS §4.2: "an allocation whose size depends on a qubit is padded to its bound"); gates on wires
@@ -3276,11 +3300,15 @@ record, each field completed from the budget table (§9); each slice gets the fu
 
 - Code that reads an object whose state is Co, inside the closure of a later region entry, is
   part of that region's slices (TDL-3).
-- Code outside every region that may read a may-Co object is compiled in two variants (Cl and
+- Code outside every generation that may load from, store to, free or otherwise release a may-Co object is compiled in two variants (Cl and
   Co signatures, §4.3), selected by the object's dynamic state. Its Co variant at host or CC
   level traps (`T-TAINT-HOST`, fault code 4), and statically the plugin warns
   (`BD-W-TAINT-HOST`, naming `__bennett_observe`): NS §4.2, classical outputs of coherent memory
-  leave only through measurement.
+  leave only through measurement. A CC store is legal after observation of every byte it
+  writes; for a partial observation while K=Co, permit only the covered basis bytes,
+  update their authoritative arena cells and shadow together and retain that coverage.
+  Unobserved Co bytes still trap. Release requires full restoration/dematerialisation
+  as TDL-2 states, even inside a generation; it never silently reuses dirty cells.
 - `__bennett_observe(p, len)` observes successive chunks of at most sixteen bytes:
   copy each chunk's cells into a fresh non-view register of at most 128 wires and ISA
   `measure` it. Sequential basis measurements preserve the joint distribution. No whole
@@ -7682,7 +7710,22 @@ compile an event list into one ISA action when that action satisfies ISA §6.
 `x h cx cz swap ccx qload qstore qprep oracle wide slice xmask xstore xchg` are self-adjoint; `s`
 ↔ `sdg`; `t` ↔ `tdg`; `rx θ` ↦ `rx −θ` (and `ry`, `rz`); `qalloc` ↔ `qfree` of the same wires;
 `inplace G G′ B X` ↦ `inplace G′ G B X`; `perm P` ↦ the library inverse of P. Control sets are
-unchanged. qcopy and quncopy are mutual adjoints; qxor and firstfault are self-adjoint
+unchanged. Ordinary workspace qcopy and quncopy are mutual adjoints. A deferred-measurement
+qcopy is a channel record and is never adjointed to quncopy: standalone adj(f) emits
+qcopy onto a fresh retained record before every adjointed event that depends on it;
+independent records use original source order, with placement constrained before their
+first reversed consumer. In compute(f,use), E_f's records survive E_u and adjoint(E_f),
+which reuses these wires without copying or uncopying them, and measurement is at the
+first §7.5(a) boundary after compute returns.
+
+A Co-loop adjoint first computes conditions and flags forward from preserved trajectory
+inputs, runs body adjoints for i=N..1 under c_i, then uncomputes conditions/flags in
+reverse with their exact computing slices. Standalone adj uses the preserved-input
+construction (including bounded trace reconstruction for overwritten conditions), never
+uses fresh flags before computing them. compute's adjoint(E_f) reuses the same flags and
+cleans them as each iteration state is restored; it does not allocate another set.
+
+qxor and firstfault are self-adjoint
 XORs. `fault C` is an xmask of C on a fresh declared fault register, also self-adjoint.
 Adjoint of `copy F -> G` is qxor F G then qfree G, not another allocation.
 
@@ -7723,7 +7766,10 @@ dispatched ill-formed candidate traps (`T-REGION-INVALID`).
 `gen(R, env)` pushes a recorder, runs `R(env)`'s CC variant under §18.1 with the TDL partition of
 §10 (its G instructions run once on the generation's view; its slices, stores to outliving objects
 and marker calls produce events per §10 and §18.3, nested `ctrl`, `adj` and `compute` producing
-their events into this recorder), pops the recorder and returns its event list E. **Leak rule**
+their events into this recorder), pops the recorder and returns its event list E. On generation exhaustion, finalise by cancellation exactly as TDL-9 specifies, outside
+the exhausted budget; no unmatched provisional allocation is applied, no foreign register
+changes and a failed compute does not apply either part. **Leak rule** (successful source
+generation only, excluding the declared fault/control/measurement outputs):
 (`T-LEAK`): for `ctrl` and `adj`, every register allocated during the generation is freed during
 it; for `compute`, every register allocated during gen(use) is freed during it, while a register
 allocated during gen(f) and not freed during it is freed by adjoint(E_f), in which its `qalloc`
@@ -7773,6 +7819,47 @@ declared domain the comparison with the native comparison build (§17.7) has one
 | classifier-flagged undefined | an instrumented build (UBSan, ASan, MSan) flags the input (NS §3.2) | excluded from comparison, counted separately |
 
 ### 18.8 Worked examples
+
+**Round-2 action lifecycle witnesses.** In generation-cancel the source is qalloc(0,1),
+gate(1,h,0), gate(1,h,0), qfree(h), ret; steps=1 stops before the first gate. Recorder
+cancellation leaves no local handle; result tuples are [Phi, live_locals, trap]. The same
+cancellation applies when either compute part fails. In nested-cl-view the parent stores 9,
+then ctrl(c2,g) tests t==9 and flips z; tuples are [t,z]. fault-output-lifetime uses a
+superposed control, a zero-budget slice on its 1 branch and null budget fault field;
+tuples are [control,f,Phi] with equal branch probabilities. No declared wire is freed
+at invocation return; statistics are sampled only at program end.
+
+co-loop-adjoint's B is `for(i=0;i<n;i++) cnt+=1`, n=(|0>+|2>)/sqrt(2), cnt initially 0.
+The inverse from cnt=2,n=2 yields 0, then compute(B,use) exposes cnt=0/2 during use and
+restores 0 on both branches, with clean flags. deferred-channel-adj starts q=|+>, defers
+an unused measure in adj(body) or compute(body,empty), then H(q) and measure(q).
+co-store-release inserts a CC store after tdl-a ctrl, with/without observe first; an
+adj-body allocation/write-Co/free/realloc fails at free before any reused read.
+
+```text state=generation-cancel at=0
+{"source":["qalloc","gate-x","gate-x","qfree","ret"],"steps":1,"controls":[0,1],"results":[[0,0,0],[1,0,0]],"compute_failure":["f","use"],"foreign_before":7,"foreign_after":7}
+```
+
+```text state=nested-cl-view at=0
+{"parent_store":9,"child_test":9,"controls":[[1,1],[0,1],[1,0]],"results":[[9,1],[0,0],[9,0]]}
+```
+
+```text state=fault-output-lifetime at=0
+{"branch_probability":0.5,"fault":1,"after_invocation":[[0,0,0],[1,1,1]],"program_end_probability":0.5,"remaining_after_end":0,"trap":0}
+```
+
+```text state=co-loop-adjoint at=0
+{"n_values":[0,2],"steps":4,"use_counts":[0,2],"after_compute":[0,0],"standalone_start":2,"standalone_result":0,"flags_clean":true}
+```
+
+```text state=deferred-channel-adj at=0
+{"modes":["adj","compute"],"probabilities":[0.5,0.5],"record_retained":true,"trap":0}
+```
+
+```text state=co-store-release at=0
+{"co_values":[0,5],"store_value":0,"store_code":4,"observe_first_results":[0,0],"release_code":4,"reuse_permitted":false}
+```
+
 
 **Round-2 memory witnesses.** With caller heap_base=4096 and a live 16-byte
 allocation, the next address is 4112; another caller allocation invalidates the cache
@@ -8966,7 +9053,7 @@ Fault code 4 (§17.5) with the named diagnostic: `T-DEAD`, `T-FOREIGN`, `T-CLEAN
 
 ### 22.4 Warnings
 
-`BD-W-QSTORE-UNCLEAN` (§6.7), `BD-W-TAINT-HOST` (TDL-11), `BD-W-COHERENT-HISTORY` (TDL-7). A
+`BD-W-QSTORE-UNCLEAN` (§6.7), `BD-W-TAINT-HOST` (TDL-11). A
 warning never changes a verdict.
 
 ## 23. Versioning
@@ -9216,6 +9303,8 @@ No example or coverage obligation is removed or weakened to make this green.
 | `validator-v4-false-residue`, `n-defined-zero` | V4, N12, N27 | parse, recognise, normalise | LLVM; validator |
 
 | `entry-allocation-only`, `arena-logical-bounds` | §8.5, TDL-4, §16.2–§16.4 | state | native seed; Rust lifted helper |
+
+| `generation-cancel`, `nested-cl-view`, `fault-output-lifetime`, `co-loop-adjoint`, `deferred-channel-adj`, `co-store-release` | TDL-2, TDL-7–TDL-11, §18.2–§18.4 | state | native lifecycle; Rust run-action |
 
 ## Appendix C. Generic intrinsics of LLVM 18, 20 and 23
 

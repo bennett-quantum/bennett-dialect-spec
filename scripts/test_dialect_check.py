@@ -16,6 +16,15 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round2_action_lifetimes(self):
+        from dialect_round2 import check_state
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            for name in ('generation-cancel','nested-cl-view','fault-output-lifetime','co-loop-adjoint','deferred-channel-adj','co-store-release'):
+                with self.subTest(example=name):
+                    b=self.block('state',name);check_state(runner,b)
+                    with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body']+'invalid'))
+
     def test_round2_memory_contracts(self):
         from dialect_round2 import check_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:

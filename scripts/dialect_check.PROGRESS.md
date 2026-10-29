@@ -448,3 +448,10 @@ LLVM 18 cannot native-lower VP selectors; original VP uses LLVM 23, scalar outpu
 executes on 18/23, and all modules verify on 18/20/23. Memory microvectors execute
 allocator replay natively and logical arena validation via Rust lifted predicates.
 Pytest is absent; repository unittest runner is used. Full final receipt pending.
+
+## Round-2 action lifecycle
+
+Six absent state witnesses reproduced red; all now execute with native generation/view/
+coherence runtime and Rust controlled actions, slice budget faults, Co-loop inverse,
+compute flag cleanup, deferred adj/compute channels and clean post-outcome release.
+New JSON witnesses reject malformed or changed expectations. Original TDL examples retained.
