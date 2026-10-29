@@ -238,7 +238,7 @@ other than the markers of §3.2 are:
 |---|---|---|
 | `__bennett_nz_` | nobody: **primitives**, lowered by the map (§16.4) and the CC/R lowering (§17.4) | the normaliser (§12) and runtimes bitcode |
 | `__bennett_sf_` | `bennett-arith` bitcode (§13) | the normaliser and runtimes bitcode |
-| `__bennett_rt_` | `bennett-runtimes` bitcode (§11, §14, §17, §20) | the normaliser, the driver's synthesised code (§19) and runtimes bitcode |
+| `__bennett_rt_` | `bennett-runtimes` bitcode (§11, §14, §17, §20); the driver's layout objects `__bennett_rt_blk.<f>` (§14.9) | the normaliser, the driver's synthesised code (§19) and runtimes bitcode |
 | `__bennett_dev_` | `bennett-runtimes` bitcode: device-model entry points and device state (§11.3) | the plugin's L lowering of effect markers and runtimes bitcode |
 
 The primitives are exactly:
@@ -3256,7 +3256,9 @@ The ENTROPY-bound oracle of rung 8 is §16.8.
 
 The normaliser rewrites every device variant (§4.3) and the initialisers of every global a
 device variant references; H variants are untouched. It applies the rules of §12.2 in table
-order, each to the whole module before the next. The result is the **materialised module**: the
+order, each to the whole module before the next, with one exception: N33 is applied immediately
+before N32, because the `fpext`/`fptrunc` pairs it creates around libm calls (§13.4) are
+floating-point instructions that N32 rewrites. The result is the **materialised module**: the
 reference semantics (§18), the lifting map (§16) and the native comparison build (§17.7) are all
 defined on it (NS §3.2: "the native comparison binary is built from that materialised bitcode").
 
@@ -4119,8 +4121,9 @@ declare i64 @__bennett_sf_add_f64(i64, i64)
 
 *(non-normative)* The calls of `exp` and `sinf` pass `double` and `float` values, which are
 bit-exact moves; they resolve by §4.5 to the runtimes libm, whose own floating-point code has been
-normalised by §13.1. The N33 rewrite runs before N32 in the sense that the libm calls it creates
-are not floating-point instructions and are left alone by N32.
+normalised by §13.1. N33 runs before N32 (§12.1), so its declarations precede N32's; the libm
+calls it creates are not floating-point instructions in the sense of §13.1 (they pass bit-exact
+values) and N32 leaves them alone.
 
 ## 14. Calls and control transfer
 
@@ -4640,8 +4643,11 @@ native: exit status 3 (clang 18 and 23, -O2)
 
 ### 14.9 `blockaddress` and `indirectbr`
 
-`blockaddress(@f, %bb)` has the device value A(f) + 4·(1 + i), where i is the index of %bb among
-f's address-taken blocks in layout order. `indirectbr ptr v, [labels]` dispatches with the compare
+`blockaddress(@f, %bb)` has the device value B(f) + i, where i is the index of %bb among f's k
+address-taken blocks in layout order and B(f) is the base of a k-byte object
+`__bennett_rt_blk.<f>` that the driver adds to the data section of the comparison link (§19.5) and
+whose address the link map records. These values are nonzero, pairwise distinct and distinct from
+every A(F) and every other object's bytes, so comparisons and dispatch on them are exact. `indirectbr ptr v, [labels]` dispatches with the compare
 tree over the labels' values to static branches (`qjump` in L, `br` in CC/R); no match is F(4).
 *(non-normative)* LangRef permits a `blockaddress` only in `indirectbr` and in comparisons with
 null; an execution in which its bits influence a result otherwise (printing, hashing) is
@@ -4676,8 +4682,10 @@ difference. Rows are added with a version change (§23).
   - `rdtsc` (x86, `={ax},={dx}`), `rdtime`/`rdcycle` (RISC-V), `mrs $0, cntvct_el0` (AArch64),
     and `llvm.x86.rdtsc`, `llvm.readcyclecounter`, `llvm.readsteadycounter` → a call of
     `__bennett_rt_cyclecounter()`, which reads the clock model (§11) in every tier;
-  - `cpuid` (x86) → the constant table of the declared CPU model (`--bennett-cpu=<model>`,
-    default `x86-64` with the leaf values of §24);
+  - `cpuid` (x86) → a lookup in the constant leaf table of the declared CPU model
+    (`--bennett-cpu=<model>`; default `x86-64`, whose table is the one the driver reads on the
+    build machine and records in the build record, §19.9, §24 D33), so both builds and every
+    tier see the same values;
   - asm-goto (`callbr`) whose asm string is lowered → its replacement followed by a branch to the
     default destination; `llvm.callbr.landingpad` → its operand.
 - **shimmed** (a call of a runtimes or platform function):
@@ -6121,7 +6129,9 @@ their events into this recorder), pops the recorder and returns its event list E
 (`T-LEAK`): for `ctrl` and `adj`, every register allocated during the generation is freed during
 it; for `compute`, every register allocated during gen(use) is freed during it, while a register
 allocated during gen(f) and not freed during it is freed by adjoint(E_f), in which its `qalloc`
-event becomes a `qfree` event, so gen(use) MUST NOT free it (`T-FOREIGN`). *(non-normative)* The
+event becomes a `qfree` event, so gen(use) MUST NOT free it (`T-FOREIGN`). Outside generations
+the check is at program end (§6.6): a register that is still live then, neither freed by device
+code or the host (`bennett_qreg_free`) nor consumed by a `measure`, is `T-LEAK`. *(non-normative)* The
 classical part of an action region (G) runs once per invocation; its effect on outliving memory
 is the events of TDL-5, so under `ctrl` it happens exactly on the branch where the control is 1
 (the audit's counterexample to 0.1). NS §4.2 requires "allocations inside released clean or
@@ -6798,8 +6808,11 @@ native (an efficiency and placement item, §25.3; outline E11).
 The driver links the materialised module natively (§17.7) with a linker script that fixes the
 addresses: non-PIE; identical-code folding and constant merging off; the null region [0,
 `null_size`) with `null_size` = 4096; the data sections (`.rodata`, `.data`, `.bss`, in that order)
-from `data_base` = 4096; the text from `text_base` = 0x400000; the defaults are options
-(`--bennett-layout-data-base`, `--bennett-layout-text-base`, §24). The link map gives A(F) for
+from `data_base` = 4096; the text from `text_base` = 0x400000, or, when the device ranges below
+(data, heap, arena, interface regions, computed first) end above 0x400000, from the first multiple
+of 0x200000 at or after their end, so that the native comparison binary maps its code disjointly
+from them; the defaults are options (`--bennett-layout-data-base`, `--bennett-layout-text-base`,
+§24). The link map gives A(F) for
 every function and the base of every global. The device `layout` (ISA §9.1) replicates it:
 
 - `globals`: every global of the link at its link address with its image;
@@ -6873,7 +6886,7 @@ pipeline, normaliser_version: "0.2"}` and `bindings.dialect_mapping_version = "0
 report (ISA §13), whose `source` field is `dialect-0.2:<rule id>` (e.g. `dialect-0.2:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
-hash and the layout options. Its SHA-256 is recorded as the build metadata of the certificate's
+hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
 `producer.version` (`<driver version>+build.<hex>`) until the ISA certificate has a field for it
 (§25.2).
 
@@ -6909,9 +6922,10 @@ mechanics deferral (§24): the capability is not in question (audit O-06).
 
 A virtual board, selected by `--bennett-platform=riscv64-bennett-virt`:
 
-- RAM: one runtimes global `__bennett_rt_platform_ram` at the board's physical base (0x80000000)
-  of the configured size (`--bennett-platform-ram`, default 128 MiB), so kernel physical addresses
-  are ordinary device addresses under §19.5;
+- RAM: one runtimes global `__bennett_rt_platform_ram` of the configured size
+  (`--bennett-platform-ram`, default 128 MiB), which the profile's linker script places at the
+  board's physical base 0x80000000 after the other data (the heap and the text follow it by
+  §19.5), so kernel physical addresses are ordinary device addresses;
 - the CSR file (privilege mode, `satp`, `stvec`, `mtvec`, `sstatus`, `mstatus`, `sie`, `sip`,
   `scause`, `sepc`, `stval`, `sscratch`, `mscratch`, `time`, …) as the runtimes global
   `__bennett_rt_csr`;
@@ -7124,7 +7138,7 @@ reject, refuse, fault or no effect for something the north star promises.
 |---|---|---|---|
 | D12 | host-stack addresses passed into device code (NS §3.2 "where possible") | executions they influence are layout-dependent (§18.7) and validated against the reference interpreter | every program runs; only the comparison oracle changes |
 | D13 | a region key stable across LLVM majors (§7.3) | the key depends on the major, which the certificate records | identity within a link is by content |
-| D15 | the comparison-link bases (§19.5) | `null_size` 4096, data at 4096, text at 0x400000, options to change them | native-equal addresses |
+| D15 | the comparison-link bases (§19.5) | `null_size` 4096, data at 4096, text at 0x400000 or above the device ranges, options to change them | native-equal addresses |
 | D20 | single passes outside the envelope (§21.1) | unsupported unless listed (they are LLVM bugs, spike findings §2) | every envelope pipeline |
 | D22 | output file names and diagnostic text | plugin-defined; the codes of §22 are normative | – |
 | D23 | ThinLTO with the plugin | full LTO: one merged module | every program merges into one module (audit D23, M) |
@@ -7136,7 +7150,7 @@ reject, refuse, fault or no effect for something the north star promises.
 | D30 | further device models (ISA §17 item 3) | the four of ISA §7.3; another device's effect is `FAULT_EFFECT_UNMODELLED` until the ISA adds it | the four modelled devices in every tier |
 | D31 | target ABI rows for `va_list` (§14.3), asm (§15) and target intrinsics beyond x86-64, AArch64 and RISC-V64 | added with the target | the three targets of the rungs |
 | D32 | the platform row lists and board constants (§20) | the patterns of §20.2–§20.6 until the §20.7 spike | rungs 6 and 7 |
-| D33 | `vscale` (§12.5) and the declared CPU model for `cpuid` (§15.2) | `vscale_range` minimum; `x86-64` leaves of the comparison machine | scalable-vector and CPU-feature code |
+| D33 | `vscale` (§12.5) and the declared CPU model for `cpuid` (§15.2) | `vscale_range` minimum; the `cpuid` leaves of the build machine, recorded in the build record | scalable-vector and CPU-feature code |
 
 ## 25. Blockers and ISA items
 
@@ -7216,7 +7230,7 @@ every departure keeps or widens the capability the outline gives.
 
 | # | Outline | This text | Reason |
 |---|---|---|---|
-| A1 | §8.6: k + 2 calls, cleaning each slice's fault bundle by `qxor` from a copy computed by a separate variant W_c | 2k − 1 calls: a copy-out pair per extra slice (§8.6) | the outline's `qxor` cleanup is neither `reverse` nor `recompute` of the bundle's own computing sequence (ISA §6.2, §6.4), so the action would be ill-formed; the copy-out pair is `reverse` |
+| A1 | §8.6: k + 2 calls, cleaning each slice's fault bundle by `qxor` from a copy computed by a separate variant W_c | 2k − 1 calls: a copy-out pair per extra slice, issued as CC-level region calls (§8.6) | the outline's `qxor` cleanup is neither `reverse` nor `recompute` of the bundle's own computing sequence (ISA §6.2, §6.4), so as an action it would be ill-formed; the copy-out pair cleans its temporaries by the oracle's involution (ISA §5.2), checked by `qreg.free` (ISA §3.3) |
 | A2 | §8.5: the snapshot register's release unspecified | released by `measure` (an unentangled basis state), kept while unchanged (§8.5) | a `qreg.free` needs a clean register and no ISA 0.8 instruction un-concatenates; the measurement is deterministic and disturbs nothing |
 | A3 | §6.5: every root in a static register file; unbounded instance counts are BLK-1 | a handle that never reaches memory is a direct CC `qreg` value with no bound; BLK-1 only for memory-reaching sites without a reference bound (§6.5) | ISA 0.8's dynamic SSA instances already name unboundedly many registers; the blocker's case shrinks to what ISA 0.8 truly lacks |
 | A4 | §6.5, §7.5(b): "statically bounded number of live instances", "static count" | an exact reference instance bound (self-disjoint sites, constant trip counts) (§6.5) | verdicts must not depend on a plugin's analysis precision |
@@ -7238,6 +7252,7 @@ every departure keeps or widens the capability the outline gives.
 | A20 | §25: wording items | adds certificate fields (build record, budget table, deferred measurement) and ISA §12.2 domains with a fixed classical region | NS §0, §5.1 require them in the certificate; NS §8 rung 4(a) is such a domain |
 | A21 | §20.1 `__bennett_platform_ram` | `__bennett_rt_platform_ram` | the reserved-prefix rule of §3.1 |
 | A22 | §21: corpus cases for the changed signatures | `spec-sem2-*` added beside the 0.1-ABI `spec-sem-*` | the trace runtime is still at ABI v0 (bd `-566`); the old cases stay valid legality cases |
+| A23 | §12.1: rules in table order | table order except that N33 runs immediately before N32 (§12.1) | the `fpext`/`fptrunc` pairs N33 creates around libm calls are floating point that N32 must rewrite |
 
 ## Appendix B. Example index
 
