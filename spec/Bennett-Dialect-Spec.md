@@ -136,10 +136,11 @@ bd `b-isa-spec-xam`).
 |---|---|---|
 | `llvm markers-ir` | the marker list of §3.2; compared with the C view | `parse`, `header` |
 | `c markers-c` | the prototypes of the C header; byte-equal to `spec/bennett_markers.h` between its BEGIN/END PROTOTYPES lines | `header` |
-| `llvm example=ID verdict=V` | a module; it parses and verifies on LLVM 18, 20 and 23 and the reference recogniser gives verdict `V` (`accept`, `reject:<code>` or `blocked:<code>`, §1.6). Optional attributes: `candidates=f,g` (the resolved candidate set of the first region operand, §7.2), `callees=f,g` (the candidate set of the first indirect call, §14.2), `shapes=N` (the number of compiled oracle shapes, §8.4), `mode=validate` (validator only, §12.4) | `parse`, `recognise` |
+| `llvm example=ID verdict=V` | a module; it parses and verifies on LLVM 18, 20 and 23 and the reference recogniser gives verdict `V` (`accept`, `reject:<code>` or `blocked:<code>`, §1.6). Optional attributes: `candidates=f,g` (the resolved candidate set of the first region operand, §7.2), `callees=f,g` (the candidate set of the first indirect call, §14.2), `shapes=N` (the number of compiled oracle shapes, §8.4), `mode=validate` (validator only, §12.4), `rmode=@f` (compiled in the whole-program R mode with entry f, §19.2) | `parse`, `recognise` |
 | `llvm normalise-in=ID` / `llvm normalise-out=ID` | the normaliser (§12) applied to the first gives the second, lines compared after collapsing runs of blanks; both verify on the three majors; the second passes the validator | `parse`, `normalise` |
 | `text native=ID` | inputs and outputs of the native differential of a normalisation pair or a lifted example: both modules (or the C source and the module) built natively with the seeds of `spec/seeds/` (§21.4), run on the listed inputs, outputs equal to the listed values | `native` |
-| `llvm lift=ID` | a materialised module; attribute `region=@f` names the region function and `desc=` the binding shape (§16.1) | `parse`, `map` |
+| `llvm lift=ID` | a materialised module; attribute `region=@f` names the region function and `desc=` the binding shape: the parameters' bindings in order (`IN(n,zext)`, `IN(n,sext)`, `ARG(W)`, `MEM_IN(A)`, `OUT(size)`), then `;dev=` device bindings (`ENTROPY(A)`, …) and `;tgt=` n(tgt) | `parse`, `map` |
+| `text linkmap=ID` | the comparison-link facts the map of `lift=ID` reads (§19.5): `null_size`, `heap_base`, `heap_limit_max`, the globals with their bases, the A(F) of address-taken functions, and the budget table's largest `heap` and `stack` | `map` |
 | `isa object=ID` | the reference object (§16.2) that the map produces from `lift=ID`, as complete ISA text; byte-equal to the map output; `bennett-isa-ref check` accepts it | `map`, `check` |
 | `text hash=ID` | the interface hashes of the object's symbols (`bennett-isa-ref hash`) | `hash` |
 | `text run=ID` | lines `input=… [mem=name:hex] [arg=…] budget=s,h,st,d -> code=C payload=P steps=N`; each line is the output of `bennett-isa-ref run-oracle <object> ref` with those options | `run-oracle` |
@@ -151,7 +152,7 @@ bd `b-isa-spec-xam`).
 | `text cc-run=ID` | a CC or R run: results, fault records, tape, and the state after `bennett_reverse` | `run-cc`, `reverse` |
 | `text blocker=ID` | the blocker report (§25.1) the plugin emits for a `blocked:` example | `recognise` |
 | `json budget-table=ID` | a budget table (§9.2); parsed and resolved against the example it names | `driver` |
-| `c example=ID`, `rust example=ID`, `julia example=ID` | a source file compiled by the toolchains of `corpus/legality/toolchains.toml` (`clang -O2 -flto` on 18, 20, 23; `rustc --emit=llvm-bc`; Julia `code_llvm`) and then `lto<O3>`; the result is recognised with verdict `verdict=V` | `frontend`, `recognise` |
+| `c example=ID`, `rust example=ID`, `julia example=ID` | a source file compiled by the toolchains of `corpus/legality/toolchains.toml` (`clang -O2 -flto` on 18, 20, 23, with `-I spec`; with `rmode=` against the `bennett-runtimes` musl sysroot, for which the checker's seeds stand in; `rustc --emit=llvm-bc`; Julia `code_llvm`) and then `lto<O3>`; the result is recognised with verdict `verdict=V` | `frontend`, `recognise` |
 
 A module example that calls a marker or a primitive without declaring it implicitly contains
 its declaration (§3.2, §3.1). **Section references**: `§n` is a section of this document, `ISA
@@ -1619,8 +1620,9 @@ The candidate set RR(v) of a region operand v is computed from its abstract valu
 forwarding thunk of G iff F's body is one block holding exactly a call of G (optionally
 `tail`/`musttail`/`notail`, default calling convention, no operand bundles) whose arguments are
 F's parameters in order and whose function type equals F's, followed by `ret void` or `ret` of
-that call's result; then `resolve(F) = resolve(G)`. A cycle of thunks is `BD-E-REGION-THUNK`
-(the call never terminates).
+that call's result; then `resolve(F) = resolve(G)`, except that a thunk on a cycle of thunks
+resolves to itself (it is an ordinary defined function whose execution recurses until a budget or
+the host stops it; 0.1's `BD-E-REGION-THUNK` is deleted).
 
 **Dispatch.** The region operand is classical data. The plugin compiles a body for every
 candidate. At run time the operand's value is compared, by the compare tree of §14.2 over the
@@ -3799,6 +3801,58 @@ k(2147483647, 1) = 31
 1 = 4. k(−1, −1): ctpop(0xFFFFFFFF) = 32, overflow, 33. k(2^31 − 1, 1): ctpop = 31, no unsigned
 overflow, 31.
 
+Atomics are sequentialised (N9):
+
+```llvm normalise-in=n-atomic
+define internal i32 @at(ptr %p, i32 %v) {
+  %old = atomicrmw add ptr %p, i32 %v seq_cst, align 4
+  %ok = cmpxchg ptr %p, i32 %old, i32 0 seq_cst seq_cst, align 4
+  %f = extractvalue { i32, i1 } %ok, 1
+  %z = zext i1 %f to i32
+  %r = add i32 %old, %z
+  ret i32 %r
+}
+```
+
+```llvm normalise-out=n-atomic
+define internal i32 @at(ptr %p, i32 %v) {
+  %nz.l.old = load i32, ptr %p, align 4
+  %nz.v.old = add i32 %nz.l.old, %v
+  store i32 %nz.v.old, ptr %p, align 4
+  %nz.l.ok = load i32, ptr %p, align 4
+  %nz.e.ok = icmp eq i32 %nz.l.ok, %nz.l.old
+  %nz.s.ok = select i1 %nz.e.ok, i32 0, i32 %nz.l.ok
+  store i32 %nz.s.ok, ptr %p, align 4
+  %nz.a.ok = insertvalue { i32, i1 } zeroinitializer, i32 %nz.l.ok, 0
+  %ok = insertvalue { i32, i1 } %nz.a.ok, i1 %nz.e.ok, 1
+  %f = extractvalue { i32, i1 } %ok, 1
+  %z = zext i1 %f to i32
+  %r = add i32 %nz.l.old, %z
+  ret i32 %r
+}
+```
+
+```text native=n-atomic
+at(p -> 5, 3) = 5, *p = 8
+at(p -> 5, 0) = 6, *p = 0
+```
+
+The validator (§12.4) on a residue and on clean code:
+
+```llvm example=residual-nsw verdict=reject:BD-E-RESIDUAL mode=validate
+define internal i32 @f(i32 %a) {
+  %s = add nsw i32 %a, 1
+  ret i32 %s
+}
+```
+
+```llvm example=residual-clean verdict=accept mode=validate
+define internal i32 @f(i32 %a) {
+  %s = add i32 %a, 1
+  ret i32 %s
+}
+```
+
 ## 13. Floating point (arith contract)
 
 NS §3.2: "Floating point is deterministic soft-float in both builds … Hardware floating point
@@ -4422,6 +4476,36 @@ eh(2) = 0; eh(3) = 1; eh(-5) = 1 (input built with clang++ and a C++ may_throw t
   (`sigsetjmp`, rung 5). A `longjmp` to a frame that has returned reaches the device entry and
   faults (code 4, §14.4).
 
+A `longjmp` across two frames, as a whole program in the R tier; the expected status is the
+native one:
+
+```c example=sjlj-two-frames verdict=accept rmode=@main
+#include <setjmp.h>
+
+static jmp_buf jb;
+
+static void deep(int n) {
+  if (n == 0) longjmp(jb, 7);
+  deep(n - 1);
+}
+
+static int try_deep(int n) {
+  int r = setjmp(jb);
+  if (r) return r;
+  deep(n);
+  return 0;
+}
+
+int main(void) { return try_deep(2) + 10 * try_deep(0); }
+```
+
+```text cc-run=sjlj-two-frames
+driver: --bennett-tier=reversible --bennett-entry=main
+run: status=COMPLETED results=[INT(32):77] faults=[]
+native: exit status 77 (clang 18 and 23, -O2)
+reverse: status=REVERSED memory=entry
+```
+
 ### 14.6 Fibers and context switches (N30: rewindable frames)
 
 - **Switch primitives**: the runtimes' `swapcontext`, `makecontext`, `setcontext`, Julia's task
@@ -4440,6 +4524,47 @@ eh(2) = 0; eh(3) = 1; eh(-5) = 1 (input built with clang++ and a C++ may_throw t
 - This works in CC, R and L on ISA 0.8: it is ordinary code over memory. G-16 (ISA fibers,
   §25.3) is the efficient alternative.
 
+A `swapcontext` ping-pong in the R tier: the main fiber logs 0, 1, 2 and the second fiber 100,
+101, 102, alternately; the status encodes the order (digits 0 0 1 1 2 2 give 1122, and 1122 mod
+256 = 98):
+
+```c example=fiber-pingpong verdict=accept rmode=@main
+#include <ucontext.h>
+
+static ucontext_t main_ctx, fiber_ctx;
+static int trace[6], n;
+static char fiber_stack[16384];
+
+static void fiber(void) {
+  for (int i = 0; i < 3; i++) {
+    trace[n++] = 100 + i;
+    swapcontext(&fiber_ctx, &main_ctx);
+  }
+}
+
+int main(void) {
+  getcontext(&fiber_ctx);
+  fiber_ctx.uc_stack.ss_sp = fiber_stack;
+  fiber_ctx.uc_stack.ss_size = sizeof fiber_stack;
+  fiber_ctx.uc_link = &main_ctx;
+  makecontext(&fiber_ctx, fiber, 0);
+  for (int i = 0; i < 3; i++) {
+    trace[n++] = i;
+    swapcontext(&main_ctx, &fiber_ctx);
+  }
+  int s = 0;
+  for (int i = 0; i < n; i++) s = s * 10 + trace[i] % 10;
+  return s % 256;
+}
+```
+
+```text cc-run=fiber-pingpong
+driver: --bennett-tier=reversible --bennett-entry=main
+run: status=COMPLETED results=[INT(32):98] faults=[]
+native: exit status 98 (clang 18 and 23, -O2)
+reverse: status=REVERSED memory=entry
+```
+
 ### 14.7 `exit`, `abort`, `_Exit`
 
 - `abort` → F(4).
@@ -4451,6 +4576,20 @@ eh(2) = 0; eh(3) = 1; eh(-5) = 1 (input built with clang++ and a C++ may_throw t
   a CC device entry of a host program catches it and makes `hostcall bennett.exit` with s, whose
   host stub calls `_Exit(s)`. Elsewhere (inside an oracle in the plain marker form, inside an
   action) it is unwinding out of the region: code 4.
+
+```c example=exit-status verdict=accept rmode=@main
+#include <stdlib.h>
+
+int main(void) {
+  exit(3);
+}
+```
+
+```text cc-run=exit-status
+driver: --bennett-tier=reversible --bennett-entry=main
+run: status=COMPLETED results=[INT(32):3] faults=[]
+native: exit status 3 (clang 18 and 23, -O2)
+```
 
 ### 14.8 `switch`
 
@@ -5622,6 +5761,126 @@ budget of 32 the third `lift.alloc` (`heap_used` 32 + 16 > 32) is `FAULT_BUDGET_
 steps of n = 1: `@ref` 2 rows to the call; `^b0` 3; `^b0.e1` 4; `^b1` 14 (including `@L2`'s 2);
 `^b1.e2` 3; `^b2` 17 (including `@L3`'s 6); `^b4` 1; `lift.retval` 1.
 
+### 16.10 Example: `switch` as a compare tree
+
+Five cases, two of them sharing a successor, and a default with a phi (outline E6; 0.1's linear
+chain is replaced). Sorted keys 1, 5, 9, 20, 40: the root compares with key 2 (mid = ⌊(0 + 4)/2⌋ =
+2, the key 9) by `ult`; the left node [1, 5] is an `eq` chain in `^b0.s1` and `^b0.s3`, the right
+node [9, 20, 40] in `^b0.s2`, `^b0.s4`, `^b0.s5` (creation order: L and R of the root first, then
+each node's chain); the default reaches the phi through the edge block `^b0.e4`:
+
+```llvm lift=switch5 region=@sw desc=IN(8,zext);tgt=8
+define internal i8 @sw(i8 %x) {
+b0:
+  switch i8 %x, label %b4 [
+    i8 1, label %b1
+    i8 5, label %b2
+    i8 9, label %b3
+    i8 20, label %b1
+    i8 40, label %b2
+  ]
+
+b1:
+  br label %b4
+
+b2:
+  br label %b4
+
+b3:
+  br label %b4
+
+b4:
+  %r = phi i8 [ 7, %b0 ], [ 10, %b1 ], [ 20, %b2 ], [ 30, %b3 ]
+  ret i8 %r
+}
+```
+
+```text linkmap=switch5
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: largest stack 32, largest heap 0
+```
+
+```isa object=switch5
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"0575354a0ecceee58d8dfbcc5cb9a9b8851c5c2b3193bf543395bed13604ce80","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[8],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"84e502d9807b1947e93d4314fab40f65bcb2a3f42735daa08cd05c8cd15ccf2c","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[8],"result":8,"tier":"q"}}}
+
+section functions
+oracle @ref (x0:wire[8] in) (tgt:wire[8]) (fault:wire[4]) () ()
+regs { r:reg[8] }
+^entry():
+r = lift.call @L1 (x0)
+lift.retval r
+lproc @L1 (a0:reg[8]) (r:reg[8]) () () ()
+regs { c0:reg[8], t0:reg[1], c1:reg[8], t1:reg[1], c2:reg[8], t2:reg[1], c3:reg[8], t3:reg[1], c4:reg[8], t4:reg[1], c5:reg[8], t5:reg[1], c6:reg[8], v0:reg[8], c7:reg[8], c8:reg[8], c9:reg[8] }
+^b0():
+c0 = lift.const.i8 9
+t0 = lift.icmp.ult a0 c0
+qbranch t0 ^b0.s1 ^b0.s2
+^b0.s1():
+c1 = lift.const.i8 1
+t1 = lift.icmp.eq a0 c1
+qbranch t1 ^b1 ^b0.s3
+^b0.s2():
+c2 = lift.const.i8 9
+t2 = lift.icmp.eq a0 c2
+qbranch t2 ^b3 ^b0.s4
+^b0.s3():
+c3 = lift.const.i8 5
+t3 = lift.icmp.eq a0 c3
+qbranch t3 ^b2 ^b0.e4
+^b0.s4():
+c4 = lift.const.i8 20
+t4 = lift.icmp.eq a0 c4
+qbranch t4 ^b1 ^b0.s5
+^b0.s5():
+c5 = lift.const.i8 40
+t5 = lift.icmp.eq a0 c5
+qbranch t5 ^b2 ^b0.e4
+^b0.e4():
+c6 = lift.const.i8 7
+(v0) = lift.parmov (c6)
+qjump ^b4
+^b1():
+c7 = lift.const.i8 10
+(v0) = lift.parmov (c7)
+qjump ^b4
+^b2():
+c8 = lift.const.i8 20
+(v0) = lift.parmov (c8)
+qjump ^b4
+^b3():
+c9 = lift.const.i8 30
+(v0) = lift.parmov (c9)
+qjump ^b4
+^b4():
+lift.ret v0
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=switch5
+input=0 budget=100,0,32,1 -> code=0 payload=7 steps=15
+input=1 budget=100,0,32,1 -> code=0 payload=10 steps=12
+input=5 budget=100,0,32,1 -> code=0 payload=20 steps=15
+input=9 budget=100,0,32,1 -> code=0 payload=30 steps=12
+input=20 budget=100,0,32,1 -> code=0 payload=10 steps=15
+input=40 budget=100,0,32,1 -> code=0 payload=20 steps=18
+input=41 budget=100,0,32,1 -> code=0 payload=7 steps=18
+input=40 budget=17,0,32,1 -> code=1 payload=0 steps=17
+```
+
+```text step-check=switch5
+budget=18,0,32,1 -> status=ok cases=256 input_and_memory_bits=8
+```
+
+*(non-normative)* x = 1 takes `lift.call` (1), `^b0` (3), `^b0.s1` (3), `^b1` (3), `lift.ret` (1)
+and `lift.retval` (1): 12 steps; x = 40 visits `^b0`, `^b0.s2`, `^b0.s4`, `^b0.s5` and `^b2`:
+1 + 3 + 3 + 3 + 3 + 3 + 1 + 1 = 18, the most, so B = 18 suffices for all 256 inputs. The 0.1
+linear chain needed up to 5 compares; the tree needs at most 4 on this table, and ⌈log₂ k⌉ + 2 in
+general.
+
 ## 17. Device classical code: memory model, lowering, faults
 
 ### 17.1 Memory model
@@ -6354,5 +6613,558 @@ firstfault (fz) -> Phi1:4
 ```
 
 *(non-normative)* w = (cnt = 5) = H0, so the target H2 flips exactly where H0 and H1 are 1.
+
+An effect inside an action region (TDL-12): the console write cannot happen under control, so on
+the branch where the control is 1 it is the fault code 8 in a retained register, combined into the
+plugin-allocated fault register Φ (the budget record is null), and the fault rate (here 1/2) is a
+reported quantity:
+
+```llvm example=tdl-effect verdict=accept
+@msg = private unnamed_addr constant [2 x i8] c"!\0A"
+
+define internal void @loud(ptr %e) {
+  %t = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %t, i64 0)
+  call void @__bennett_effect_console_write(ptr @msg, i64 2)
+  ret void
+}
+
+define void @tdl_e() {
+  %e = alloca ptr
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %t, ptr %e
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @loud, ptr null, ptr %e)
+  ret void
+}
+```
+
+```text tdl=tdl-effect
+@loud: G = { load of %t; the gate marker -> x; the effect marker -> fault 8 (TDL-12) }, slices = {}
+events of @tdl_e:
+qalloc H0 1
+qalloc H1 1
+h H0.0
+x H1.0 ctrl H0.0
+fault 8 -> f1:4 ctrl H0.0
+firstfault (f1) -> Phi1:4
+```
+
+```text state=tdl-effect at=6
+|00; f1 = 0, Phi1 = 0> 0.70710678
+|11; f1 = 8, Phi1 = 8> 0.70710678
+```
+
+*(non-normative)* `@tdl_e` returns with H0 and H1 live, as a REPL keeps registers (§6.6); the run's
+CC epilogue measures the retained f1 and Φ1 (TDL-8) and reports code 8 with probability 1/2. A
+program that ended without freeing H0 and H1 would trap `T-LEAK` at its end.
+
+A rotation by an angle that is superposed and has an unbounded value set cannot be predicated per
+value (TDL-10): `@setang` stores a host value under control, so `@ang` is Co with value set ⊤,
+and `@spin` rotates by it:
+
+```llvm example=tdl-angle verdict=reject:BD-E-COHERENT-ANGLE
+@ang = internal global double 0.0
+
+define internal void @setang(ptr %e) {
+  %x = load double, ptr %e
+  store double %x, ptr @ang
+  ret void
+}
+
+define internal void @spin(ptr %e) {
+  %p = getelementptr i8, ptr %e, i64 8
+  %t = load ptr, ptr %p
+  %a = load double, ptr @ang
+  call void @__bennett_rot(i32 3, ptr %t, i64 0, double %a)
+  ret void
+}
+
+define void @top(double %x) {
+  %e = alloca { double, ptr }
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store double %x, ptr %e
+  %p = getelementptr i8, ptr %e, i64 8
+  store ptr %t, ptr %p
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @setang, ptr null, ptr %e)
+  call void @__bennett_adj(ptr @spin, ptr null, ptr %e)
+  call void @__bennett_observe(ptr @ang, i64 8)
+  ret void
+}
+```
+
+## 19. The driver (driver 0.2)
+
+### 19.1 Pipeline position and bitcode sources
+
+Front ends emit bitcode with their stock pre-link pipelines; no Bennett code runs before the final
+link (Enzyme PR #3211: "forgetting it is a loud failure"), except in the explicit closed-unit mode
+(§19.7). The driver links all bitcode inputs (§19.8), links `bennett-runtimes` and `bennett-arith`
+bitcode of the link's major M, runs the post-link pipeline (`lto<O3>` by default, or any envelope
+pipeline of §21.1 the user selects), then runs the plugin on the whole program (NS §3.3). With
+`opt`:
+
+```
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2 …
+```
+
+The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
+and MAY register a full-LTO last extension point for use from a linker plugin; it MUST do nothing
+in a pre-link phase. **Bitcode sources** (NS §3.3): Rust `std` from the bitcode embedded in rlibs
+(`.llvmbc`) where present and readable by §19.8, else `-Zbuild-std`; the Julia runtime by the
+runtimes' shim bitcode; every remaining call without bitcode is a `trapped` coverage line (§4.5).
+
+### 19.2 Mode `--bennett-tier=reversible --bennett-entry=<sym>`
+
+The whole program is the device program in tier R (NS §4.2: "entered through
+`__bennett_reversible` or a driver mode"; rungs 3, 5, 6):
+
+- a CC **launch stub** fetches the argv and envp bytes with `hostcall bennett.argv`, initialises
+  the shadow stack (§17.3), calls the R entry `<sym>` with (argc, argv, envp), catches the exit
+  pseudo-exception (§14.7) and returns the status;
+- effects are the ISA device models (§11.2): console, clock, entropy (the launch's entropy tape),
+  block with `block_image` from `--bennett-disk=<file>`;
+- un-run is `bennett_reverse` (ISA §10): whole-run reversal restores the entry state; tape replay is
+  deterministic from the tape and the entropy;
+- a `measure` reachable in the program is `BD-E-REVERSIBLE-MEASURE` (§7.5b).
+
+### 19.3 Mode `--bennett-oracle=<sym>` ("oracle from program")
+
+A convenience: the driver synthesises the translation unit a quantum programmer would write
+(§16.7): a CC function that builds a descriptor binding `<sym>`'s parameters by
+`--bennett-bind=<param>:<kind>:<width>[:<value>]` (kind `in`, `arg`, `mem_in`, `out`), device
+bindings by `--bennett-dev=<model>:<width>[:<value>]`, and a payload: the return value, the exit
+status caught by the wrapper (§14.7), or the first L bytes of console output
+(`--bennett-payload=return|exit|console:<L>`), and applies the oracle once to registers it
+allocates, as a device entry the host calls with those registers. The normative route is the
+separate translation unit with marker calls naming the unmodified function (rungs 4, 7, 8).
+
+### 19.4 Placement: host vs device CC
+
+H functions stay native unless they share **pointer-rich** memory with device code: a pointer
+argument of a device-entry call, or a global accessed by both, whose pointee may contain pointers
+that device code reads (§5). Such H functions are **promoted** to CC variants, transitively up to
+their roots (in the limit `main`, and then H is the system-call proxy only: `hostcall
+bennett.syscall`). Results are equal by the materialised semantics; ISA-11 would let them stay
+native (an efficiency and placement item, §25.3; outline E11).
+
+### 19.5 Layout: the comparison link
+
+The driver links the materialised module natively (§17.7) with a linker script that fixes the
+addresses: non-PIE; identical-code folding and constant merging off; the null region [0,
+`null_size`) with `null_size` = 4096; the data sections (`.rodata`, `.data`, `.bss`, in that order)
+from `data_base` = 4096; the text from `text_base` = 0x400000; the defaults are options
+(`--bennett-layout-data-base`, `--bennett-layout-text-base`, §24). The link map gives A(F) for
+every function and the base of every global. The device `layout` (ISA §9.1) replicates it:
+
+- `globals`: every global of the link at its link address with its image;
+- `heap_base`: the first multiple of 4096 at or after the end of the data; `heap_limit_max`: the
+  largest `heap` of the budget table (which covers the shadow stack, §9.2);
+- the arena (TDL-4) at the first multiple of its size 2^A at or after the heap's end, with 2^A the
+  smallest power of two covering the may-Co globals and the coherent allocator's heap (its size
+  from `--bennett-arena-heap`, default the largest `heap` of the table); the arena's shadow
+  `__bennett_rt_shadow` is a global of the data sections;
+- interface regions per oracle above the arena (§16.3); H, A_tab and S_cells by §16.3;
+- the production host image is linked with the same addresses for every function and global
+  whose address may cross the boundary (§4.4).
+
+*(non-normative)* With data low and text high, H covers the data, heap and regions; function
+addresses are values only and never occupy device memory.
+
+### 19.6 Build-time snapshots
+
+`--bennett-snapshot=<dump>` rewrites the initialisers of the mutable globals listed in the dump
+(and the platform RAM global, §20.1) to the dump's bytes before the plugin runs; the data images
+then carry the snapshot and R of §8.5 is empty for them (rung 7: "kernel state snapshot fixed
+classically after boot"). The dump is recorded by hash in the build record.
+
+### 19.7 Closed-unit mode
+
+`-bennett-closed-unit` (the REPL fast path, NS §3.3: "a per-TU invocation remains available as a
+fast path for programs closed within one unit, with the same semantics"): the plugin runs on one
+module plus the runtimes and arith bitcode, after a **closedness check**: every device function's
+callees are defined in that set or are trapped exactly as in whole-program mode; no device
+function's address escapes the module; no function pointer enters through a device-entry
+parameter. If the check passes, processing is identical to whole-program mode. If it fails, the
+driver falls back to whole-program mode (it does not reject). Objects are content-addressed (ISA
+§9.2) and linked at launch (ISA §9.3), so the REPL is incremental.
+
+### 19.8 Mixed LLVM majors
+
+The driver reads every bitcode input with the newest major M of the envelope (bitcode is readable
+by newer majors), links with M and runs plugin M; runtimes and arith ship bitcode for each M.
+Every input MUST have one target datalayout and triple (NS §3.2) (`BD-E-VERSION` otherwise: a
+tool-version mismatch, not a program property). An input newer than M is `BD-E-VERSION`. The
+tested (front end, major) pairs are published in the envelope; a corpus case links clang 18
+bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
+
+### 19.9 Options, identity, outputs, module flag
+
+| Option | Meaning | Default |
+|---|---|---|
+| `-bennett-dialect=<v>` | MUST equal the plugin's dialect version (`BD-E-VERSION`) | required |
+| `-bennett-isa=<v>` | MUST equal the ISA version the plugin targets (`BD-E-VERSION`) | `0.8` |
+| `--bennett-budgets=<file>`, `--bennett-budget-default=<s,h,st,d,ss>` | §9.2 | §9.2 defaults |
+| `--bennett-class=<name>` | §3.4 | none |
+| `--bennett-tier=reversible`, `--bennett-entry=<sym>`, `--bennett-disk=<file>` | §19.2 | – |
+| `--bennett-oracle=<sym>`, `--bennett-bind=…`, `--bennett-dev=…`, `--bennett-payload=…` | §19.3 | – |
+| `--bennett-snapshot=<dump>` | §19.6 | – |
+| `-bennett-closed-unit` | §19.7 | off |
+| `--bennett-platform=<profile>` | §20 | none |
+| `--bennett-vscale=<V>`, `--bennett-cpu=<model>` | §12.5, §15.2 | §24 |
+| `--bennett-qreg-instances=<n>` | §6.5 | 64 |
+| `-bennett-inplace-exhaustive-bits=<n>` | §8.7 | 24 |
+| `-bennett-warn-qstore` | §6.7 | off |
+| `-bennett-out=<dir>` | the outputs below | required |
+
+**Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
+`dialect-0.2;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+major (NS §3.2).
+
+**Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
+variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
+objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
+pipeline, normaliser_version: "0.2"}` and `bindings.dialect_mapping_version = "0.2"`; the coverage
+report (ISA §13), whose `source` field is `dialect-0.2:<rule id>` (e.g. `dialect-0.2:N33`); the
+blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
+budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
+hash and the layout options. Its SHA-256 is recorded as the build metadata of the certificate's
+`producer.version` (`<driver version>+build.<hex>`) until the ISA certificate has a field for it
+(§25.2).
+
+**A missing plugin fails loud.** No production artefact defines a marker: `bennett-runtimes`,
+`bennett-arith` and the driver's link inputs define no `__bennett_*` marker symbol (test runtimes
+such as the trace runtime do, and are never linked into production). A link in which the plugin
+did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
+ignore unresolved symbols or supply weak marker definitions.
+
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2"}` (behaviour Error, so an
+LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
+differs from its version (`BD-E-VERSION`):
+
+```llvm example=version-flag verdict=reject:BD-E-VERSION
+define void @top() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 1, !"bennett.dialect", !"0.1"}
+```
+
+## 20. Platform profile `riscv64-bennett-virt` (platform 0.2; rungs 6–7)
+
+NS §5: "The kernel compiles, boots on the VM in the reversible tier with its devices modelled,
+writes a serial console to the tape, and un-boots to the reset vector." This section fixes the
+mechanisms (outline E4: riscv64 first); its row lists come from the platform spike of §20.7, a
+mechanics deferral (§24): the capability is not in question (audit O-06).
+
+### 20.1 Model
+
+A virtual board, selected by `--bennett-platform=riscv64-bennett-virt`:
+
+- RAM: one runtimes global `__bennett_rt_platform_ram` at the board's physical base (0x80000000)
+  of the configured size (`--bennett-platform-ram`, default 128 MiB), so kernel physical addresses
+  are ordinary device addresses under §19.5;
+- the CSR file (privilege mode, `satp`, `stvec`, `mtvec`, `sstatus`, `mstatus`, `sie`, `sip`,
+  `scause`, `sepc`, `stval`, `sscratch`, `mscratch`, `time`, …) as the runtimes global
+  `__bennett_rt_csr`;
+- devices: a UART 16550 (console), a CLINT and timer (clock), a PLIC, and a virtio-blk MMIO device
+  (block), each a runtimes C model over the effect markers.
+
+### 20.2 asm rows
+
+The privileged forms are `shimmed` rows of §15: `csrr`, `csrw`, `csrs`, `csrc` (and the immediate
+forms) → `__bennett_rt_csr_read(i32 csr)`, `_write(csr, v)`, `_set(csr, v)`, `_clear(csr, v)`;
+`sfence.vma` → `__bennett_rt_sfence_vma(va, asid)`; `wfi` → `__bennett_rt_wfi()` (advances the
+clock model to the next timer event); `ecall` in kernel mode → `__bennett_rt_sbi_call(…)` (the SBI
+of the board), in user mode → the trap path of §20.4; `mret`, `sret` → `__bennett_rt_trap_return
+(mode)`; `fence.i` and `fence` → deleted (lowered). The exact asm strings and constraint strings
+are those the §20.7 spike inventories.
+
+### 20.3 MMIO routing (N35)
+
+Under the platform profile, N9 first routes every volatile load and store, and every MMIO asm
+form, to `__bennett_rt_mmio_{load,store}_i<N>(addr[, v])`; these dispatch by address range to the
+device models' handlers (C code in runtimes that calls the effect markers), and otherwise access
+memory. A non-volatile access to an MMIO window lies outside every live allocation and faults with
+code 7, as the reference semantics defines (§17.1).
+
+### 20.4 Interrupts (N35)
+
+Poll points at loop back edges and function entries (N35) call `__bennett_rt_poll()`, which checks
+the timer model (deterministic, driven by the clock model) and the PLIC's pending bits; on
+delivery it sets the CSRs (`scause`, `sepc`, `stval`, `sstatus`) and calls the trap vector
+`stvec` by A(F) dispatch (§14.2). Interrupts are therefore taken at poll points only, a
+deterministic choice recorded in the certificate; NS §3.2's single-thread assumption covers the
+uniprocessor kernel (`CONFIG_SMP=n`, xv6 `CPUS=1`).
+
+### 20.5 Context switch and traps
+
+The assembly entry points (`swtch`, `trampoline`, `uservec`, `userret`, `kernelvec`, Linux
+`__switch_to`, `handle_exception`, `ret_from_exception`) are platform shims by symbol (§15.3),
+written in C over the fibers of §14.6: a kernel context switch is a fiber switch; a trap entry
+saves the user registers into the trap frame from the platform register file and calls the
+kernel's handler; a trap return restores them and resumes the user fiber.
+
+### 20.6 User processes
+
+User programs are built to bitcode and linked into the device program under the comparison layout
+(§19.5); their ELF images on the disk image are the same link, so entry and function addresses
+are A(F). `exec` and `sret` to user mode dispatch the user entry by A(F); user loads and stores go
+through a **soft-MMU**: N35 instruments the functions of the user compartment with an Sv39 walk
+over the modelled `satp`, page faults delivered through §20.4.
+
+### 20.7 Platform spike (mechanics)
+
+Build xv6-riscv and Linux `tinyconfig` riscv64 (uniprocessor, `CONFIG_SMP=n`) to bitcode with
+build flags only (NS §0); inventory every asm form, `.S` symbol, MMIO site and switch path, as
+SQLite §3 did; fix the row lists of §20.2 and §20.5 and the board constants of §20.1. Until then
+those rows are this section's patterns (§24).
+
+## 21. Legality corpus and conformance suites (corpus 0.2)
+
+### 21.1 The corpus
+
+`corpus/legality/` holds the cases (`cases/`: the 56 spike cases plus the `spec-*` cases of this
+document), four negative controls (`controls/`), the harness (`harness/run.py`), the trace runtime
+(`runtime/`) and the spike's results. Spike cases use the provisional ABI v0 and arbitrary
+operation codes: they are **legality** cases (what LLVM passes do to marker programs), not
+well-formedness cases; the legality property (§3.6) does not depend on a marker's signature. The
+harness checks and their 0.2 reading:
+
+| Check | Property | 0.2 reading |
+|---|---|---|
+| L1 | the dynamic marker sequence and the classical result are preserved | unchanged; for cases whose marker operands are computed from floating point or query intrinsics, the baseline is the materialised module (§17.7) |
+| L2 | no pass adds a forbidden attribute | the three lists of §3.6 |
+| L3 | handles stay contained (guard page, `BADHANDLE`; static review of new casts) | dynamic part unchanged; the static review is decided by §6 |
+| L4 | region identity | every region operand resolves (§7.2) to candidates content-equal (§7.3) to the baseline's: aliases, forwarding thunks and merged twins pass (harness relaxation, bd `-cjb`) |
+| L5 | native code generation keeps L1 and every marker an undefined external | unchanged |
+| L6 | region-operand shapes | every shape resolves (§7.2: the candidate set is bounded by the program) |
+
+**Supported envelope**: LLVM 18, 20 and 23; `default<O0>` … `default<O3>`; `default<Os>`,
+`default<Oz>` on 18 and 20 (LLVM 23's `opt` rejects them); `lto-pre-link<O3>`, `lto<O3>`,
+`thinlto-pre-link<O3>`, `thinlto<O3>`, `default<O3>` three times; clang `-O0` … `-O3` with
+`-flto`; rustc `-C opt-level` 0, 1, 2, 3, s, z, including its MergeFunctions in aliases mode;
+Julia 1.13's own pipeline; `strip`, `strip-nondebug` and `mergefunc` alone. **Unsupported**
+(LLVM bugs outside the contract on every supported major; spike findings §2): the Attributor,
+module and CGSCC (llvm-project #234748, #236104, and on 18 and 20 the constant-table fold fixed by
+PR #151359); `normalize` without `preserve-order` (#236128); `structurizecfg` without its
+prerequisites; the passes the harness classes `non-preserving` and the sanitizer and
+instrumentation passes; any other single pass not run inside an envelope pipeline (§24 D20).
+
+Work items the corpus owns for 0.2: rerun P4 (clang `-flto` end to end) and add a rustc
+`-Clinker-plugin-lto` case (bd `-j88`); the trace runtime and harness at ABI 0.2 (bd `-566`);
+minimise the three P3-only interactions (bd `-ape`); a `-g` variant of every `.c` case (bd
+`-u6a`); Windows funclet and non-x86-64 cases (bd `-kdj`).
+
+### 21.2 New legality cases
+
+Before this version freezes, the corpus gains cases (each `EXPECT: legal` unless stated) for:
+descriptor construction by constant stores in C, Rust and Julia surviving `default<O3>` (§3.8,
+§8.1); the budget record (§9.1); every changed or new marker signature (§3.2); the effect markers
+(§3.2, §11); `observe`; a cross-major link (§19.8); region pointers from host input and from a
+Julia `@cfunction` (§7.2); handle `Vec`, `std::vector` and linked lists (§6.4); EH, sjlj and
+varargs through the pipeline (§14); the benign attributes of §3.6 on the three majors. The
+`spec-sem2-*` cases are byte-identical to the §18.8 programs; `spec-sem-*` are their 0.1-ABI
+predecessors and stay as legality cases.
+
+### 21.3 Conformance suites
+
+| Suite | Class | Content |
+|---|---|---|
+| DA | Plugin, Validator | recognition, reserved names, attributes, Julia check, unwinding of markers: the §3 examples; L2 over the corpus |
+| DB | Plugin, Validator | the device analysis and handles: the §5 and §6 examples; L3 over the corpus |
+| DC | Plugin, Validator | candidate sets, identity, kinds, well-formedness: the §7 examples; L4, L6 over the corpus |
+| DO | Plugin | descriptors, shapes, entry state, wide outputs, in-place: the §8 examples |
+| DN | Plugin, Validator | normalisation pairs, native differentials and validator verdicts: the §12–§15 examples; two independent validators agree on the corpus after materialisation |
+| DM | Plugin | the lifting map: the §16 objects, hashes, runs and step checks, executed on the ISA reference interpreter |
+| DS | Plugin + executor | marker semantics: the §18.8 programs, events and states; differential runs against the reference semantics (§18.7) |
+| DT | Plugin + executor | TDL partitions, events and states (§10, §18.8) |
+| DE | Plugin + executor | effects per tier (§11): R console with reversal, CC host effects, L device models |
+| DV | Plugin | varargs, EH, sjlj and fibers (§14) on the three target ABIs |
+| DR, DF | Runtime | the contract rows of `bennett-runtimes` (§11, §14, §17.3, §20) and `bennett-arith` (§13): test vectors |
+| DD | Driver | the driver modes (§19.2–§19.7), closed-unit equivalence, mixed majors, layouts |
+| DP | Platform | the platform profile (§20) |
+| DX | everything | the rung-mini programs end to end (§21.4) |
+| DL | Toolchain | the legality matrix of §21.1 |
+
+### 21.4 The pre-flight checker and rung minis
+
+`scripts/dialect_check.py` executes every tagged example of this document (§1.5) under rules P-1
+to P-3. The capabilities it needs and the executor of each are Appendix B. Its seeds live in
+`spec/seeds/` (C, used only by the checker; `bennett-runtimes` and `bennett-arith` implement
+independently, CLAUDE.md rule 5): a minimal allocator over the layout heap, the shadow stack,
+memmove/memset/memcmp, the EH state and a personality subset, setjmp/longjmp, swapcontext,
+binary64 soft-float add/mul/cmp/conversions, `exp`/`log` from musl, a console/entropy device stub
+over the effect markers and the musl `__syscall` row; their semantics equal the contract rows of
+§11, §13, §14 and §17.3. Suite DX holds the rung minis: R1 (an Int8 Rust function, exhaustive:
+§16.6), R2 (a C hashtable; the heap example §16.9 is its kernel), R3 (a `puts` through the runtimes
+seed in R, reversed: §11.6), R4 (§16.7), R8 (§16.8).
+
+## 22. Diagnostics
+
+### 22.1 Compile-time rejections
+
+Every row cites the north-star clause or maintainer decision that requires the rejection; a
+rejection without one may not exist (standing rule).
+
+| Code | Rule | Required by |
+|---|---|---|
+| `BD-E-VERSION` | §19.8, §19.9 | NS §3.2 (per-major builds, "one target datalayout", "tested compatibility envelope"); a tool mismatch, not a program property |
+| `BD-E-MARKER-DEFINED` | §3.1 rule 1 | NS §3.1 ("declared external marker functions") |
+| `BD-E-MARKER-UNKNOWN` | §3.1 rule 2 | NS §3.1 (recognition by name; reserved names) |
+| `BD-E-MARKER-ADDRESS` | §3.1 rule 3 | NS §3.1 ("recognises them by name and signature": a marker is never called indirectly) |
+| `BD-E-MARKER-SIGNATURE` | §3.5 | NS §3.1 ("fixed signatures") |
+| `BD-E-MARKER-ATTRIBUTE` | §3.6 | NS §3.1 (the positive legality requirement) |
+| `BD-E-JULIA-CCALL` | §3.8 | NS §3.3 (per-front-end integration; the `llvmcall` route keeps the capability, audit B-13) |
+| `BD-E-EFFECT-LIE` | §3.8 | NS §3.1 (positive legality), NS §3.2 (definedness) |
+| `BD-E-OPERAND` | §3.4 (a constant outside its table) | NS §3.1 (fixed operand encodings); the marker faults on every execution that reaches it |
+| `BD-E-HANDLE-USE` | §6.2 | maintainer decision 2; NS §3.1 ("never dereferenced") |
+| `BD-E-HANDLE-ESCAPE` | §6.4 | NS §3.1 ("any handle use that survives into host native code is rejected") |
+| `BD-E-HANDLE-UNTRACKED` | §6.2 | NS §3.1 (handles are the results of `qalloc`; linearity is a fail-loud verifier obligation) |
+| `BD-E-REGION-TYPE` | §7.2 (the unique candidate) | decision 3 (candidates of the required type); the call is undefined on every execution |
+| `BD-E-REGION-MEASURE` | §7.5(a) (the unique candidate, or the closure of every candidate), unless deferred | NS §3.1 ("user measurement inside it is refused") |
+| `BD-E-REVERSIBLE-MEASURE` | §7.5(b) | NS §4.2 (reversible tier); ISA §10 (a run that measured is not reversible) |
+| `BD-E-RESIDUAL` | §12.4 | NS §3.2 (residual-poison validator) |
+| `BD-E-INPLACE-NOT-INVERSE` | §8.7 | NS §3.1 ("an in-place update with no inverse fails loud at compile time") |
+| `BD-E-COHERENT-OVERWRITE` | TDL-5(d) | NS §4.2 ("writing a register not known to be clean is a compile-time error … else it fails loud") |
+| `BD-E-COHERENT-ANGLE` | TDL-10 | NS §4.2 (predication, not superposed parameters); ISA §3.1 ("angles are literals or classical arguments") |
+
+**Deleted** from 0.1 (each was a narrowing, audit §1): `BD-E-EH`, `BD-E-LIFT-SUBSET`,
+`BD-E-DEVICE-ADDRESS`, `BD-E-REGION-UNBOUNDED`, `BD-E-REGION-EXTERNAL`, `BD-E-REGION-THUNK`,
+`BD-E-REGION-TIER`, `BD-E-REVERSIBLE-MARKER` (except measurement), `BD-E-INPLACE-UNVERIFIED`,
+`BD-E-OPERAND-UNBOUNDED`, `BD-E-HANDLE-STORE`, and `BD-E-REGION-TYPE` for oracle candidates.
+
+### 22.2 Blocker reports
+
+`BD-B-ISA4` (BLK-1), `BD-B-ISA1` (BLK-2), `BD-B-ISA3` (BLK-3), `BD-B-ISA12` (BLK-4), in the
+format of §25.1. A blocker report is not a rejection (§1.6).
+
+### 22.3 Run-time traps
+
+Fault code 4 (§17.5) with the named diagnostic: `T-DEAD`, `T-FOREIGN`, `T-CLEAN`, `T-INDEX`,
+`T-ALIAS`, `T-THETA`, `T-MEASURE`, `T-SIZE`, `T-CTRL`, `T-LEAK`, `T-REGION`, `T-REGION-INVALID`,
+`T-OP`, `T-CLASS`, `T-IFACE`, `T-BUDGET`, `T-TAINT-HOST`. Deleted: `T-BORROW` (outside generations
+`qborrow` is a clean allocation, bd `.9`), `T-TIER` (§7.4).
+
+### 22.4 Warnings
+
+`BD-W-QSTORE-UNCLEAN` (§6.7), `BD-W-TAINT-HOST` (TDL-11), `BD-W-COHERENT-HISTORY` (TDL-7). A
+warning never changes a verdict.
+
+## 23. Versioning
+
+- The **full version string** of this document (`0.2`) is the unit of compatibility: a plugin
+  implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
+  not compatible with each other.
+- Sub-artefacts, all at `0.2`: `markers` (§3), `handles` (§6), `regions` (§7), `oracle-abi` (§8),
+  `tdl` (§10), `effects` (§11), `norm` (§12–§15; the certificate's `normaliser_version`), `map`
+  (§16; the certificate's `dialect_mapping_version`), `asm` (§15), `platform` (§20), `driver`
+  (§19), `corpus` (§21).
+- Every semantic change bumps the version; the reference objects and hashes of §16 depend on the
+  ISA version string, the map and the layout, and change with any of them (0.1's hashes changed
+  with the wrapper form of §16.2).
+- The build record (§19.9) records the runtimes, arith and asm-table hashes and the budget-table
+  hash; `SPEC_VERSIONS.toml` records `dialect` and the targeted `isa`; the change rules are in
+  `spec/README.md`.
+
+## 24. Deferred mechanics (with defaults)
+
+Only mechanics appear here. Each row states the capability it keeps; none has a default of
+reject, refuse, fault or no effect for something the north star promises.
+
+| Id | Mechanics | Default | Capability kept |
+|---|---|---|---|
+| D12 | host-stack addresses passed into device code (NS §3.2 "where possible") | executions they influence are layout-dependent (§18.7) and validated against the reference interpreter | every program runs; only the comparison oracle changes |
+| D13 | a region key stable across LLVM majors (§7.3) | the key depends on the major, which the certificate records | identity within a link is by content |
+| D15 | the comparison-link bases (§19.5) | `null_size` 4096, data at 4096, text at 0x400000, options to change them | native-equal addresses |
+| D20 | single passes outside the envelope (§21.1) | unsupported unless listed (they are LLVM bugs, spike findings §2) | every envelope pipeline |
+| D22 | output file names and diagnostic text | plugin-defined; the codes of §22 are normative | – |
+| D23 | ThinLTO with the plugin | full LTO: one merged module | every program merges into one module (audit D23, M) |
+| D24 | multi-threaded device code (NS §9.11) | the single-thread assumption (N9), recorded in the certificate | uniprocessor programs, rung 6's configurations |
+| D26 | the binary layout of descriptors and budget records beyond the C view | the LLVM struct layout under the module's datalayout (§8.1, §9.1) | every target |
+| D27 | budget defaults (§9.2) | 1048576 steps, 1048576 heap bytes, 65536 stack cells, depth 256, `sstack` 65536 | every budget is overridable |
+| D28 | the in-place exhaustive width (§8.7) | 24 bits; sampled evidence and the `T-CLEAN` net above | every pair is verified, as proof or evidence |
+| D29 | the static register-file size for unbounded sites (§6.5) | 64 instances, then the BLK-1 blocker trap | – (the case itself is a blocker) |
+| D30 | further device models (ISA §17 item 3) | the four of ISA §7.3; another device's effect is `FAULT_EFFECT_UNMODELLED` until the ISA adds it | the four modelled devices in every tier |
+| D31 | target ABI rows for `va_list` (§14.3), asm (§15) and target intrinsics beyond x86-64, AArch64 and RISC-V64 | added with the target | the three targets of the rungs |
+| D32 | the platform row lists and board constants (§20) | the patterns of §20.2–§20.6 until the §20.7 spike | rungs 6 and 7 |
+| D33 | `vscale` (§12.5) and the declared CPU model for `cpuid` (§15.2) | `vscale_range` minimum; `x86-64` leaves of the comparison machine | scalable-vector and CPU-feature code |
+
+## 25. Blockers and ISA items
+
+### 25.1 Blockers
+
+A **blocker** is a capability the dialect fully specifies whose stated case has no realisation on
+ISA 0.8. No rung of NS §8 depends on any of them (outline part C). The maintainer ruled
+(2026-10-29) that ISA 0.9 waits until this dialect is council-accepted.
+
+| Id | Code | NS capability | Affected case | ISA 0.8 realisation that exists | Exact ISA change |
+|---|---|---|---|---|---|
+| **BLK-1** = ISA-4 | `BD-B-ISA4` | NS §3.1 handle tables; §4.1, §4.2 dynamic allocation ("real allocation"); Bennett.jl vectors of qubits; adjoints of generations whose register set is known only at run time | allocation sites whose handles reach memory with no finite instance bound (§6.5); register widths with value set ⊤ (§3.4); a Co width with an unbounded value set (TDL-10) | direct `qreg` values for handles that stay out of memory; static register files with dispatch for bounded sites (§6.5) | (i) a dynamic-width type `qreg[*]`; `q = qreg.new cls n` with n an `i64` value yields `qreg[*]`; `w = qreg.width q`. (ii) Binding a `qreg[*]` to a `wire[n]` or `region[A,W]` slot checks the width at the call: CC trap, R fault `FAULT_UB_TRAP`, on a mismatch. (iii) `id = qreg.id q` (non-consuming; the §10 launch id) and `q = qreg.from_id id` (yields `qreg[*]`; a trap if the id is not live, is viewed or is consumed). History frames: `qreg.id` is pure; `qreg.from_id` records the handle reference |
+| **BLK-2** = ISA-1 | `BD-B-ISA1` | NS §4.2 "run-time budgets come from the host or from measurement results" | budget fields computed on the device (§9.5 case 3) | pre-minted finite sets; stub-minted copies of launch arguments (§9.5) | a CC instruction `tk = budget.mint @region s h st d` (`i64` operands) with the ISA §5.4 validation of `bennett_budget` as a CC trap; the token is scoped to the run; an impure history frame recording the token |
+| **BLK-3** = ISA-3 | `BD-B-ISA3` | NS §3.1, §4.2 parametrised in-place updates x ← g(x; y, a) from a user-declared (g, ginv) pair with quantum or unbounded classical parameters | `inplace` with `IN` or `MEM_IN` bindings, or `ARG`s with value set ⊤ (§8.7) | `qinplace` without parameters; per-value specialisation for finite `ARG` sets; library bijections as permutation actions (§8.7, TDL-5b) | `qinplace @g @ginv tk x (ins..) (mem..) (args..)`: the ISA §4.5 macro passes the lists to both `oracle_call`s; the ISA §6.1 transfer becomes `x: perm with S_x ∪ ins ∪ cells(mem) ∪ Π`; certificate obligation g∘ginv = id for every (ins, mem, args) class (exhaustive or library) |
+| **BLK-4** = new ISA-12 (audit B-38) | `BD-B-ISA12` | NS §4.2 quantum allocation inside reversible-tier code | `qalloc`/`qborrow`/`qfree` in an R closure with no finite instance bound (§7.5b); entry-state transfer from R code (§8.5) | hoisting to the CC caller with a static count (§7.5b) | permit `qreg.new`, `qreg.free`, `qreg.slice` and `qreg.concat` in R; the R history records them; the reversal of `qreg.new` is `qreg.free` with the cleanliness obligation (simulator check; hardware per ISA §17 item 14); the reversal of `qreg.free` is `qreg.new` (clean); `measure` stays CC-only |
+
+**Blocker report** (one line per blocker point, in processing order, in the outputs, §19.9):
+`<code> <function> <value or call>: <reason>; <ISA 0.8 constraint>; <BLK id> (<ISA item>) <change>`.
+
+**Blocker trap.** A blocked program is compiled (§1.6) with each blocker point lowered to the ISA
+0.8 realisation that exists for the bounded cases (the static file of §6.5 with D29's size, the
+pre-minted budgets of the value set, the specialised pairs) and, on an execution that falls
+outside them, `hostcall bennett.fault` with code 4 and the blocker's code as payload, then
+`trap` (§11.5). So only the executions the blocker affects fail, and they fail loud.
+
+### 25.2 Wording items
+
+No capability is lost; two implementations could differ until each is fixed in ISA 0.9:
+
+- **ISA-7**: a table from CC/R trap cause to ISA §5.4 code (division by zero 5, MIN/−1 6, memory 7,
+  `trap` 4, allocation failure 2) and a CC/R `fault C` instruction. The dialect uses `hostcall
+  bennett.fault` in CC meanwhile (§11.5).
+- **ISA-8**: an R call returns a fault status to its CC caller; runs ending in an R fault are
+  reverse-eligible.
+- **ISA-3 editorial**: the JCS spelling of `args` types: the ISA §16.2 type spelling as JSON strings
+  (`"i64"`), as §16 uses.
+- **`qreg.slice`**: whether `lo` may be a run-time value (§10 TDL-4 uses literal offsets only).
+- **`qreg` across CC calls**: ISA §3.2 places handles in the classical environment, but the ISA
+  §3.3 transition table is silent on CC `call`, `ret` and `br` block parameters of `qreg` type;
+  §6.5 relies on them carrying `qreg` values unchanged.
+- **ISA §5.4 code 10** "(R only)" versus `fault 10` in oracles (§11.3; ISA §4.2 admits every C <
+  2^F).
+- **Certificate fields** for the build record hash (§19.9), the budget-table hash and the
+  `deferred_measurement` flag (§7.5a); meanwhile `producer.version` build metadata and
+  `definedness_assumptions` carry them.
+- **ISA §12.2 domains with a fixed classical region**: NS §8 rung 4(a) verifies the oracle "over
+  all rows and all target values" with the database fixed classically before entry; ISA §12.2
+  labels a domain that fixes an `in` region's cells as evidence with a covered fraction. The ISA
+  should say whether an exhaustive claim over the remaining components, with the fixed region
+  prepared from classical bytes (`qprep`, `bennett_qreg_prepare`), is a proof for that region
+  content.
+
+### 25.3 Efficiency items
+
+Correct on ISA 0.8 by the stated construction; ISA 0.9 candidates on evidence only:
+
+| Item | Construction on ISA 0.8 |
+|---|---|
+| ISA-5 (two simultaneous slices of one `qreg`) | per-wire registers, or a quantum-addressed gate |
+| ISA-9 (borrowing outside static Q regions) | clean allocation for CC-spanning borrows (§18.3) |
+| ISA-11 (host memory by reference) | promotion (§19.4) |
+| G-12 (oracle entry state at native addresses) | entry-state transfer by replay (§8.5) |
+| G-13 (interface-region base at call time) | a static arena (TDL-4) |
+| G-14 (predicated step machine in actions) | unrolled padded events (TDL-10) |
+| G-15 (payloads wider than 128 bits) | 2k − 1 oracle calls (§8.6) |
+| G-16 (fibers and interrupts in CC/R) | rewindable frames (§14.6) and poll points (§20.4) |
+| SQLite E1–E5 | per-function cell widths, frame width, an indirect-call row, a block-copy row, a classical-content hint for `in` regions |
+
+ISA-2 is not a gap (the R step counter, §17.6). ISA-6 is not a gap (`measure` and re-preparation,
+§18.3). ISA-10 is settled by the ISA's test vectors. **LLVM changes needed**: none; the legality
+findings' LLVM bugs are outside the envelope (§21.1).
 
 <!-- APPEND -->
