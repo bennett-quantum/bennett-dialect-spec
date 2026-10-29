@@ -2051,3 +2051,12 @@ removes it, and the blocker where part of the capability needs one.
 | -ape | C5 | §21 | – |
 | -u6a | C6 | §21 | – |
 | -kdj | C7 | §14.4, §21 | – |
+
+## Maintainer rulings (2026-10-29)
+
+- **Open questions E1–E3, E5–E14: ratified** with the recommended options of part E. The full
+  0.2 text uses them; the council may still challenge any.
+- **E4: riscv64** is the first platform profile for rungs 6–7 (`riscv64-bennett-virt`).
+- **BLK-1..BLK-4 (ISA changes): ISA 0.9 waits until the dialect is council-accepted**, because the
+  dialect may still be faulty. Dialect 0.2 states them as named blockers (`blocked:` verdicts with
+  the exact ISA change) and is graded against ISA 0.8. ISA 0.9 is next session's work.
