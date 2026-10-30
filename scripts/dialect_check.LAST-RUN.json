@@ -1,10 +1,11 @@
 {
-  "spec_commit": "5ba4b27427fefda4bde84218e9dbba0e2a7475f8",
-  "checker_commit": "5ba4b27427fefda4bde84218e9dbba0e2a7475f8",
-  "spec_sha256": "110c07deae4bf44cce7564f2149d9ad742c8135bd2ce8c788c12d4db74c0df0c",
-  "dialect_version": "0.2.3",
-  "interpreter_commit": "b7014019b2be1fed73b146823d08d7120baae23b",
-  "interpreter_source_sha256": "d2d8bfe19d97410f37b65125942d2db23852c4d7434ed0f84dda8fb88ddaa7c6",
+  "spec_commit": "8d1517a6586a506488c4af7a9c35800c7053b508",
+  "checker_commit": "8d1517a6586a506488c4af7a9c35800c7053b508",
+  "spec_sha256": "2ba040956ac8e22d11ff2bd4655d908b08de9d44564913a8b4f12c8a522fa156",
+  "dialect_version": "0.2.4",
+  "isa_grading_target": "0.8",
+  "interpreter_commit": "92c26af045b816f5ef1e283a7b734aa244d8f320",
+  "interpreter_source_sha256": "2dd454deeb8352a0b0e64ac1e61ddcc346ae5e2bdea59bd60440d35654946050",
   "counts": {
     "asm": {
       "passed": 1,
@@ -12,7 +13,7 @@
       "blocked": 0
     },
     "blocker": {
-      "passed": 15,
+      "passed": 16,
       "failed": 0,
       "blocked": 0
     },
@@ -22,7 +23,7 @@
       "blocked": 0
     },
     "check": {
-      "passed": 15,
+      "passed": 18,
       "failed": 0,
       "blocked": 0
     },
@@ -57,7 +58,7 @@
       "blocked": 0
     },
     "map": {
-      "passed": 14,
+      "passed": 17,
       "failed": 0,
       "blocked": 0
     },
@@ -72,17 +73,17 @@
       "blocked": 0
     },
     "parse": {
-      "passed": 606,
+      "passed": 624,
       "failed": 0,
       "blocked": 0
     },
     "recognise": {
-      "passed": 127,
+      "passed": 130,
       "failed": 0,
       "blocked": 0
     },
     "run-oracle": {
-      "passed": 15,
+      "passed": 18,
       "failed": 0,
       "blocked": 0
     },
@@ -97,7 +98,7 @@
       "blocked": 0
     },
     "state": {
-      "passed": 44,
+      "passed": 52,
       "failed": 0,
       "blocked": 0
     },
@@ -117,16 +118,27 @@
       "blocked": 0
     },
     "xrefs": {
-      "passed": 1327,
+      "passed": 1353,
       "failed": 0,
       "blocked": 0
     }
   },
-  "total": 2401,
+  "total": 2466,
   "failed": 0,
   "blocked": 0,
-  "checker_unit_tests": 36,
+  "checker_unit_tests": 44,
   "legacy_runtime_tests": 4,
-  "report": "scripts/.tmp/round2-fixes-freeze.json",
-  "notes": "BLK-5 verdict checks pass; typed R fault execution remains an ISA-0.9 dependency. BD3-5 uses the council-permitted conservative reference bound; optional finite-bound follow-up egm."
+  "round3_state_witnesses": {
+    "co-loop-identity": "passed",
+    "co-loop-adj-overwritten": "passed",
+    "deferred-channel-adj-place": "passed",
+    "co-observe-write-observe": "passed",
+    "handle-setjmp-interproc": "passed",
+    "shadow-stack-liveness": "passed",
+    "handle-stale-generation": "passed",
+    "oracle-empty-output": "passed"
+  },
+  "report": "scripts/.tmp/round3-fixes-freeze.json",
+  "report_sha256": "33dc01facaddfe85eb4bec00017ced7814a9ed02a24648b3e0c7f819b4124486",
+  "notes": "All ten round-3 S0 findings and both regressions resolved. Named ISA dependencies remain passing blocker verdicts, not claims of implementing ISA-0.9 capabilities. Receipt covers the indexed examples and independent executors, not general source-to-object equivalence."
 }

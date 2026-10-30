@@ -579,3 +579,79 @@ now verifies core dumps are disabled for deliberate fault probes only, retaining
 the exact expected -4/132 statuses. A concurrent ISA HEAD change triggered the
 existing fail-fast snapshot guard; verification is rerun on the latest snapshot.
 Final freeze receipt follows after the full rerun; no final-green claim yet.
+
+
+## Round-3 final freeze — 2026-10-30
+
+**2466/2466 passed; 0 failed; 0 blocked/unavailable.** Full version
+`0.2.4` (`dialect-0.2.4;isa-0.8`); ISA grading target remains 0.8.
+Theme G and resumption fixes: 8d1517a6586a506488c4af7a9c35800c7053b508; A–F commits remain 8e56d56,
+5e13596, 3303a5b, 1a511c5, 90fa101 and 111e889.
+Spec SHA-256: `2ba040956ac8e22d11ff2bd4655d908b08de9d44564913a8b4f12c8a522fa156`.
+Independent Rust interpreter: `92c26af045b816f5ef1e283a7b734aa244d8f320`;
+immutable source fingerprint: `2dd454deeb8352a0b0e64ac1e61ddcc346ae5e2bdea59bd60440d35654946050`.
+ISA HEAD remained at this revision throughout the successful freeze.
+Machine-readable receipt: `scripts/dialect_check.LAST-RUN.json`.
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 16 | 0 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 18 | 0 | 0 |
+| coverage | 125 | 0 | 0 |
+| driver | 1 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 21 | 0 | 0 |
+| hash | 5 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 17 | 0 | 0 |
+| native | 19 | 0 | 0 |
+| normalise | 29 | 0 | 0 |
+| parse | 624 | 0 | 0 |
+| recognise | 130 | 0 | 0 |
+| run-oracle | 18 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 52 | 0 | 0 |
+| step-check | 6 | 0 | 0 |
+| tdl | 10 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1353 | 0 | 0 |
+| **Total** | **2466** | **0** | **0** |
+
+
+| Theme | Executed state witness | Status |
+|---|---|---|
+| A | co-loop-identity | passed |
+| A | co-loop-adj-overwritten | passed |
+| B | deferred-channel-adj-place | passed |
+| C | co-observe-write-observe | passed |
+| D | handle-setjmp-interproc | passed |
+| E | shadow-stack-liveness | passed |
+| F | handle-stale-generation | passed |
+| G | oracle-empty-output | passed |
+
+
+The G map/check/run families also execute oracle-empty-fault and
+oracle-discard-return; oracle-empty-marker passes parse and recognition.
+A–F witnesses are actual passing state rows in this receipt, not index-only
+claims. The original co-loop-adjoint, deferred-channel-adj and other round-2
+vectors remain executed. Named ISA dependency examples pass their specified
+blocker verdicts; zero gate blockers does not claim those capabilities have
+been added to ISA 0.8. No expectation was weakened and no ISA source was edited.
+
+Exact freeze command:
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/round3-fixes-freeze.json
+```
+
+44 checker unit tests and 4 legacy runtime unit tests pass headless. Full
+version, SPEC_VERSIONS.toml and current/stale module-flag parsing agree on 0.2.4.
+The deliberate-fault probe disables core dumps only; expected -4/132 exits
+remain checked. The earlier stale-version test, ambiguous cross-reference,
+concurrent ISA snapshot race and core-dump timeout were reproduced and fixed
+or rerun; none is hidden in this receipt. All ten S0 findings and both regressions
+are resolved, with theme A's single clean-workspace/U† reading stated above.
+No decline, partial resolution, scope narrowing or push.
