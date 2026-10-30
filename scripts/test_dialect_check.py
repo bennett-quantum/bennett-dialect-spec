@@ -16,6 +16,21 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_canonical_global_numbering(self):
+        from dialect_map import Mapper
+        b=self.block('lift','atomic-nand')
+        link=self.block('linkmap','atomic-nand')['body']
+        # The published first global and all interface hashes must follow §16.3.
+        self.assertIn('global @cell -> G1 ',link)
+        with self.assertRaises(d.Fail):
+            Mapper(b['body'],'@f',';tgt=8',link.replace('-> G1 ','-> G0 '))
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'map','hash','run-oracle'})
+            from dialect_map import map_object
+            map_object(runner,b)
+            runner.hashes(self.block('hash','atomic-nand'))
+            runner.oracle_run(self.block('run','atomic-nand'))
+
     def test_round7_pointer_origin(self):
         src='''@slot = internal global ptr null
 define void @top() {
@@ -629,13 +644,13 @@ entry:
             with self.subTest(format=ty):
                 ir=f'define {ty} @f({ty} %x) {{\n %n = fneg {ty} %x\n ret {ty} %n\n}}\n'
                 self.assertEqual(v.validate(ir),'accept')
-        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.8"}\n'
+        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.9"}\n'
         self.assertEqual(v.recognise(good)[0],'accept')
-        for stale in ('0.2.6','0.2.5','0.2.4','0.2.3','0.2.1'):
-            self.assertEqual(v.recognise(good.replace('0.2.8',stale))[0],'reject:BD-E-VERSION')
+        for stale in ('0.2.8','0.2.7','0.2.6','0.2.5','0.2.4','0.2.3','0.2.1'):
+            self.assertEqual(v.recognise(good.replace('0.2.9',stale))[0],'reject:BD-E-VERSION')
         import tomllib
-        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.8')
-        self.assertIn('**full version string** (`0.2.8`)',self.spec)
+        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.9')
+        self.assertIn('**full version string** (`0.2.9`)',self.spec)
 
     def test_v4_v12_residues_and_clean(self):
         for rule in ('v4','v12'):

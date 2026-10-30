@@ -10,11 +10,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class RuntimeTests(unittest.TestCase):
-    def build_run(self, body, inputs=(3, 4), canonical=False):
+    def build_run(self, body, inputs=(3, 4), canonical=False, abi=0):
         with tempfile.TemporaryDirectory() as directory:
             d = pathlib.Path(directory)
             (d / 'case.c').write_text('#include "markers.h"\n' + body)
-            cmd = ['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-I', str(ROOT),
+            cmd = ['cc', '-std=c11', f'-DBENNETT_MARKERS_ABI={abi}', '-Wall', '-Wextra', '-Werror', '-I', str(ROOT),
                    '-no-pie', '-rdynamic', str(ROOT / 'runtime/trace_rt.c'),
                    str(ROOT / 'runtime/driver.c'), str(d / 'case.c'), '-ldl', '-o', str(d / 'a')]
             subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -52,6 +52,53 @@ int64_t case_entry(int64_t x) {
         self.assertEqual(first.count('GATE 7 H0 2\n'), 7)
         self.assertNotIn('F?', first)
         self.assertNotIn('BADHANDLE', first)
+
+    def test_abi02_corpus_regions(self):
+        # Exercise the real unchanged corpus through the harness, including llc O3.
+        rt = run.runtime_objects()
+        for name in ('adj', 'compute', 'ctrl'):
+            case = run.prepare_case(ROOT / f'cases/spec-sem2-{name}.ll',
+                                    run.tools_for([18, 23]), rt)
+            self.assertEqual(run.baseline_problems([case]), [], case)
+            for major, base in case['majors'].items():
+                self.assertEqual(base['native']['exit'], 0, major)
+                self.assertTrue(base['llc_O3']['trace_equal'], major)
+
+    def test_abi02_budget_records_and_environment(self):
+        result = self.build_run('''
+static void region(void *env) { __bennett_gate(1, *(bq *)env, 0); }
+int64_t case_entry(int64_t x) {
+ bq h = __bennett_qalloc(0, 1);
+ bq fault = __bennett_qalloc(0, 4);
+ bennett_budget b = {12, 34, 56, 78, fault};
+ __bennett_ctrl(h, 0, region, &b, &h);
+ __bennett_adj(region, &b, &h);
+ __bennett_compute(region, region, &b, &h);
+ __bennett_reversible(region, &b, &h);
+ __bennett_qfree(fault);
+ __bennett_qfree(h);
+ return x;
+}
+''', (3, 3), canonical=True, abi=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        first, second = result.stdout.split('IN 3\n')[1:]
+        self.assertEqual(first, second)
+        self.assertIn('CTRL H0 0 F:region steps=12 heap=34 stack=56 depth=78 fault=H1\n', first)
+        self.assertIn('REVERSIBLE F:region steps=12 heap=34 stack=56 depth=78 fault=H1\n', first)
+        self.assertEqual(first.count('GATE 1 H0 0\n'), 6)
+        self.assertNotIn('BADHANDLE', first)
+
+    def test_marker_abi_selection(self):
+        self.assertEqual(run.marker_abi('declare void @__bennett_adj(ptr, ptr)'), 0)
+        self.assertEqual(run.marker_abi('declare void @__bennett_adj(ptr, ptr, ptr)'), 2)
+        self.assertEqual(run.marker_abi('declare void @__bennett_compute(ptr, ptr, ptr, ptr)'), 2)
+        self.assertEqual(run.marker_abi('declare void @__bennett_ctrl(ptr, i64, ptr, ptr, ptr)'), 2)
+        self.assertEqual(run.marker_abi('declare void @__bennett_reversible(ptr, i64, ptr)'), 0)
+        with self.assertRaisesRegex(ValueError, 'mixed marker ABIs'):
+            run.marker_abi('declare void @__bennett_adj(ptr, ptr)\n'
+                           'declare void @__bennett_ctrl(ptr, i64, ptr, ptr, ptr)')
+        with self.assertRaisesRegex(ValueError, 'invalid adj marker signature'):
+            run.marker_abi('declare void @__bennett_adj(ptr)')
 
     def test_guard_fault(self):
         result = self.build_run('int64_t case_entry(int64_t x) { (void)x; bq h = __bennett_qalloc(0,1); return *(volatile char *)h; }', (0,))

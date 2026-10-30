@@ -1,4 +1,7 @@
 #define _GNU_SOURCE
+#ifndef BENNETT_MARKERS_ABI
+#define BENNETT_MARKERS_ABI 2
+#endif
 #include "../markers.h"
 #include <inttypes.h>
 #include <signal.h>
@@ -112,8 +115,20 @@ void __bennett_qload(bq dst, bq mem, bq addr) {
 void __bennett_qstore(bq mem, bq addr, bq val) {
     char a[32], b[32], c[32]; printf("QSTORE %s %s %s\n", handle(mem,a), handle(addr,b), handle(val,c));
 }
+#if BENNETT_MARKERS_ABI == 2
+static void print_budget(const bennett_budget *budget) {
+    if (!budget) { printf("0"); return; }
+    char h[32];
+    printf("steps=%" PRIu64 " heap=%" PRIu64 " stack=%" PRIu64 " depth=%" PRIu64 " fault=%s",
+           budget->steps, budget->heap, budget->stack, budget->depth,
+           budget->fault ? handle(budget->fault, h) : "null");
+}
+#else
+static void print_budget(uint64_t budget) { printf("%" PRIu64, budget); }
+#endif
 void __bennett_ctrl(bq q, uint64_t qi, bregion f, BUDGET_T budget, void *env) {
-    char b[32], s[32]; printf("CTRL %s %" PRIu64 " %s %" PRIu64 "\n", handle(q,b), qi, symbol((void *)f, s), (uint64_t)(uintptr_t)budget);
+    char b[32], s[32]; printf("CTRL %s %" PRIu64 " %s ", handle(q,b), qi, symbol((void *)f, s));
+    print_budget(budget); putchar('\n');
     f(env); puts("END CTRL");
 }
 #if defined(BENNETT_MARKERS_ABI) && BENNETT_MARKERS_ABI == 2
@@ -134,7 +149,8 @@ void __bennett_compute(bregion f, bregion use, void *env) {
     f(env); use(env); f(env); puts("END COMPUTE");
 }
 void __bennett_reversible(bregion f, BUDGET_T budget, void *env) {
-    char s[32]; printf("REVERSIBLE %s %" PRIu64 "\n", symbol((void *)f, s), (uint64_t)(uintptr_t)budget); f(env); puts("END REVERSIBLE");
+    char s[32]; printf("REVERSIBLE %s ", symbol((void *)f, s));
+    print_budget(budget); putchar('\n'); f(env); puts("END REVERSIBLE");
 }
 #if defined(BENNETT_MARKERS_ABI) && BENNETT_MARKERS_ABI == 2
 void __bennett_inplace(const void *g, const void *ginv, const bennett_budget *budget, const bennett_oracle_desc *desc) {

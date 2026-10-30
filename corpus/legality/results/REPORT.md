@@ -1,5 +1,14 @@
 # Bennett legality spike results
 
+ABI 0.2 follow-up (2026-10-30, dialect 0.2.9): [machine receipt](abi-0.2-relays.json).
+All 69 cases rerun on LLVM 18/23 at llc O0/O3; only `spec-sem2-adj` and
+`spec-sem2-compute` change (exit 87 → 0). The other 67 cases retain byte-identical
+canonical traces, exits, baseline issues and O3 comparisons. All 1,386 P2 cells
+with stored results match; the full rerun contains 1,518 cells including the six
+`spec-*` additions. Each repaired case passes L1–L6 in all 11 LLVM-18 pipelines
+and all 9 supported LLVM-23 pipelines (the existing Os/Oz opt refusals remain).
+The historical P1/P3 spike tables below retain their original scope and date.
+
 Generated 2026-10-28T22:32:08+0100 by `legality-harness-v3`; 170163 recorded matrix cells over 56 corpus cases (plus 3 harness seeds and 4 negative controls, reported separately).
 
 Outcomes: **FAIL** is the only legality counterexample. `env-error` (native build impossible in this standalone host environment, by the evidence rule in Harness notes), `non-preserving` (documented single passes that by design do not preserve a standalone program, confirmed per cell), and `precondition` (pass run without its documented prerequisite; rerun with the prerequisite passes) are recorded with evidence and never hide a trace difference, a guard fault, BADHANDLE, a forbidden attribute or a missing marker external. `noop` means identical IR after all checks pass.

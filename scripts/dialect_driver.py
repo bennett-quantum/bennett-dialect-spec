@@ -148,7 +148,7 @@ def check_scenario(runner,block):
     elif name=='driver-comparison-layout':
         data,heap=map(int,re.search(r'data_base=(\d+) heap_limit_max=(\d+)',text).groups())
         gl,hb,end,tb=comparison_layout(source,data,heap)
-        lm='\n'.join(f'global @{n} -> G{k} base={b} size={s}' for k,(n,(b,s)) in enumerate(gl.items()))+f'\nnull_size={data} heap_base={hb} heap_limit_max={heap} stack max 32'
+        lm='\n'.join(f'global @{n} -> G{k} base={b} size={s}' for k,(n,(b,s)) in enumerate(gl.items(),1))+f'\nnull_size={data} heap_base={hb} heap_limit_max={heap} stack max 32'
         path=runner.tmp/'comparison-layout.bisa';mapper=Mapper(source,'@f',';tgt=8',lm);path.write_text(mapper.run(runner.isa,path))
         got=runner.isa.call('run-oracle',path,'ref','--input','');value=native(runner,name,source,'f');equal(name,'§19.5 comparison',value,int(got['payload']))
         report=[f'driver: data_base={data} heap_limit_max={heap}; no arena/interface',f'layout: bytes={gl["bytes"][0]} slot={gl["slot"][0]} heap_base={hb} heap_end={end} text_base={tb}',f'slot image={mapper.image("slot").hex()}',f'native and device: f returns {value}; no code/data overlap']
@@ -156,7 +156,7 @@ def check_scenario(runner,block):
         image=bytes.fromhex(re.search(r'dump bytes for @g=([0-9a-f]+)',text)[1]);rewritten,digest=snapshot(source,{'g':image})
         (runner.tmp/'snapshot-build-record.json').write_text('{"snapshot":"'+digest+'"}\n')
         m=d.Module(rewritten);value=native(runner,name,rewritten,'f')
-        path=runner.tmp/'snapshot.bisa';mapper=Mapper(rewritten,'@f',';tgt=8','global @g -> G0 base=4096 size=1\nnull_size=4096 heap_base=8192 heap_limit_max=0 stack max 32');path.write_text(mapper.run(runner.isa,path))
+        path=runner.tmp/'snapshot.bisa';mapper=Mapper(rewritten,'@f',';tgt=8','global @g -> G1 base=4096 size=1\nnull_size=4096 heap_base=8192 heap_limit_max=0 stack max 32');path.write_text(mapper.run(runner.isa,path))
         got=runner.isa.call('run-oracle',path,'ref','--input','');equal(name,'§19.6 comparison',value,int(got['payload']))
         equal(name,'§19.6 fixed snapshot writers',[],[i.text for f in m.funcs.values() if f.is_def for i in f.instrs() if i.op=='store' and '@g' in i.text])
         report=[f'driver: --bennett-snapshot=dump; dump bytes for @g={image.hex()}',f'materialised global: @g = internal global i8 {m.globals["g"]["init"]}',f'data image={mapper.image("g").hex()}; entry read-set requiring transfer=empty; no snapshot register',f'native and device: f returns {value}; build record includes dump SHA-256']

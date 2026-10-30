@@ -65,7 +65,7 @@ def check_budget_stage(runner,want):
     def build(values,capacities):
         link=('null_size=4096 heap_base=8192 heap_limit_max='+str(capacities['heap'])+
               ' stack max '+str(capacities['stack'])+
-              ' global @ss_base -> G0 base=4096 size=8 global @ss_size -> G1 base=4104 size=8 global @ss_sp -> G2 base=4112 size=8')
+              ' global @ss_base -> G1 base=4096 size=8 global @ss_size -> G2 base=4104 size=8 global @ss_sp -> G3 base=4112 size=8')
         p=runner.tmp/('budget-'+str(values['sstack'])+'.bisa')
         obj=Mapper(src,'@f','IN(8,zext);tgt=8',link,sstack=values['sstack']).run(runner.isa,p);p.write_text(obj)
         runner.isa.call('check',p)

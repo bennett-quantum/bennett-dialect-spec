@@ -30,6 +30,8 @@ class Mapper:
                 if f.is_def and any(re.search(r'@'+re.escape(g)+r'\(',i.text) for i in f.instrs() for g in self.arena_functions):self.arena_functions.add(name)
         self.globals={};self.addresses={};self.names={};self.bodies={};self.signatures={};self.images={}
         for name,g,base,size in re.findall(r'global @([-\w.$]+) -> (G\d+) base=(\d+) size=(\d+)',linkmap):
+            if g != 'G'+str(len(self.globals)+1):
+                raise d.Fail('§16.3 globals must be numbered G1, G2, … in link order')
             self.globals[name]=(g,int(base),int(size))
         self.addresses={name:int(addr,0) for name,addr in re.findall(r'function @([-\w.$]+) A=(0x[\da-f]+|\d+)',linkmap)}
         def fact(key):

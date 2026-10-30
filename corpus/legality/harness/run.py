@@ -618,7 +618,7 @@ def headless_env(tmpdir=None):
     Viewer passes (view-cfg, view-dom, view-callgraph, ...) are still enumerated and run. On
     2026-10-28 they wrote ~80,000 .dot files to /tmp and reached the maintainer's editor through
     xdg-open over D-Bus: dropping DISPLAY/WAYLAND_DISPLAY alone was not enough. Now D-Bus is
-    dropped too, TMPDIR is the cell directory, and every known viewer resolves first to a stub
+    dropped too, TMPDIR is below scripts/.tmp, and every known viewer resolves first to a stub
     that logs the attempt to VIEWER_LOG and fails.
     """
     HEADLESS_BIN.mkdir(parents=True, exist_ok=True)
@@ -632,7 +632,9 @@ def headless_env(tmpdir=None):
         env.pop(key, None)
     env['PATH'] = f'{HEADLESS_BIN}{os.pathsep}{env.get("PATH", "")}'
     if tmpdir is not None:
-        env['TMPDIR'] = str(tmpdir)
+        scratch = ROOT.parents[1] / 'scripts/.tmp/legality' / digest(str(tmpdir))[:20]
+        scratch.mkdir(parents=True, exist_ok=True)
+        env['TMPDIR'] = str(scratch)
     return env
 
 
@@ -698,16 +700,60 @@ def tools_for(majors):
 
 
 def runtime_objects():
-    files = [ROOT / 'markers.h', ROOT / 'runtime/trace_rt.c', ROOT / 'runtime/driver.c']
-    key = digest(b''.join(p.read_bytes() for p in files) + VERSION.encode())
-    directory = RAW / 'runtime' / key
-    with locked(directory / 'lock'):
-        if not (directory / 'ready.json').exists():
-            for stem in ('trace_rt', 'driver'):
-                required_command(['cc', '-std=c11', '-O0', '-fPIC', '-Wall', '-Wextra', '-Werror', '-c',
-                                  ROOT / f'runtime/{stem}.c', '-o', directory / f'{stem}.o'], directory, stem)
-            atomic_json(directory / 'ready.json', {'key': key})
-    return {'key': key, 'objects': [str(directory / 'trace_rt.o'), str(directory / 'driver.o')]}
+    # A corpus contains historical ABI-v0 probes as well as normative ABI 0.2.
+    # Build both explicitly; the module's signatures select one at link time.
+    files = [ROOT / 'markers.h', ROOT / '../../spec/bennett_markers.h',
+             ROOT / 'runtime/trace_rt.c', ROOT / 'runtime/driver.c']
+    source = b''.join(p.read_bytes() for p in files) + VERSION.encode()
+    variants = {}
+    for abi in (0, 2):
+        key = digest(source + str(abi).encode())
+        directory = RAW / 'runtime' / key
+        with locked(directory / 'lock'):
+            if not (directory / 'ready.json').exists():
+                for stem in ('trace_rt', 'driver'):
+                    required_command(['cc', '-std=c11', '-O0', '-fPIC', '-Wall', '-Wextra', '-Werror',
+                                      f'-DBENNETT_MARKERS_ABI={abi}', '-c',
+                                      ROOT / f'runtime/{stem}.c', '-o', directory / f'{stem}.o'], directory, stem)
+                atomic_json(directory / 'ready.json', {'key': key, 'abi': abi})
+        variants[str(abi)] = {'key': key, 'abi': abi,
+                             'objects': [str(directory / 'trace_rt.o'), str(directory / 'driver.o')]}
+    return {**variants['2'], 'key': digest(json.dumps(variants, sort_keys=True)), 'variants': variants}
+
+
+def marker_abi(ir):
+    """Infer ABI from prototypes/calls, never filenames or pointer values."""
+    found = set()
+    for site in marker_attributes(ir):
+        name = site['marker'].removeprefix('__bennett_')
+        args = _split_top(site['signature'])
+        if name in ('ctrl', 'reversible'):
+            i = 3 if name == 'ctrl' else 1
+            if len(args) != i + 2:
+                raise ValueError(f'invalid {name} marker signature: {site["signature"]}')
+            ty = re.match(r'(ptr|i64)\b', args[i].strip())
+            if not ty:
+                raise ValueError(f'invalid {name} budget type: {args[i]}')
+            found.add(2 if ty[1] == 'ptr' else 0)
+        elif name in ('adj', 'compute', 'inplace'):
+            old = 2 if name == 'adj' else 3
+            if len(args) not in (old, old + 1):
+                raise ValueError(f'invalid {name} marker signature: {site["signature"]}')
+            found.add(2 if len(args) == old + 1 else 0)
+        elif name in ('oracle', 'gate3', 'qprep', 'observe') or name.startswith('effect_'):
+            found.add(2)
+    if len(found) > 1:
+        raise ValueError('mixed marker ABIs in one module')
+    return next(iter(found), 0)
+
+
+def module_runtime(runtime, module):
+    abi = marker_abi(pathlib.Path(module['ll']).read_text())
+    if 'variants' in runtime:
+        return runtime['variants'][str(abi)]
+    if runtime.get('abi', 0) != abi:
+        raise ValueError(f'module ABI {abi} does not match runtime ABI {runtime.get("abi", 0)}')
+    return runtime
 
 
 def publish_module(bc, tc):
@@ -830,6 +876,7 @@ NATIVE_SCHEMA = 'native-v3.1'
 def native_key(tc, runtime, module, inputs, execution_timeout=10):
     # NATIVE_SCHEMA changes whenever the native.json record layout changes, so
     # cached records always carry every field the checks read.
+    runtime = module_runtime(runtime, module)
     identity = [VERSION, NATIVE_SCHEMA, tc['identity'], runtime['key'], module['hash'], inputs]
     if execution_timeout != 10:
         identity.append(execution_timeout)
@@ -838,6 +885,7 @@ def native_key(tc, runtime, module, inputs, execution_timeout=10):
 
 def native(module, tc, runtime, inputs, levels=(0, 3), execution_timeout=10):
     # Lock around compile+run: concurrent identical outputs are evaluated once.
+    runtime = module_runtime(runtime, module)
     key = native_key(tc, runtime, module, inputs, execution_timeout)
     directory = RAW / 'native' / key
     with locked(directory / 'lock'):
@@ -879,7 +927,9 @@ def native(module, tc, runtime, inputs, levels=(0, 3), execution_timeout=10):
 
 
 TRACE_MARKERS = {name.upper(): '__bennett_' + name for name in (
-    'qalloc', 'qborrow', 'qfree', 'gate', 'gate2', 'rot', 'measure', 'qload', 'qstore',
+    'qalloc', 'qborrow', 'qfree', 'gate', 'gate2', 'gate3', 'rot', 'measure', 'qload', 'qstore',
+    'qprep', 'observe', 'oracle', 'effect_console_write', 'effect_clock_read',
+    'effect_entropy_read', 'effect_block_read', 'effect_block_write',
     'ctrl', 'adj', 'compute', 'reversible', 'inplace', 'ctrl_v')}
 
 
@@ -1204,6 +1254,7 @@ def evaluate_frontend(task):
         result['details']['frontend'] = r
         return result
     emitted = publish_module(directory / 'frontend.o', tc)
+    runtime = module_runtime(runtime, emitted)
     base = case['majors']['18']
     pre, post = pathlib.Path(base['module']['ll']).read_text(), pathlib.Path(emitted['ll']).read_text()
     attrs = check_l2(pre, post)

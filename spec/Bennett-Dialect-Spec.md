@@ -1,6 +1,6 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.8
+# Bennett LLVM Dialect — Specification, draft 0.2.9
 
-**Date:** 2026-10-29. **Status:** draft 0.2.8 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
+**Date:** 2026-10-29. **Status:** draft 0.2.9 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
 2026-10-29 at its end), revised after council rounds 1–3. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
@@ -11,9 +11,9 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.8: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4,
-effects 0.2.4, norm 0.2.8, map 0.2.8, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2.8`) is the compatibility unit (§23): drafts are not compatible
+**Versioning.** Dialect 0.2.9: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4,
+effects 0.2.4, norm 0.2.8, map 0.2.9, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+The **full version string** (`0.2.9`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -2221,7 +2221,7 @@ Only the rules the north star requires:
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). Standalone adj uses the deterministic
   latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
-  `lowered` entry with source `dialect-0.2.8:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.9:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -3533,7 +3533,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.8.
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.9.
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -3697,11 +3697,11 @@ entry:
 ```
 
 ```json budget-table=budget-stage
-{"defaults":{"depth":"16","heap":"64","sstack":"16","stack":"512","steps":"10000"},"entries":[{"identity":"5abf922254697a7876cb137143c5142a7a5dd29ef77cb0183704044a09b9ab5d","sstack":"32"}],"version":"0.2"}
+{"defaults":{"depth":"16","heap":"64","sstack":"16","stack":"512","steps":"10000"},"entries":[{"identity":"4162aa7c5cf3b7bed36162dd7c0f123e26e0606a8bc118184d9f7acaab0786ce","sstack":"32"}],"version":"0.2"}
 ```
 
 ```text state=budget-stage
-{"baseline_run":{"code":2,"payload":0,"steps":43},"capacities":{"depth":16,"heap":64,"sstack":32,"stack":512,"steps":10000},"final_sstack":32,"identity":"d32a6a29f9dc1a2fc8baa1f2e07f782e4b5ceed981ca5f82fc780ef4c1b36c82","resolved":{"depth":16,"heap":64,"sstack":32,"stack":512,"steps":10000},"run":{"code":0,"payload":7,"steps":316},"selection_identity":"5abf922254697a7876cb137143c5142a7a5dd29ef77cb0183704044a09b9ab5d","steps_only_run":{"code":1,"payload":0,"steps":0}}
+{"baseline_run":{"code":2,"payload":0,"steps":43},"capacities":{"depth":16,"heap":64,"sstack":32,"stack":512,"steps":10000},"final_sstack":32,"identity":"7486a0aa9e6711325475ffce67d6ec1bb3d4d4ec981eb3b755e171ba04819365","resolved":{"depth":16,"heap":64,"sstack":32,"stack":512,"steps":10000},"run":{"code":0,"payload":7,"steps":316},"selection_identity":"4162aa7c5cf3b7bed36162dd7c0f123e26e0606a8bc118184d9f7acaab0786ce","steps_only_run":{"code":1,"payload":0,"steps":0}}
 ```
 
 ### 9.3 What each budget governs
@@ -4735,14 +4735,14 @@ define i8 @old(ptr %p) {
 
 ```text linkmap=atomic-nand
 null_size=4096 heap_base=8192 heap_limit_max=0 budget-table: stack max 32, heap max 0
-global @cell -> G0 base=4096 size=1
+global @cell -> G1 base=4096 size=1
 ```
 
 ```isa object=atomic-nand
 bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
 
 section symbols
-{"0":{"interface_hash":"c55111b84ee5e99801d9947547fcec2dbaf65dd0d76d4f8d61eb22f501c6da85","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"37da3ed6706f5e352993eb1a339434688c1a543df28b33b85e1fc411e789058f","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":8,"tier":"q"}},"2":{"interface_hash":"304a4b79978c26ac786890a8596cb309efa7eaa4fd35475b1f585bb7242b6223","kind":"data","name":"G0","signature":{"abi":"0.8","kind":"data","size":1,"tier":"-"}}}
+{"0":{"interface_hash":"21917fb6f3a0cc9bd14651126bb3fecaadcdccbed30b854170c7ba10741adac4","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"4b300c0de9ef64684ae9d5e3e010b6c4888d0e60504c9dd95861d02f753e5e5c","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":8,"tier":"q"}},"2":{"interface_hash":"e2076ae22078cd264795a96c18f893aff94ffc100ec1480568616b5226a115a7","kind":"data","name":"G1","signature":{"abi":"0.8","kind":"data","size":1,"tier":"-"}}}
 
 section functions
 oracle @ref () (tgt:wire[8]) (fault:wire[4]) () ()
@@ -4753,32 +4753,32 @@ lift.retval r
 lproc @L1 () (r:reg[8]) () () ()
 regs { c0:reg[64], v0:reg[8], c1:reg[8], v1:reg[8], c2:reg[8], v2:reg[8], c3:reg[64], c4:reg[64], v3:reg[8] }
 ^b0():
-c0 = lift.addr @G0
+c0 = lift.addr @G1
 lift.boundscheck c0 1
 v0 = lift.load.i8 c0
 c1 = lift.const.i8 204
 v1 = lift.and v0 c1
 c2 = lift.const.i8 255
 v2 = lift.xor v1 c2
-c3 = lift.addr @G0
+c3 = lift.addr @G1
 lift.boundscheck c3 1
 lift.store.i8 c3 v2
-c4 = lift.addr @G0
+c4 = lift.addr @G1
 lift.boundscheck c4 1
 v3 = lift.load.i8 c4
 lift.ret v3
 
 section data
-G0 f0
+G1 f0
 
 section layout
-{"A_tab":0,"H":13,"S_cells":5,"globals":{"G0":{"base":4096,"image":"G0","size":1}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+{"A_tab":0,"H":13,"S_cells":5,"globals":{"G1":{"base":4096,"image":"G1","size":1}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
 ```
 
 ```text hash=atomic-nand
-ref c55111b84ee5e99801d9947547fcec2dbaf65dd0d76d4f8d61eb22f501c6da85
-L1 37da3ed6706f5e352993eb1a339434688c1a543df28b33b85e1fc411e789058f
-G0 304a4b79978c26ac786890a8596cb309efa7eaa4fd35475b1f585bb7242b6223
+ref 21917fb6f3a0cc9bd14651126bb3fecaadcdccbed30b854170c7ba10741adac4
+L1 4b300c0de9ef64684ae9d5e3e010b6c4888d0e60504c9dd95861d02f753e5e5c
+G1 e2076ae22078cd264795a96c18f893aff94ffc100ec1480568616b5226a115a7
 ```
 
 ```text run=atomic-nand
@@ -7535,13 +7535,13 @@ define internal i64 @w(i64 %fd, i64 %a) {
 declare i64 @__bennett_rt_syscall(i64, i64, i64, i64, i64, i64, i64)
 ```
 
-## 16. The lifting map (map 0.2.8)
+## 16. The lifting map (map 0.2.9)
 
 The lifting map turns a materialised region function, a binding shape (§8.4) and the link
 layout (§19.5) into the **reference object** of that shape: the ISA object whose oracle `@ref`
 defines F_B and the budget unit by the reference interpreter (ISA §4.2 "Reference body and
 binding", §14.1). It is a function of its inputs alone, so two plugins on the same LLVM version
-and pipeline produce byte-identical reference objects. Its version (`map 0.2.8`) is the
+and pipeline produce byte-identical reference objects. Its version (`map 0.2.9`) is the
 certificate's `dialect_mapping_version` (ISA §12.3). The plugin's device objects (§17.4) are
 plugin-defined; they MUST be extensionally equal to the reference objects (ISA §5.7, T6; §18.7).
 
@@ -7644,7 +7644,7 @@ caller byte is read. No fresh allocator reset is permitted for an allocation-onl
 | a block created by a compare tree in block i (§16.4), in creation order | `^b<i>.s<j>` (j ≥ 1) |
 | for the q-th indirect call of block i (q ≥ 1): the leaf of candidate k (sorted order), the default, the continuation | `^b<i>.q<q>c<k>`, `^b<i>.q<q>d`, `^b<i>.q<q>r` |
 | the edge block from block i to block s | `^b<i>.e<s>` |
-| the n-th global of the layout | data symbol and global `G<n>` |
+| the n-th global of the layout (1-based, in link order) | data symbol and global `G<n>` |
 
 The `regs` line lists every location of the function that is neither a parameter nor the result,
 in order of first appearance as a destination in the text, as `name:reg[W]`, separated by `, `;
@@ -10684,7 +10684,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.8 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.9 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -10800,14 +10800,14 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.8;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.9;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
-pipeline, normaliser_version: "0.2.8"}` and `bindings.dialect_mapping_version = "0.2.8"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.8:<rule id>` (e.g. `dialect-0.2.8:N33`); the
+pipeline, normaliser_version: "0.2.8"}` and `bindings.dialect_mapping_version = "0.2.9"`; the coverage
+report (ISA §13), whose `source` field is `dialect-0.2.9:<rule id>` (e.g. `dialect-0.2.9:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved, including each shape's selection_identity, final semantic identity,
 resolved components and frozen layout capacities under §9.2) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
@@ -10821,7 +10821,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.8"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.9"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`):
 
@@ -11099,7 +11099,9 @@ document), four negative controls (`controls/`), the harness (`harness/run.py`),
 (`runtime/`) and the spike's results. Spike cases use the provisional ABI v0 and arbitrary
 operation codes: they are **legality** cases (what LLVM passes do to marker programs), not
 well-formedness cases; the legality property (§3.6) does not depend on a marker's signature. The
-harness checks and their 0.2 reading:
+harness selects the historical ABI v0 or ABI 0.2 trace runtime from each module's marker
+signatures; `spec-sem2-*` uses the budget-record ABI of §3.2 and the normative header.
+The harness checks and their 0.2 reading:
 
 | Check | Property | 0.2 reading |
 |---|---|---|
@@ -11122,7 +11124,7 @@ prerequisites; the passes the harness classes `non-preserving` and the sanitizer
 instrumentation passes; any other single pass not run inside an envelope pipeline (§24 D20).
 
 Work items the corpus owns for 0.2: rerun P4 (clang `-flto` end to end) and add a rustc
-`-Clinker-plugin-lto` case (bd `-j88`); the trace runtime and harness at ABI 0.2 (bd `-566`);
+`-Clinker-plugin-lto` case (bd `-j88`);
 minimise the three P3-only interactions (bd `-ape`); a `-g` variant of every `.c` case (bd
 `-u6a`); Windows funclet and non-x86-64 cases (bd `-kdj`).
 
@@ -11223,11 +11225,11 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.8`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.9`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
-- Round-4 semantic corrections revise `norm`, `handles`, `regions` and `map` to
-  `0.2.8`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
+- The global-numbering correction revises `map` to `0.2.9`; `norm`, `handles` and
+  `regions` remain `0.2.8`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
   asm and corpus remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
   again; unchanged ISA-0.8 interface signatures retain their hashes. The map version
   is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
@@ -11376,7 +11378,7 @@ every departure keeps or widens the capability the outline gives.
 | A19 | – | §14.9 `blockaddress`/`indirectbr`, §13.1 all seven formats in one table, §14.7 `exit` from a CC device entry by `hostcall bennett.exit`, §8.7 B_min and `T-BUDGET` | outline B1 ("all of materialised LLVM") and run-time budgets for in-place pairs |
 | A20 | §25: wording items | adds certificate fields (build record, budget table, deferred measurement) and ISA §12.2 domains with a fixed classical region | NS §0, §5.1 require them in the certificate; NS §8 rung 4(a) is such a domain |
 | A21 | §20.1 `__bennett_platform_ram` | `__bennett_rt_platform_ram` | the reserved-prefix rule of §3.1 |
-| A22 | §21: corpus cases for the changed signatures | `spec-sem2-*` added beside the 0.1-ABI `spec-sem-*` | the trace runtime is still at ABI v0 (bd `-566`); the old cases stay valid legality cases |
+| A22 | §21: corpus cases for the changed signatures | `spec-sem2-*` added beside the 0.1-ABI `spec-sem-*` | harness selects ABI 0.2 for `spec-sem2-*` and ABI v0 for the unchanged historical cases (bd `-566` resolved) |
 | A23 | §12.1: rules in table order | table order except that N33 runs immediately before N32 (§12.1) | the `fpext`/`fptrunc` pairs N33 creates around libm calls are floating point that N32 must rewrite |
 
 ## Appendix B. Example index
@@ -11384,7 +11386,7 @@ every departure keeps or widens the capability the outline gives.
 Every checked example, the rules it exercises, and the checker capability (§1.5) and executor it
 needs. "isa-ref" is the Rust ISA reference interpreter `bennett-isa-ref` (`check`, `hash`,
 `run-oracle`, `step-check` exist; `run-cc`, `reverse`, `run-action`, `run-program` are requested,
-bd `b-isa-spec-xam`); "trace" needs the trace runtime at ABI 0.2 (bd `-566`); Python capabilities
+bd `b-isa-spec-xam`); "trace" uses the ABI 0.2 trace runtime; Python capabilities
 compute expected artefacts only (P-3).
 
 | Examples | Rules | Capability | Executor |
@@ -11431,7 +11433,7 @@ compute expected artefacts only (P-3).
 | `asm-musl-syscall`, `n-asm` | N31, §15.5 | parse, recognise, normalise | LLVM; Python |
 | `inc8`, `add2`, `rung4-mini`, `rung8-mini`, `listsum`, `switch5`: `lift=`, `linkmap=`, `object=`, `hash=`, `run=`, `step-check=` | §16.1–§16.5, §8.2 (IN, ARG, MEM_IN), §8.3 (ENTROPY), §9.4, §11.3, §14.2, §16.4 rows (memory, calls, recursion, alloc/free, phis, dispatch, switch) | map, check, hash, run-oracle, step-check | Python map; isa-ref `check`, `hash`, `run-oracle`, `step-check` |
 | `rung4-minidb`, `rung4-grover-tu` (+ `native=rung4-mini`) | §3.3, §8, §16.7 | frontend, recognise, native | clang 18/20/23; Python; clang native |
-| `sem2-ctrl`, `sem2-adj`, `sem2-compute` with `events=`, `state=` | §18.3, §18.4 | trace, run-action | trace runtime (ABI 0.2 needed for `adj` and `compute`); isa-ref `run-action` (requested) |
+| `sem2-ctrl`, `sem2-adj`, `sem2-compute` with `events=`, `state=` | §18.3, §18.4 | trace, run-action | trace runtime (ABI 0.2 for `adj` and `compute`); isa-ref `run-action` (requested) |
 | `version-flag` | §19.9 | parse, recognise | LLVM; Python |
 
 | `n-lower-widenable` | N0 | parse, normalise | LLVM 18/20/23; Python normaliser |
