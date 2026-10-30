@@ -291,8 +291,8 @@ def recognise(text, **options):
     try:
         a.s1()
         for version in re.findall(r'!"bennett.dialect", !"([^"\n]+)"', text):
-            if version != "0.2.4":
-                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.4; actual " + version)
+            if version != "0.2.5":
+                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.5; actual " + version)
         a.analyse()
         a.region_rules()
         if options.get("rmode"):a.reversible |= a.closure(options["rmode"].lstrip("@"))

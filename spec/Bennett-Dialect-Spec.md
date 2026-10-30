@@ -1,6 +1,6 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.4
+# Bennett LLVM Dialect — Specification, draft 0.2.5
 
-**Date:** 2026-10-29. **Status:** draft 0.2.4 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
+**Date:** 2026-10-29. **Status:** draft 0.2.5 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
 2026-10-29 at its end), revised after council rounds 1–3. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
@@ -11,9 +11,9 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.4: markers 0.2, handles 0.2.4, regions 0.2.4, oracle-abi 0.2.4, tdl 0.2.4,
-effects 0.2.4, norm 0.2.4, map 0.2.4, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2.4`) is the compatibility unit (§23): drafts are not compatible
+**Versioning.** Dialect 0.2.5: markers 0.2, handles 0.2.5, regions 0.2.5, oracle-abi 0.2.5, tdl 0.2.5,
+effects 0.2.5, norm 0.2.5, map 0.2.5, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+The **full version string** (`0.2.5`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -1091,7 +1091,7 @@ INT(3) and, through the store of `%n2`, INT(4), INT(5), … until it exceeds K a
 holds no `ROOT` atom, and the arithmetic on it is legal (audit B-27: 0.1 gave the load offset `*`
 and rejected this program).
 
-## 6. Handles (handles 0.2.4)
+## 6. Handles (handles 0.2.5)
 
 ### 6.1 Representation
 
@@ -1778,7 +1778,7 @@ define void @top() {
 }
 ```
 
-## 7. Regions (regions 0.2.4)
+## 7. Regions (regions 0.2.5)
 
 ### 7.1 Region-entry markers and region kinds
 
@@ -1881,7 +1881,7 @@ Only the rules the north star requires:
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). Standalone adj uses the deterministic
   latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
-  `lowered` entry with source `dialect-0.2.4:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.5:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -2387,7 +2387,7 @@ define void @top(i64 %n) {
 BD-B-ISA12 @rec %h: qalloc in a reversible closure with no instance bound (recursive, live across the recursive call: E = infinity); cannot be hoisted to the CC caller; ISA 0.8 qreg.new is CC only; BLK-4 (new ISA-12) qreg.* in R
 ```
 
-## 8. The oracle interface (oracle-abi 0.2.4)
+## 8. The oracle interface (oracle-abi 0.2.5)
 
 `__bennett_oracle(f, budget, desc)` applies the lifted oracle of region function f, under the
 budget of §9, to the registers and classical values that the **descriptor** `desc` binds to f's
@@ -3193,7 +3193,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.4.
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.5.
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -3383,7 +3383,7 @@ it is neither static nor a bitwise copy of a launch argument, and no launch-time
 covers it. Each wire of `%c` measured 1 is reset by an `x`, so `%c` is clean at its `qfree`
 (ISA §3.3).
 
-## 10. Taint-driven lifting under control (tdl 0.2.4)
+## 10. Taint-driven lifting under control (tdl 0.2.5)
 
 NS §0: "a way to condition a region on a qubit. Everything else is inferred"; NS §3.1 taint row:
 a context-sensitive interprocedural analysis "over data dependence, control dependence and
@@ -3690,7 +3690,7 @@ genuine host calls have `fault 8` and a trapped coverage line. Release of outliv
 requires clean/restored state, not unconditional fault 8. Oracle device state stays private
 under §11.3, with declared outputs under §8.6.
 
-## 11. Effects and device models per tier (effects 0.2.4)
+## 11. Effects and device models per tier (effects 0.2.5)
 
 ### 11.1 Tier table
 
@@ -3824,7 +3824,7 @@ hostcall: service=bennett.dev.console.write payload=6f6b0a reply=empty
 
 The ENTROPY-bound oracle of rung 8 is §16.8.
 
-## 12. Materialised normalisation (norm 0.2.4)
+## 12. Materialised normalisation (norm 0.2.5)
 
 ### 12.1 Scope, order and naming
 
@@ -4660,7 +4660,15 @@ when widths agree (in particular an i1 carry into an i1 top limb needs no zext):
   `%nz.t<k>.r = add a_k, b_k`, `%nz.z<k>.r = zext i1 %nz.c<k−1>.r to i<w_k>`, `%nz.m<k>.r = add
   %nz.t<k>.r, %nz.z<k>.r` and, for k < L − 1, `%nz.u<k>.r = icmp ult %nz.t<k>.r, a_k`,
   `%nz.v<k>.r = icmp ult %nz.m<k>.r, %nz.t<k>.r`, `%nz.c<k>.r = or i1 %nz.u<k>.r, %nz.v<k>.r`;
-- `sub`: the same with `sub` and borrows `icmp ult a_k, b_k`;
+- `sub`: let beta_-1=0. At limb k compute t_k=a_k−b_k modulo 2^w_k,
+  z_k=zero-extended beta_(k−1) (identity if w_k=1), and m_k=t_k−z_k modulo
+  2^w_k. When another limb follows, beta_k=(icmp ult a_k,b_k) OR
+  (icmp ult t_k,z_k). Discard the final outgoing borrow. Canonical names use
+  `%nz.m0.r = sub a_0,b_0`, `%nz.c0.r = icmp ult a_0,b_0`; thereafter
+  `%nz.t<k>.r`, `%nz.z<k>.r`, `%nz.m<k>.r`, `%nz.u<k>.r`, `%nz.v<k>.r`,
+  `%nz.c<k>.r` in that order. In particular v_k tests t_k<z_k, never m_k<t_k.
+  This derives wrapping subtraction from [LangRef sub](https://llvm.org/docs/LangRef.html#sub-instruction)
+  and [usub.with.overflow](https://llvm.org/docs/LangRef.html#llvm-usub-with-overflow-intrinsics);
 - `and`, `or`, `xor`: per limb; `icmp`: lexicographic from the top limb (signed on the top
   limb only for signed predicates); `select`, `phi`: per limb; `zext`, `sext`, `trunc`: limb
   copies; `sext` extracts the sign at bit w_top − 1, sign-extends the old partial top
@@ -4906,6 +4914,60 @@ v([-5, 7, 0, 100], [5, -7, 9, 1]) = 110
 −2147483582; 0 + 0 + 9 + 101 = 110.
 
 A 256-bit addition in four limbs (N22):
+
+**Three-limb subtraction.** 0−1 borrows; the middle limb computes 1−1−1,
+so its provisional zero also borrows. The top limb is 1−0−1=0, giving
+2^128−1, not 2^129−1. The second vector exercises discarded final borrow.
+
+```llvm normalise-in=n-wide-sub
+define internal void @w(ptr %pa, ptr %pb, ptr %pr) {
+  %a = load i192, ptr %pa, align 8
+  %b = load i192, ptr %pb, align 8
+  %s = sub i192 %a, %b
+  store i192 %s, ptr %pr, align 8
+  ret void
+}
+```
+
+```llvm normalise-out=n-wide-sub
+define internal void @w(ptr %pa, ptr %pb, ptr %pr) {
+  %nz.p0.a = getelementptr i64, ptr %pa, i64 0
+  %nz.m0.a = load i64, ptr %nz.p0.a, align 8
+  %nz.p1.a = getelementptr i64, ptr %pa, i64 1
+  %nz.m1.a = load i64, ptr %nz.p1.a, align 8
+  %nz.p2.a = getelementptr i64, ptr %pa, i64 2
+  %nz.m2.a = load i64, ptr %nz.p2.a, align 8
+  %nz.p0.b = getelementptr i64, ptr %pb, i64 0
+  %nz.m0.b = load i64, ptr %nz.p0.b, align 8
+  %nz.p1.b = getelementptr i64, ptr %pb, i64 1
+  %nz.m1.b = load i64, ptr %nz.p1.b, align 8
+  %nz.p2.b = getelementptr i64, ptr %pb, i64 2
+  %nz.m2.b = load i64, ptr %nz.p2.b, align 8
+  %nz.m0.s = sub i64 %nz.m0.a, %nz.m0.b
+  %nz.c0.s = icmp ult i64 %nz.m0.a, %nz.m0.b
+  %nz.t1.s = sub i64 %nz.m1.a, %nz.m1.b
+  %nz.z1.s = zext i1 %nz.c0.s to i64
+  %nz.m1.s = sub i64 %nz.t1.s, %nz.z1.s
+  %nz.u1.s = icmp ult i64 %nz.m1.a, %nz.m1.b
+  %nz.v1.s = icmp ult i64 %nz.t1.s, %nz.z1.s
+  %nz.c1.s = or i1 %nz.u1.s, %nz.v1.s
+  %nz.t2.s = sub i64 %nz.m2.a, %nz.m2.b
+  %nz.z2.s = zext i1 %nz.c1.s to i64
+  %nz.m2.s = sub i64 %nz.t2.s, %nz.z2.s
+  %nz.q0.w.0 = getelementptr i64, ptr %pr, i64 0
+  store i64 %nz.m0.s, ptr %nz.q0.w.0, align 8
+  %nz.q1.w.0 = getelementptr i64, ptr %pr, i64 1
+  store i64 %nz.m1.s, ptr %nz.q1.w.0, align 8
+  %nz.q2.w.0 = getelementptr i64, ptr %pr, i64 2
+  store i64 %nz.m2.s, ptr %nz.q2.w.0, align 8
+  ret void
+}
+```
+
+```text native=n-wide-sub
+w(limbs a = [0, 1, 1], b = [1, 1, 0]) -> r = [18446744073709551615, 18446744073709551615, 0]; code=0
+w(limbs a = [0, 0, 0], b = [1, 0, 0]) -> r = [18446744073709551615, 18446744073709551615, 18446744073709551615]; code=0
+```
 
 ```llvm normalise-in=n-wideint
 define internal void @w(ptr %pa, ptr %pb, ptr %pr) {
@@ -6106,13 +6168,13 @@ define internal i64 @w(i64 %fd, i64 %a) {
 declare i64 @__bennett_rt_syscall(i64, i64, i64, i64, i64, i64, i64)
 ```
 
-## 16. The lifting map (map 0.2.4)
+## 16. The lifting map (map 0.2.5)
 
 The lifting map turns a materialised region function, a binding shape (§8.4) and the link
 layout (§19.5) into the **reference object** of that shape: the ISA object whose oracle `@ref`
 defines F_B and the budget unit by the reference interpreter (ISA §4.2 "Reference body and
 binding", §14.1). It is a function of its inputs alone, so two plugins on the same LLVM version
-and pipeline produce byte-identical reference objects. Its version (`map 0.2.4`) is the
+and pipeline produce byte-identical reference objects. Its version (`map 0.2.5`) is the
 certificate's `dialect_mapping_version` (ISA §12.3). The plugin's device objects (§17.4) are
 plugin-defined; they MUST be extensionally equal to the reference objects (ISA §5.7, T6; §18.7).
 
@@ -9070,7 +9132,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.4 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.5 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -9186,14 +9248,14 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.4;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.5;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
-pipeline, normaliser_version: "0.2.4"}` and `bindings.dialect_mapping_version = "0.2.4"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.4:<rule id>` (e.g. `dialect-0.2.4:N33`); the
+pipeline, normaliser_version: "0.2.5"}` and `bindings.dialect_mapping_version = "0.2.5"`; the coverage
+report (ISA §13), whose `source` field is `dialect-0.2.5:<rule id>` (e.g. `dialect-0.2.5:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
 hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
@@ -9206,7 +9268,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.4"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.5"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`):
 
@@ -9608,11 +9670,11 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.4`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.5`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
-- Round-2 semantic corrections revise `norm`, `handles`, `regions`, `oracle-abi`,
-  `tdl`, `effects` and `map` to `0.2.4`; unchanged marker/header, asm and corpus ABIs
+- Round-4 semantic corrections revise `norm`, `handles`, `regions`, `oracle-abi`,
+  `tdl`, `effects` and `map` to `0.2.5`; unchanged marker/header, asm and corpus ABIs
   remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
   again; unchanged ISA-0.8 interface signatures retain their hashes. The map version
   is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
@@ -9791,6 +9853,7 @@ compute expected artefacts only (P-3).
 | `tdl`, `tdl-overwrite`, `tdl-effect`, `tdl-angle` with `tdl=` and `state=` blocks | TDL-1–TDL-12, §18.2–§18.4 | parse, recognise, tdl, run-action | LLVM; Python TDL; isa-ref `run-action` (requested) |
 | `effect-console-r`, `effect-console-cc` | §11.1, §11.2 | parse, recognise, run-cc, reverse | isa-ref `run-cc`, `reverse` (requested) |
 | `n-flags`, `n-shift`, `n-undef`, `n-query`, `n-trap` | N1–N8, N10, N11, N14 | parse, normalise | LLVM; Python normaliser |
+| `n-wide-sub` (+ `native=`) | N22 subtraction borrows | parse, normalise, native | LLVM; clang 18/23 |
 | `n-vector`, `n-wideint`, `n-shadow-stack`, `n-memintrinsics`, `n-intrinsics`, `n-atomic` with `native=` | N9, N21, N22, N24, N26, N27 | parse, normalise, native | LLVM; Python; clang + seeds |
 | `residual-nsw`, `residual-clean` | §12.4 V1 | validate | Python |
 | `n-fmuladd` (+ `native=`), `n-fp80`, `n-libm` | N16, N32, N33, §13 | parse, normalise, native | LLVM; Python; clang + seeds |

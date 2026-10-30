@@ -16,6 +16,10 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round4_subtraction(self):
+        self.assertEqual(d.collapse(v.normalise(self.block('normalise-in','n-wide-sub')['body'])),
+                         d.collapse(self.block('normalise-out','n-wide-sub')['body']))
+
     def test_round3_loops(self):
         from dialect_round3 import check_state
         import json
@@ -250,13 +254,13 @@ entry:
             with self.subTest(format=ty):
                 ir=f'define {ty} @f({ty} %x) {{\n %n = fneg {ty} %x\n ret {ty} %n\n}}\n'
                 self.assertEqual(v.validate(ir),'accept')
-        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.4"}\n'
+        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.5"}\n'
         self.assertEqual(v.recognise(good)[0],'accept')
         for stale in ('0.2.3','0.2.1'):
-            self.assertEqual(v.recognise(good.replace('0.2.4',stale))[0],'reject:BD-E-VERSION')
+            self.assertEqual(v.recognise(good.replace('0.2.5',stale))[0],'reject:BD-E-VERSION')
         import tomllib
-        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.4')
-        self.assertIn('**full version string** (`0.2.4`)',self.spec)
+        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.5')
+        self.assertIn('**full version string** (`0.2.5`)',self.spec)
 
     def test_v4_v12_residues_and_clean(self):
         for rule in ('v4','v12'):

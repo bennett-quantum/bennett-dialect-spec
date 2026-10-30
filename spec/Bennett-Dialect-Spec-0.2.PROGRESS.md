@@ -655,3 +655,7 @@ concurrent ISA snapshot race and core-dump timeout were reproduced and fixed
 or rerun; none is hidden in this receipt. All ten S0 findings and both regressions
 are resolved, with theme A's single clean-workspace/U† reading stated above.
 No decline, partial resolution, scope narrowing or push.
+
+## Round-4 fixes — b-dialect-spec-5t7
+
+SOL-R4-01 resolved: explicit two-stage borrow; n-wide-sub exact pair and clang 18/23 native vectors. Red unsupported sub → green exact unit regression. Full version/parser/manifest 0.2.5; final freeze follows after all five blockers.

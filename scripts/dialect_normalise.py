@@ -259,6 +259,16 @@ class Normaliser:
                     if lw==mw:out.append(f'{v} = load i{lw}, ptr {q}{al}')
                     else:out += [f'%nz.raw{k}.{r} = load i{mw}, ptr {q}{al}',f'{v} = trunc i{mw} %nz.raw{k}.{r} to i{lw}']
                 self.limbs[i.res]=vals;return out
+            if i.op=='sub':
+                a,bv=d.split_top(b.split(None,2)[2]);a=parts(a);z=parts(bv)
+                out=[f'%nz.m0.{r} = sub i64 {a[0]}, {z[0]}',f'%nz.c0.{r} = icmp ult i64 {a[0]}, {z[0]}']
+                for k in range(1,n):
+                    lw=widths[k];borrow=f'%nz.c{k-1}.{r}'
+                    out.append(f'%nz.t{k}.{r} = sub i{lw} {a[k]}, {z[k]}')
+                    if lw>1:out.append(f'%nz.z{k}.{r} = zext i1 {borrow} to i{lw}');borrow=f'%nz.z{k}.{r}'
+                    out.append(f'%nz.m{k}.{r} = sub i{lw} %nz.t{k}.{r}, {borrow}')
+                    if k<n-1:out += [f'%nz.u{k}.{r} = icmp ult i{lw} {a[k]}, {z[k]}',f'%nz.v{k}.{r} = icmp ult i{lw} %nz.t{k}.{r}, {borrow}',f'%nz.c{k}.{r} = or i1 %nz.u{k}.{r}, %nz.v{k}.{r}']
+                self.limbs[i.res]=[f'%nz.m{k}.{r}' for k in range(n)];return out
             if i.op=='add':
                 a,bv=d.split_top(b.split(None,2)[2]);a=parts(a);z=parts(bv);out=[f'%nz.m0.{r} = add i64 {a[0]}, {z[0]}',f'%nz.c0.{r} = icmp ult i64 %nz.m0.{r}, {a[0]}']
                 for k in range(1,n):

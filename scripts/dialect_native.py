@@ -55,12 +55,14 @@ def cases(ident,text):
             aa,bb=values(a),values(b)
             out.append('int32_t a%d[]={%s},b%d[]={%s};'%(j,','.join(map(str,aa)),j,','.join(map(str,bb))))
             out.append(f'printf("%d\\n", v(a{j},b{j}));');expected.append(int(want))
-    elif ident=='n-wideint':
+    elif ident in ('n-wideint','n-wide-sub'):
         decl='extern void w(const uint64_t *,const uint64_t *,uint64_t *);\n'
         for j,(a,b,want) in enumerate(re.findall(r'w\(limbs a = (\[[^]]+\]), b = (\[[^]]+\])\) -> r = (\[[^]]+\])',text)):
             aa,bb=values(a),values(b)
             out.append('uint64_t a%d[]={%s},b%d[]={%s},r%d[4];'%(j,','.join(str(x)+'ULL' for x in aa),j,','.join(str(x)+'ULL' for x in bb),j))
             out.append(f'w(a{j},b{j},r{j});printf("[%llu,%llu,%llu,%llu]\\n",(unsigned long long)r{j}[0],(unsigned long long)r{j}[1],(unsigned long long)r{j}[2],(unsigned long long)r{j}[3]);')
+            if ident=='n-wide-sub':
+                out[-1]=f'w(a{j},b{j},r{j});printf("[%llu,%llu,%llu]\\n",(unsigned long long)r{j}[0],(unsigned long long)r{j}[1],(unsigned long long)r{j}[2]);'
             expected.append(values(want))
     elif ident=='n-memintrinsics':
         decl='extern void cp(uint8_t *,const uint8_t *,uint32_t);\n'
