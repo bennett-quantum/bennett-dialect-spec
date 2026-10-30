@@ -1,3 +1,10 @@
+State (2026-10-31 ~22:26Z, resumed evening session): draft **0.2.10** (d0a160d, pushed through the gate), freeze
+2767/2767. Round 8 fixed by one sol editor (docs/briefs/2026-10-30-dialect-round-8-fixes.md). **Round 9 on 0.2.10: sol
+accept + astra accept, 0 blockers, 0 non-blocking** (../bennett/docs/council/dialect-2026-10-29/round-9/report.md).
+0.2.10 is the acceptance candidate; the only remaining step is muse's vote (same round-9 prompt/schema, cwd this repo,
+output ../bennett/.tmp/dialect-r9-muse.json, read in <=1,500-line slices), then `collect`/`aggregate`. Read
+../bennett/HANDOFF.md first.
+
 State (2026-10-30 ~14:30Z, maintainer pause): draft **0.2.9** (aa0f72e, pushed), freeze gate 2732/2732. Council
 rounds 5-7 fixed by one sol editor each (spec + checker together); sol gave core accept in round 6; round 7 mean 4.0
 with precision blockers only; a relay pass fixed the G1 canonical global numbering (regenerated hashes) and upgraded
