@@ -502,8 +502,13 @@ class Flow:
                 return self.host_address(f,d.typed_val(parts[1]),seen)
             if ins.op in ('phi','select'):
                 return any(self.host_address(f,v,seen) for v in self.value_operands(ins))
-            if ins.op in ('bitcast','addrspacecast','ptrtoint','inttoptr'):
-                return self.host_address(f,d.typed_val(body[len(ins.op):].rsplit(' to ',1)[0]),seen)
+            if ins.op in ('bitcast','addrspacecast','ptrtoint','inttoptr','zext','sext','trunc'):
+                return self.host_address(f,d.typed_val(d.strip_flags(body[len(ins.op):].rsplit(' to ',1)[0].strip())),seen)
+            if ins.op in d.BINOPS:
+                rest=d.strip_flags(body.split(None,1)[1]);ty,j=d.parse_type(rest)
+                args=d.split_top(rest[j:])
+                bases=[v for v in args if self.ptrs(f,v)]
+                if bases:return any(self.host_address(f,v,seen) for v in bases)
         return any(o=='EXT' for o,_ in self.ptrs(f,val))
 
     def handle_rules(self):

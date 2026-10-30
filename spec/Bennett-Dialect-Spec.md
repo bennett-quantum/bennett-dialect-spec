@@ -1008,7 +1008,7 @@ AV(operand) lane by lane; ⊤ absorbs.
 | PT2 | `getelementptr T, ptr p, idx…` | uses P(a), I(a) and the complete finite-width computation of §16.4, also for constant expressions: sequential indices are sign-extended/truncated to I(a), scaling and offset accumulation wrap modulo 2^I(a), and addition preserves pointer bits above I(a). Zero accumulated offset copies AV(p). For every (X,o), include the image of all represented base addresses and index values (unknown base bits range over patterns consistent with DataLayout and X's alignment), using integer/residue-class/`*` offset unions. Unbounded mathematical addition is not a substitute. If an address may leave X, include (EXT, `*`) and the non-handle top flag; PT6 propagates this unknown-address alternative. The unknown-address alternative does not by itself establish host escape (§6.4): retain the original base provenance for that test; actual host/unknown origins keep their restrictions. ROOT provenance and §6.2 restrictions remain explicit. Array dimensions determine stride, never an index bound |
 | PT3 | `phi`, `select` (value operands), `freeze`, `bitcast`, `addrspacecast` | copies (union) |
 | PT4 | `ptrtoint`, `inttoptr`, `zext`/`sext`/`trunc` | copy only bit-preserving conversions. Otherwise apply the actual source/destination-width bit-vector conversion (§16.4): ptrtoint/inttoptr zero-extend or truncate at P(a), sext sign-extends. Use PT2’s represented-address image construction, retaining originating object and ROOT provenance. A narrowed representation that cannot be reassociated with its original object adds (EXT, `*`) and non-handle ⊤; numerical uncertainty is not host escape. Apply also to constant expressions |
-| PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | computes address bits modulo 2^W at the integer operation’s width W, never unbounded offset addition. Relative displacements from the originating base are modular too: zero net displacement represents that base again, including after an inttoptr truncation to P(a). Use PT2’s represented-address image construction at W bits (full-width arithmetic, no preserved high GEP bits), retaining original object and ROOT provenance. Keep modular displacement alternatives even outside the allocation, and additionally include (EXT, `*`) and non-handle ⊤ when an image may leave it. Residue classes and `*` take the same finite-width image; an unrepresentable image retains (X, `*`) for each originating X plus (EXT, `*`) and non-handle ⊤. Other integer operations on pointer atoms use that conservative image. Widening a pointer-derived integer by zext/sext may use that conservative image too (fixed reference fallback); ptrtoint zero-extension retains its base representation. Numerical uncertainty does not itself establish host escape (PT2). The rules apply also to constant expressions, before candidate/dispatch domains freeze; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a range attribute or `!range` metadata removed by N3/N4 is not a bound on materialised execution and MUST NOT restrict any verdict, candidate set, descriptor shape or dispatch domain. Only bounds independently established by materialised instructions restrict the set; otherwise retain ⊤ and apply the ordinary operation rules, including finite masks/remainders |
+| PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | computes address bits modulo 2^W at the integer operation’s width W, never unbounded offset addition. Relative displacements from the originating base are modular too: zero net displacement represents that base again, including after an inttoptr truncation to P(a). Use PT2’s represented-address image construction at W bits (full-width arithmetic, no preserved high GEP bits), retaining original object and ROOT provenance. Keep modular displacement alternatives even outside the allocation, and additionally include (EXT, `*`) and non-handle ⊤ when an image may leave it. Residue classes and `*` take the same finite-width image; an unrepresentable image retains (X, `*`) for each originating X plus (EXT, `*`) and non-handle ⊤. Other integer operations on pointer atoms use that conservative image. Widening a pointer-derived integer by zext/sext uses that conservative image too (fixed reference fallback); ptrtoint zero-extension retains its base representation. Numerical uncertainty does not itself establish host escape (PT2). The rules apply also to constant expressions, before candidate/dispatch domains freeze; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a range attribute or `!range` metadata removed by N3/N4 is not a bound on materialised execution and MUST NOT restrict any verdict, candidate set, descriptor shape or dispatch domain. Only bounds independently established by materialised instructions restrict the set; otherwise retain ⊤ and apply the ordinary operation rules, including finite masks/remainders |
 | PT6 | `load T, ptr p` | for each (X,o) ∈ AV(p): memory atoms carry their storage interval and representation width; copy a whole-value atom only for that identical interval with a compatible representation. A known immutable byte image decodes exactly the accessed bytes using DataLayout and T (including initialisers). For a partial, spanning or overlapping access whose result bits are not represented exactly, the non-handle value is ⊤, never the union of component INT values. X=EXT gives ⊤. A non-handle top flag on p contributes the same unknown-address load alternative even when explicit object offsets overlap no known slot; it MUST NOT be dropped. ROOT provenance remains explicit and §6.2's partial-handle restrictions still apply |
 | PT7 | `store v, ptr p` | retain each written interval and representation width; partial writes overlapping a larger load participate in PT6's conservative fallback. AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
 | PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when offsets and len are constants and the atom's entire storage interval [s, s + size(atom)) lies in the copied range, copy its atom and representation width to (Z, o_d + s − o_s). Every partially overlapping atom instead contributes non-handle ⊤ and explicit ROOT provenance to the affected destination interval (unknown offsets/len use `*`); do not copy the whole component INT. Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
@@ -6471,16 +6471,46 @@ lines until the library covers them"; `bennett-arith` covers them, so they are `
 
 `llvm.sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `exp2`,
 `exp10`, `log`, `log2`, `log10`, `pow`, `powi`, `sincos`, `sincospi` and `modf` become calls of
-the **runtimes libm**: `@<name>` for `double`, `@<name>f` for `float`, `@<name>l` for the
-target's `long double` (`x86_fp80` or `fp128`), and for `half`, `bfloat` and the other
-`fp128`/`ppc_fp128` cases the call of the `float`, respectively `long double`, function on the
-`fpext`ed value followed by `fptrunc`; `powi(x, n)` becomes `__bennett_rt_powi_B(x, n)` (the
-repeated squaring of compiler-rt's `__powidf2`); `sincos(x)` becomes the pair (sin x, cos x),
-`sincospi(x)` the pair (sinpi x, cospi x), `modf(x)` the pair (fractional, integral). The runtimes
-libm is musl-derived and compiled through this pipeline, so it is soft-float code itself and the
-same function runs in both builds; calls of `sin`, `exp`, … in source resolve to it by §4.5. The
-certificate records the runtimes version. No correct-rounding claim is required; bit-exact
-determinism is (NS §3.2).
+the **runtimes libm**: `@<name>` for `double`, `@<name>f` for `float`,
+and `@<name>l` for the target's native `long double` format D (x86-64:
+`x86_fp80`; AArch64 and RISC-V64: `fp128`). For every other source format B,
+including half, bfloat and non-native x86_fp80/fp128/ppc_fp128, use a direct
+own-format carrier call `C_B @__bennett_sf_<name>_<suffix>(C_B, …)`;
+C_B and suffix are exactly §13.1's table. No conversion through D is emitted.
+All seven source formats remain covered on every supported platform; a format
+different from D is neither rejected nor trapped. This route preserves the
+source format's precision and cannot request a narrowing fpext or an equal-size
+cross-format cast.
+
+For these carrier calls, bitcast each floating operand k to its **own** carrier
+in operand order as `%nz.<k>.r`, call as `%nz.i.r`, and bitcast the scalar
+floating result back as `%r` (§13.1). Retain non-floating operands and their types
+in source order. These linked bennett-arith/runtimes functions implement the
+named operation numerically in B, using the same deterministic, versioned
+implementation in both builds; they are not bit reinterpretations between FP
+formats and do not use the host C long-double ABI. NaN results use §13.1's
+canonical encoding, with signed zeros preserved where the operation requires.
+As for the native-format libm below, no correct-rounding claim is made.
+
+`powi(x,n)` retains repeated-squaring semantics (compiler-rt's `__powidf2`),
+with the integer exponent unconverted; its carrier spelling is
+`C_B @__bennett_sf_powi_<suffix>_i<K>(C_B, iK)` at the intrinsic's exponent width K
+(the floating-ABI spelling remains `__bennett_rt_powi_B`). `sincos(x)` is the
+pair (sin x, cos x), `sincospi(x)` the pair (sinpi x, cospi x), and `modf(x)`
+the pair (fractional, integral). Their carrier entry points return `{ C_B, C_B }`.
+For powi and these pair operations use this carrier route on every format,
+avoiding the C pointer-output ABI. Reconstruct pair fields in order j=0,1:
+`%nz.outbits<j>.r = extractvalue` of `%nz.i.r`, then bitcast to B as
+`%nz.outfp<j>.r`, then insert into `{ B, B }` (first into zeroinitializer as
+`%nz.out0.r`, finally as `%r`). Thus the special operations retain their
+semantics and field order under the same format policy.
+
+The runtimes libm is musl-derived and compiled through this pipeline, so it is
+soft-float code itself and the same function runs in both builds; calls of
+`sin`, `exp`, … in source resolve to it by §4.5. The certificate records the
+runtimes/arith versions. No correct-rounding claim is required; bit-exact
+determinism is (NS §3.2). The carrier routines are linked bitcode definitions,
+normalised by this same pipeline, not new ISA primitives or unresolved host calls.
 
 ### 13.5 Constrained intrinsics, `strictfp` and the floating-point environment
 
@@ -6641,6 +6671,172 @@ bit-exact moves; they resolve by §4.5 to the runtimes libm, whose own floating-
 normalised by §13.1. N33 runs before N32 (§12.1), so its declarations precede N32's; the libm
 calls it creates are not floating-point instructions in the sense of §13.1 (they pass bit-exact
 values) and N32 leaves them alone.
+
+**Portable extended-format libm witnesses.** The invalid old routes fail
+LLVM 18/23 verification: `fpext fp128 to x86_fp80` on x86-64 and
+`fpext ppc_fp128 to fp128` on AArch64/RISC-V64 both report `invalid cast opcode`
+(exit 1). Each source and new materialised output below verifies on both majors
+(exit 0), including non-native x86_fp80 on the latter platforms. There are no
+cross-format casts. The numerical vectors use own-format carriers: +0 -> +0,
+and 1+2^-100 retains its low input bits instead of truncating through long
+double. The binary128 input has bit 12 set; the ppc carrier stores the high
+double in low 64 bits and the low double in high 64 bits (APFloat encoding).
+The state checks compile the materialised **carrier** body on the host, linked
+to an independent libquadmath numerical fixture. Per-triple verifier results
+are not claims of native AArch64/RISC-V execution. The fixture validates these
+ABI/numerical witnesses, not a complete production soft-float library.
+
+```llvm normalise-in=n-libm-x86-f128
+target triple = "x86_64-unknown-linux-gnu"
+declare fp128 @llvm.sin.f128(fp128)
+define fp128 @f(fp128 %x) {
+ %r = call fp128 @llvm.sin.f128(fp128 %x)
+ ret fp128 %r
+}
+```
+
+```llvm normalise-out=n-libm-x86-f128
+target triple = "x86_64-unknown-linux-gnu"
+declare fp128 @llvm.sin.f128(fp128)
+define fp128 @f(fp128 %x) {
+  %nz.0.r = bitcast fp128 %x to i128
+  %nz.i.r = call i128 @__bennett_sf_sin_f128(i128 %nz.0.r)
+  %r = bitcast i128 %nz.i.r to fp128
+  ret fp128 %r
+}
+
+declare i128 @__bennett_sf_sin_f128(i128)
+```
+
+```llvm normalise-in=n-libm-x86-ppcf128
+target triple = "x86_64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+ %r = call ppc_fp128 @llvm.sin.ppcf128(ppc_fp128 %x)
+ ret ppc_fp128 %r
+}
+```
+
+```llvm normalise-out=n-libm-x86-ppcf128
+target triple = "x86_64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+  %nz.0.r = bitcast ppc_fp128 %x to i128
+  %nz.i.r = call i128 @__bennett_sf_sin_ppcf128(i128 %nz.0.r)
+  %r = bitcast i128 %nz.i.r to ppc_fp128
+  ret ppc_fp128 %r
+}
+
+declare i128 @__bennett_sf_sin_ppcf128(i128)
+```
+
+```llvm normalise-in=n-libm-arm-ppcf128
+target triple = "aarch64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+ %r = call ppc_fp128 @llvm.sin.ppcf128(ppc_fp128 %x)
+ ret ppc_fp128 %r
+}
+```
+
+```llvm normalise-out=n-libm-arm-ppcf128
+target triple = "aarch64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+  %nz.0.r = bitcast ppc_fp128 %x to i128
+  %nz.i.r = call i128 @__bennett_sf_sin_ppcf128(i128 %nz.0.r)
+  %r = bitcast i128 %nz.i.r to ppc_fp128
+  ret ppc_fp128 %r
+}
+
+declare i128 @__bennett_sf_sin_ppcf128(i128)
+```
+
+```llvm normalise-in=n-libm-arm-f80
+target triple = "aarch64-unknown-linux-gnu"
+declare x86_fp80 @llvm.sin.f80(x86_fp80)
+define x86_fp80 @f(x86_fp80 %x) {
+ %r = call x86_fp80 @llvm.sin.f80(x86_fp80 %x)
+ ret x86_fp80 %r
+}
+```
+
+```llvm normalise-out=n-libm-arm-f80
+target triple = "aarch64-unknown-linux-gnu"
+declare x86_fp80 @llvm.sin.f80(x86_fp80)
+define x86_fp80 @f(x86_fp80 %x) {
+  %nz.0.r = bitcast x86_fp80 %x to i80
+  %nz.i.r = call i80 @__bennett_sf_sin_f80(i80 %nz.0.r)
+  %r = bitcast i80 %nz.i.r to x86_fp80
+  ret x86_fp80 %r
+}
+
+declare i80 @__bennett_sf_sin_f80(i80)
+```
+
+```llvm normalise-in=n-libm-riscv-ppcf128
+target triple = "riscv64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+ %r = call ppc_fp128 @llvm.sin.ppcf128(ppc_fp128 %x)
+ ret ppc_fp128 %r
+}
+```
+
+```llvm normalise-out=n-libm-riscv-ppcf128
+target triple = "riscv64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+  %nz.0.r = bitcast ppc_fp128 %x to i128
+  %nz.i.r = call i128 @__bennett_sf_sin_ppcf128(i128 %nz.0.r)
+  %r = bitcast i128 %nz.i.r to ppc_fp128
+  ret ppc_fp128 %r
+}
+
+declare i128 @__bennett_sf_sin_ppcf128(i128)
+```
+
+```llvm normalise-in=n-libm-riscv-f80
+target triple = "riscv64-unknown-linux-gnu"
+declare x86_fp80 @llvm.sin.f80(x86_fp80)
+define x86_fp80 @f(x86_fp80 %x) {
+ %r = call x86_fp80 @llvm.sin.f80(x86_fp80 %x)
+ ret x86_fp80 %r
+}
+```
+
+```llvm normalise-out=n-libm-riscv-f80
+target triple = "riscv64-unknown-linux-gnu"
+declare x86_fp80 @llvm.sin.f80(x86_fp80)
+define x86_fp80 @f(x86_fp80 %x) {
+  %nz.0.r = bitcast x86_fp80 %x to i80
+  %nz.i.r = call i80 @__bennett_sf_sin_f80(i80 %nz.0.r)
+  %r = bitcast i80 %nz.i.r to x86_fp80
+  ret x86_fp80 %r
+}
+
+declare i80 @__bennett_sf_sin_f80(i80)
+```
+
+```text state=n-libm-x86-f128 at=0
+{"verifier":{"18":0,"23":0},"vectors":[["00000000000000000000000000000000","00000000000000000000000000000000"],["3fff0000000000000000000000001000","3ffeaed548f090cee0418dd3d2139b69"]],"code":0}
+```
+
+```text state=n-libm-x86-ppcf128 at=0
+{"verifier":{"18":0,"23":0},"vectors":[["00000000000000000000000000000000","00000000000000000000000000000000"],["39b00000000000003ff0000000000000","3c406374f484e6da3feaed548f090cee"]],"code":0}
+```
+
+```text state=n-libm-arm-ppcf128 at=0
+{"verifier":{"18":0,"23":0},"vectors":[["00000000000000000000000000000000","00000000000000000000000000000000"],["39b00000000000003ff0000000000000","3c406374f484e6da3feaed548f090cee"]],"code":0}
+```
+
+```text state=n-libm-riscv-ppcf128 at=0
+{"verifier":{"18":0,"23":0},"vectors":[["00000000000000000000000000000000","00000000000000000000000000000000"],["39b00000000000003ff0000000000000","3c406374f484e6da3feaed548f090cee"]],"code":0}
+```
+
+```text state=libm-invalid-casts at=0
+{"18":"invalid cast opcode","23":"invalid cast opcode"}
+```
 
 ## 14. Calls and control transfer
 
@@ -11226,6 +11422,7 @@ compute expected artefacts only (P-3).
 | `pt2-wrap`, `pt5-range`, `pt5-range-load` | PT2, PT5, N3, N4 | parse, recognise, state | LLVM O0/instcombine; clang 18/23 materialised execution |
 | `n-vector`, `n-wideint`, `n-shadow-stack`, `n-memintrinsics`, `n-intrinsics`, `n-atomic` with `native=` | N9, N21, N22, N24, N26, N27 | parse, normalise, native | LLVM; Python; clang + seeds |
 | `residual-nsw`, `residual-clean` | §12.4 V1 | validate | Python |
+| `n-libm-{x86,arm,riscv}-*`, `libm-invalid-casts` | N33 own-format carriers, §13.4 | parse, normalise, state | LLVM 18/23 per-triple verifier; host carrier numerical execution |
 | `n-fmuladd` (+ `native=`), `n-fp80`, `n-libm` | N16, N32, N33, §13 | parse, normalise, native | LLVM; Python; clang + seeds |
 | `indirect-table`, `indirect-host-pointer` | §14.2 | parse, recognise | LLVM; Python |
 | `n-varargs` (+ `native=`) | N23, §14.3, N24 | parse, normalise, native | LLVM; Python; clang + seeds |

@@ -16,6 +16,63 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round7_pointer_origin(self):
+        src='''@slot = internal global ptr null
+define void @top() {
+ %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+ %a = ptrtoint ptr @slot to i64
+ %b = add i64 %a, -9223372036854775808
+ %c = add i64 %b, -9223372036854775808
+ %p = inttoptr i64 %c to ptr
+ store ptr %h, ptr %p
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+'''
+        self.assertEqual(v.recognise(d.with_decls(src))[0],'accept')
+        self.assertEqual(v.recognise(d.with_decls(src.replace('@slot to i64','%host to i64').replace('@top()','@top(ptr %host)')))[0],'reject:BD-E-HANDLE-ESCAPE')
+
+    def test_round7_fp_formats(self):
+        from dialect_normalise import FP
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            for triple in ('x86_64-unknown-linux-gnu','aarch64-unknown-linux-gnu','riscv64-unknown-linux-gnu'):
+                D='x86_fp80' if triple.startswith('x86') else 'fp128'
+                for ty,(suffix,width) in FP.items():
+                    with self.subTest(triple=triple,ty=ty):
+                        src=f'target triple = "{triple}"\ndeclare {ty} @llvm.sin.{suffix}({ty})\ndefine {ty} @f({ty} %x) {{\n %r = call {ty} @llvm.sin.{suffix}({ty} %x)\n ret {ty} %r\n}}\n'
+                        got=v.normalise(src)
+                        if ty in ('float','double',D):
+                            name='sinf' if ty=='float' else 'sin' if ty=='double' else 'sinl'
+                            self.assertIn(f'call {ty} @{name}({ty} %x)',got)
+                        else:self.assertIn(f'call i{width} @__bennett_sf_sin_{suffix}(i{width} %nz.0.r)',got)
+                        p=v.Path(tmp)/'fp.ll';p.write_text(got)
+                        for major in ('18','23'):v.command([d.toolchains()[major]/'opt','-passes=verify',p,'-disable-output'])
+            for op in ('powi','sincos','sincospi','modf'):
+                rt='fp128' if op=='powi' else '{ fp128, fp128 }'
+                args='fp128, i32' if op=='powi' else 'fp128'
+                actual='fp128 %x, i32 3' if op=='powi' else 'fp128 %x'
+                src=f'declare {rt} @llvm.{op}.f128({args})\ndefine {rt} @f(fp128 %x) {{\n %r = call {rt} @llvm.{op}.f128({actual})\n ret {rt} %r\n}}\n'
+                got=v.normalise(src,major='23')
+                self.assertIn('@__bennett_sf_'+op+'_f128',got)
+                p=v.Path(tmp)/'fp.ll';p.write_text(got)
+                v.command([d.toolchains()['23']/'opt','-passes=verify',p,'-disable-output'])
+
+    def test_round7_fp_execution(self):
+        import json
+        from dialect_round7 import check_libm
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            for name in ('n-libm-x86-f128','n-libm-x86-ppcf128','n-libm-arm-ppcf128','n-libm-riscv-ppcf128','libm-invalid-casts'):
+                b=self.block('state',name);check_libm(runner,b)
+                if name!='libm-invalid-casts':
+                    # The fixture link names these definitions. V12 must still
+                    # reject the identical call in an actually unlinked module.
+                    with self.assertRaises(d.Reject):v.validate(self.block('normalise-out',name)['body'])
+                want=json.loads(b['body'])
+                if 'vectors' in want:
+                    want['vectors'][1][1]='0'*32
+                    with self.assertRaises(d.Fail):check_libm(runner,dict(b,body=json.dumps(want)))
+
     def test_round7_lane_execution(self):
         import json
         from dialect_round7 import check_lanes

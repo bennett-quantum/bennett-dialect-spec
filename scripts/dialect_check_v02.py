@@ -313,6 +313,7 @@ NORMALISATION_LINK={
     '__bennett_rt_memset','__bennett_rt_ctpop_i32','__bennett_rt_eh_match',
     '__bennett_rt_syscall','__bennett_rt_poll','may_throw','exp','sinf',
     '__bennett_sf_cmp_f64','__bennett_sf_add_f64','__bennett_sf_mul_f64',
+    '__bennett_sf_sin_f128','__bennett_sf_sin_ppcf128','__bennett_sf_sin_f80',
     '__bennett_sf_add_f80','__bennett_sf_fpext_f64_f80','__bennett_sf_fpext_f32_f64',
 } | {'__bennett_rt_mmio_'+op+'_i'+str(w) for op in ('load','store') for w in (8,16,32,64,128)}
 

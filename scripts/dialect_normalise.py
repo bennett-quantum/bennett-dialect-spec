@@ -425,15 +425,45 @@ class Normaliser:
         def go(f,i,r):
             b=i.text.split(' = ',1)[-1];op=i.op
             if op=='call' and ' asm ' not in b:
-                c=d.parse_call(i);m=re.match(r'@llvm\.(exp|exp2|log|log2|sin|cos|pow)\.',c['callee'])
+                c=d.parse_call(i);m=re.match(r'@llvm\.(acos|asin|atan|atan2|cos|cosh|exp|exp10|exp2|log|log10|log2|modf|pow|powi|sin|sincos|sincospi|sinh|tan|tanh)\.',c['callee'])
                 fm=re.match(r'@llvm\.(maxnum|minnum|maximum|minimum|maximumnum|minimumnum)\.',c['callee'])
                 if fm:
                     t=d.tstr(c['ret']);sfx,bw=FP[t];name='__bennett_sf_'+fm[1]+'_'+sfx
                     self.decl(name,f'i{bw}',[f'i{bw}',f'i{bw}'])
                     return [f'%nz.{k}.{r} = bitcast {t} {arg[2]} to i{bw}' for k,arg in enumerate(c['args'])]+[f'%nz.i.{r} = call i{bw} @{name}(i{bw} %nz.0.{r}, i{bw} %nz.1.{r})',f'{i.res} = bitcast i{bw} %nz.i.{r} to {t}']
                 if m:
-                    t=d.tstr(c['ret']);name=m[1]+('f' if t=='float' else 'l' if t not in ('float','double') else '')
-                    self.decl(name,t,[d.tstr(x[0]) for x in c['args']]);i.text=i.text.replace(c['callee'],'@'+name);return
+                    t=d.tstr(c['args'][0][0]);opname=m[1]
+                    triple=re.search(r'target triple = "([^"]+)"',self.original)
+                    D='fp128' if triple and triple[1].startswith(('aarch64','riscv64')) else 'x86_fp80'
+                    if t in ('float','double',D) and opname not in ('powi','sincos','sincospi','modf'):
+                        name=opname+('f' if t=='float' else 'l' if t==D else '')
+                        self.decl(name,t,[d.tstr(x[0]) for x in c['args']]);i.text=i.text.replace(c['callee'],'@'+name);return
+                    # N33 own-format ABI, identical to N32's carrier discipline.
+                    # powi and pair-return functions keep their specified operation
+                    # semantics; no C long-double/pointer-output ABI is invented.
+                    sfx,bw=FP[t];carrier=f'i{bw}';out=[];args=[];types=[]
+                    for k,(ty,attrs,value) in enumerate(c['args']):
+                        ts=d.tstr(ty)
+                        if ts in FP:
+                            w=FP[ts][1];cv=f'%nz.{k}.{r}'
+                            out.append(f'{cv} = bitcast {ts} {value} to i{w}')
+                            args.append(f'i{w} {cv}');types.append(f'i{w}')
+                        else:args.append(ts+' '+value);types.append(ts)
+                    pair=opname in ('sincos','sincospi','modf')
+                    rt='{ '+carrier+', '+carrier+' }' if pair else carrier
+                    name='__bennett_sf_'+opname+'_'+sfx
+                    if opname=='powi':name+='_i'+str(c['args'][1][0][1])
+                    self.decl(name,rt,types)
+                    out.append(f'%nz.i.{r} = call {rt} @{name}('+', '.join(args)+')')
+                    if not pair:out.append(f'{i.res} = bitcast {carrier} %nz.i.{r} to {t}')
+                    else:
+                        ft='{ '+t+', '+t+' }';previous='zeroinitializer'
+                        for j in range(2):
+                            bits=f'%nz.outbits{j}.{r}';fp=f'%nz.outfp{j}.{r}'
+                            out += [f'{bits} = extractvalue {rt} %nz.i.{r}, {j}',f'{fp} = bitcast {carrier} {bits} to {t}']
+                            result=i.res if j==1 else f'%nz.out0.{r}'
+                            out.append(f'{result} = insertvalue {ft} {previous}, {t} {fp}, {j}');previous=result
+                    return out
             if op=='fcmp':
                 _,pred,rest=b.split(None,2);t,j=d.parse_type(rest);ts=d.tstr(t);sfx,bw=FP[ts];vals=d.split_top(rest[j:])
                 predicates='false oeq ogt oge olt ole one ord uno ueq ugt uge ult ule une true'.split()
