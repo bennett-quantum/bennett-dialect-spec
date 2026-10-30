@@ -665,3 +665,5 @@ SOL-R4-02 resolved: index-width GEP rows and CC/R/C agreement; n-gep-index Rust 
 R4-CODEX-01 resolved: n-vector-i24 load/store at offsets 0/3, align 1; exact pair red → green and native clang18/23 both source/output pass; sentinels preserved. SOL-R4-02 commit 68d8f5b / response a285b98.
 
 R4-CODEX-02 resolved: W=max(K,ceil(log2(L+1))), exact lane constants; n-narrow-lane extraction/insertion/four-lane alias probe red → green. Native clang18/23 source/output pass; n-dynamic-lane output 2/-1 both zero. R4-CODEX-01 commit 22d23e9 / response 29c3944.
+
+BD3-R4-1 resolved: entry-boundary persistence forces infinity before per-entry TC/E; BLK-1/BLK-4 with existing fallback. handle-cross-entry recogniser red accept/N=1 → blocked:BD-B-ISA4; native actual LLVM across two entries has two distinct cleanly freed handles, no trap; mutation fails. Guaranteed-free and caller-free positives retained, R variant gets ISA12. R4-CODEX-02 commit 6663d8a / response ac2c64e. Full unit/gate verification follows.

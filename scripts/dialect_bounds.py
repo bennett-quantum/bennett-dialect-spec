@@ -70,6 +70,69 @@ def setjmp_reentry(f,site,a=None):
     return False
 
 
+def entry_boundary_live(a,f,site,in_r=False):
+    """May-live persistent ROOT and an augmented call/return path avoiding free.
+
+    Return edges conservatively include every possible caller continuation.
+    Thus an internal callee return alone is not an entry boundary, and frees
+    in its caller can discharge the obligation.
+    """
+    root=f.name+site.res
+    objects={o for (o,_,_),ats in a.memory.items() if ('R',root) in ats}
+    allocas={fun.name+i.res for fun in a.funcs() for i in fun.instrs() if i.op=='alloca'}
+    persistent=set(a.m.globals)|(objects-allocas)
+    for fun in a.funcs():
+        for ins in fun.instrs():
+            if ins.op=='ret' and ins.text!='ret void':
+                persistent.update(o for o,_ in a.ptrs(fun,d.typed_val(ins.text[4:])))
+    # Memory reachable from persistent objects can itself retain a ROOT.
+    while True:
+        before=set(persistent)
+        for (o,_,_),ats in a.memory.items():
+            if o in persistent:persistent.update(x[1] for x in ats if x[0]=='P')
+        if persistent==before:break
+    if not objects & persistent:return False
+    entries={fun.name for fun in a.funcs() if fun.name in a.device and not re.search(r'\b(?:internal|private)\b',fun.header)}
+    if in_r:
+        entries=set()
+        for fun in a.funcs():
+            for ins,c,mk in a.marker_calls(fun):
+                if mk=='reversible':entries.update(a.cands.get((id(ins),0),set()))
+        if not entries:entries={f.name} # whole-program R entry
+    nodes={};succ={};starts={};returns={};calls=[];target=None
+    for fun in a.funcs():
+        labels={lab:(fun.name,lab,0) for lab,_ in fun.blocks}
+        if not fun.blocks:continue
+        starts[fun.name]=labels[fun.blocks[0][0]];returns[fun.name]=[]
+        for lab,blk in fun.blocks:
+            for k,ins in enumerate(blk):
+                node=(fun.name,lab,k);nodes[node]=(fun,ins)
+                succ[node]=[(fun.name,lab,k+1)] if k+1<len(blk) else [labels[x] for x in re.findall(r'label %([-\w.$]+)',ins.text)]
+                if ins is site:target=node
+                if ins.op=='ret':returns[fun.name].append(node)
+                if ins.op in ('call','invoke') and ' asm ' not in ins.text:
+                    c=d.parse_call(ins)
+                    if c['callee']=='@__bennett_qfree' and a.roots(fun,c['args'][0][2])=={root}:succ[node]=[]
+                    else:
+                        targets={c['callee'][1:]} if c['callee'].startswith('@') else a.indirect.get(id(ins),set())
+                        calls.append((node,targets,list(succ[node])))
+    for node,targets,after in calls:
+        defined=targets & starts.keys()
+        if defined:
+            succ[node]=[starts[n] for n in defined]
+            for n in defined:
+                for ret in returns[n]:succ[ret].extend(after)
+    # N29 continuation cases are handled first by setjmp_reentry.
+    stack=list(succ[target]);seen=set()
+    while stack:
+        node=stack.pop()
+        if node in seen:continue
+        seen.add(node);fun,ins=nodes[node]
+        if ins.op=='ret' and fun.name in entries:return True
+        stack.extend(succ[node])
+    return False
+
+
 def self_disjoint(a,f,site):
     if setjmp_reentry(f,site,a):return False
     root=f.name+site.res
@@ -124,6 +187,8 @@ def instance_rules(a):
     for f,ins,in_r in sites:
         if setjmp_reentry(f,ins,a):
             a.blockers.append(('BD-B-ISA12' if in_r else 'BD-B-ISA4',('BLK-4 §7.5(b)' if in_r else 'BLK-1 §6.5')+' setjmp continuation re-entry: '+ins.text))
+        elif entry_boundary_live(a,f,ins,in_r):
+            a.blockers.append(('BD-B-ISA12' if in_r else 'BD-B-ISA4',('BLK-4 §7.5(b)' if in_r else 'BLK-1 §6.5')+' instance may outlive an entry return: '+ins.text))
         elif self_disjoint(a,f,ins):a.instance_bounds[f.name+ins.res]=1
         else:nontrivial.append((f,ins,in_r))
     if not nontrivial:return

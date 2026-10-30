@@ -1200,6 +1200,18 @@ static-file fallback, never rejection. The read-only ISA 0.9 draft's K1 supplies
 the exact missing dynamic qreg.width/id/from_id and run-time-width register capability;
 K2 supplies R allocation for BLK-4. Neither witness claims a finite reference bound.
 
+**Entry-boundary liveness (before rules 1–2).** If an instance of s may be
+live at the return of any device entry that may reach s — memory live at that
+return (a global, heap object, or memory reachable from a result or env) may
+hold ROOT(s), and not every path from s through the augmented CFGs and call
+edges to that return passes a qfree with provenance exactly {s} — then s is
+not self-disjoint and E(s)=∞. Use BLK-1, with the bounded static-file fallback,
+never rejection. The host may call entries any number of times: executions per
+entry call do not bound instances that survive return. Under §7.5(b), substitute
+reversible-invocation return and BLK-4; the same boundary test precedes hoisting.
+An internal callee's return alone is not a device-entry return: a guaranteed
+free in its caller before the entry returns can discharge this condition.
+
 1. s is **self-disjoint** iff the only memory its `ROOT(s)` atom reaches is allocas of F whose
    address does not escape F (it is not stored, returned, or passed to a call other than a marker
    call, which includes the `env` of a region-entry marker), and every CFG path of F from s to a `ret`, to s again, or to a call
@@ -1213,11 +1225,59 @@ K2 supplies R allocation for BLK-4. Neither witness claims a finite reference bo
    cycle of the call graph. E(c), for a call site c in function C, uses the same
    recurrence: TC(c) in C's augmented CFG times the sum of E over C's device call sites
    (entry multiplicity 1). Any unbounded augmented loop, recursive cycle or conservative
-   setjmp-continuation case gives infinity; normal CFG loop facts cannot override it.
+   setjmp-continuation or entry-boundary-liveness case gives infinity; normal CFG
+   loop facts cannot override it.
 3. If N(s) = ∞, every execution of s is a **blocker point** of BLK-1 (`blocked:BD-B-ISA4`,
    §25.1): ISA 0.8 cannot name an unbounded number of registers reached through memory. The
    plugin compiles the program with a static file of `--bennett-qreg-instances` instances
    (default 64, §24) and a blocker trap (§25.1) on an execution that needs more.
+
+**Cross-entry liveness witness.** The host calls put twice, then use. The first
+instance remains live in @slots when the second is allocated at the same site.
+TC=1 per call does not bound lifetime across calls: E(s)=∞, BLK-1. The 64-slot
+fallback keeps two distinct registers live, flips each twice and frees both clean.
+
+```llvm example=handle-cross-entry verdict=blocked:BD-B-ISA4
+@n = internal global i64 0
+@slots = internal global [2 x ptr] zeroinitializer
+define void @put() {
+entry:
+  %i = load i64, ptr @n
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %p = getelementptr [2 x ptr], ptr @slots, i64 0, i64 %i
+  store ptr %h, ptr %p
+  %next = add i64 %i, 1
+  store i64 %next, ptr @n
+  ret void
+}
+define void @use() {
+entry:
+  %count = load i64, ptr @n
+  br label %test
+test:
+  %j = phi i64 [0, %entry], [%next, %body]
+  %more = icmp ult i64 %j, %count
+  br i1 %more, label %body, label %done
+body:
+  %p = getelementptr [2 x ptr], ptr @slots, i64 0, i64 %j
+  %h = load ptr, ptr %p
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  %next = add i64 %j, 1
+  br label %test
+done:
+  ret void
+}
+```
+
+```text blocker=handle-cross-entry
+BD-B-ISA4 @put qalloc: instance may outlive a device-entry return; BLK-1 (ISA-4)
+```
+
+```text state=handle-cross-entry at=0
+{"verdict":"blocked:BD-B-ISA4","entry_calls":2,"instances":2,"distinct":true,"live_after":0,"trap":0}
+```
 
 **Ancestor setjmp witness.** P's continuation calls G again after deep longjmps;
 G contains no setjmp. The first handle is still live in slot[0] when the second is
@@ -1891,8 +1951,8 @@ Only the rules the north star requires:
   measured is not reversible; ISA §3.3: a `measure` frame is never reversed). A `qalloc`,
   `qborrow` or `qfree` in the closure is **hoisted** (ISA 0.8 has `qreg.new` in CC only): when
   every such site s has a finite reference instance bound N(s) (§6.5 rules 1 and 2, applied to
-  every site whether or not it reaches memory, with the reversible entry in place of the device
-  entry), the CC caller allocates N(s) clean registers per site before the R call, passes them as
+  every site whether or not it reaches memory, including the entry-boundary liveness
+  precondition with the reversible invocation in place of the device entry), the CC caller allocates N(s) clean registers per site before the R call, passes them as
   `qreg` arguments, and frees them after it returns; `qalloc` in R selects a free one, `qfree`
   checks that it is clean (`T-CLEAN`) and returns it to the free set. Otherwise the site is a
   blocker point of BLK-4 (`blocked:BD-B-ISA12`, §25.1).
@@ -10060,6 +10120,7 @@ compute expected artefacts only (P-3).
 | `tdl`, `tdl-overwrite`, `tdl-effect`, `tdl-angle` with `tdl=` and `state=` blocks | TDL-1–TDL-12, §18.2–§18.4 | parse, recognise, tdl, run-action | LLVM; Python TDL; isa-ref `run-action` (requested) |
 | `effect-console-r`, `effect-console-cc` | §11.1, §11.2 | parse, recognise, run-cc, reverse | isa-ref `run-cc`, `reverse` (requested) |
 | `n-flags`, `n-shift`, `n-undef`, `n-query`, `n-trap` | N1–N8, N10, N11, N14 | parse, normalise | LLVM; Python normaliser |
+| `handle-cross-entry` (+ `blocker=`, `state=`) | §6.5 entry-boundary liveness | parse, recognise, blocker, state | LLVM; native clang 18/23 64-slot fallback |
 | `n-narrow-lane` (+ `native=`) | N15/N21 narrow index | parse, normalise, native | LLVM; clang 18/23 |
 | `n-vector-i24` (+ `native=`) | N21 vector memory spacing | parse, normalise, native | LLVM; clang 18/23 |
 | `n-gep-index` (+ `native=`, `state=`) | §16.4 pointer-index widths | parse, normalise, native, state | LLVM; clang 18/23; Rust mapped run-oracle |

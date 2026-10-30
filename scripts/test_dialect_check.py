@@ -16,6 +16,26 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round4_cross_entry(self):
+        ir=self.block('example','handle-cross-entry')['body']
+        verdict,a=v.recognise(d.with_decls(ir))
+        self.assertEqual(verdict,'blocked:BD-B-ISA4')
+        self.assertNotIn('put%h',a.instance_bounds)
+        self.assertTrue(any('entry' in reason for _,reason in a.blockers))
+        # Exact free before return prevents cross-entry accumulation.
+        freed=ir.replace('  store ptr %h, ptr %p','  store ptr %h, ptr %p\n  call void @__bennett_qfree(ptr %h)',1)
+        self.assertEqual(v.recognise(d.with_decls(freed))[0],'accept')
+        r=ir.replace('define void @put()','define internal void @put(ptr %env)')+'\ndefine void @launch() {\n call void @__bennett_reversible(ptr @put, ptr null, ptr null)\n ret void\n}\n'
+        _,a=v.recognise(d.with_decls(r))
+        self.assertTrue(any(code=='BD-B-ISA12' and 'entry' in reason for code,reason in a.blockers))
+        from dialect_round4 import check_state
+        import json
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            b=self.block('state','handle-cross-entry');check_state(runner,b)
+            wrong=json.loads(b['body']);wrong['distinct']=False
+            with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
+
     def test_round4_narrow_lane(self):
         self.assertEqual(d.collapse(v.normalise(self.block('normalise-in','n-narrow-lane')['body'])),
                          d.collapse(self.block('normalise-out','n-narrow-lane')['body']))
