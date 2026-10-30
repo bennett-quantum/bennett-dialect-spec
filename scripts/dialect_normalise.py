@@ -100,11 +100,20 @@ class Normaliser:
                 i.text=re.sub(r'\s+(?:unordered|monotonic|acquire|release|acq_rel|seq_cst)\b','',i.text)
                 return
             if i.op=='atomicrmw':
-                m=re.match(r'atomicrmw (\w+) ptr ([^,]+), (i\d+) ([^ ]+).*?(, align \d+)?$',b)
+                m=re.match(r'atomicrmw (\w+) ptr ([^,]+), (i\d+|half|bfloat|float|double|x86_fp80|fp128|ppc_fp128) ([^ ]+).*?(, align \d+)?$',b)
                 op,p,t,v,al=m.groups();al=al or ''
-                if op not in ('add','sub','and','or','xor','xchg','uinc_wrap','udec_wrap','usub_cond','usub_sat'):raise d.Fail('N9 atomicrmw '+op)
+                if op not in ('add','sub','and','nand','or','xor','xchg','min','max','umin','umax','fadd','fsub','fmax','fmin','fmaximum','fminimum','fmaximumnum','fminimumnum','uinc_wrap','udec_wrap','usub_cond','usub_sat'):raise d.Fail('N9 atomicrmw '+op)
                 out=[f'%nz.l.{r} = load {t}, ptr {p}{al}']
                 if op=='xchg':nv=v
+                elif op=='nand':
+                    out += [f'%nz.a.{r} = and {t} %nz.l.{r}, {v}',f'%nz.v.{r} = xor {t} %nz.a.{r}, -1'];nv=f'%nz.v.{r}'
+                elif op in ('min','max','umin','umax'):
+                    pred={'min':'slt','max':'sgt','umin':'ult','umax':'ugt'}[op]
+                    out += [f'%nz.k.{r} = icmp {pred} {t} %nz.l.{r}, {v}',f'%nz.v.{r} = select i1 %nz.k.{r}, {t} %nz.l.{r}, {t} {v}'];nv=f'%nz.v.{r}'
+                elif op in ('fmax','fmin','fmaximum','fminimum','fmaximumnum','fminimumnum'):
+                    intr={'fmax':'maxnum','fmin':'minnum'}.get(op,op[1:]);suffix=FP[t][0]
+                    self.decl('llvm.'+intr+'.'+suffix,t,[t,t])
+                    out.append(f'%nz.v.{r} = call {t} @llvm.{intr}.{suffix}({t} %nz.l.{r}, {t} {v})');nv=f'%nz.v.{r}'
                 elif op=='uinc_wrap':
                     out += [f'%nz.k.{r} = icmp uge {t} %nz.l.{r}, {v}',f'%nz.i.{r} = add {t} %nz.l.{r}, 1',f'%nz.v.{r} = select i1 %nz.k.{r}, {t} 0, {t} %nz.i.{r}'];nv=f'%nz.v.{r}'
                 elif op=='udec_wrap':
@@ -414,6 +423,11 @@ class Normaliser:
             b=i.text.split(' = ',1)[-1];op=i.op
             if op=='call' and ' asm ' not in b:
                 c=d.parse_call(i);m=re.match(r'@llvm\.(exp|exp2|log|log2|sin|cos|pow)\.',c['callee'])
+                fm=re.match(r'@llvm\.(maxnum|minnum|maximum|minimum|maximumnum|minimumnum)\.',c['callee'])
+                if fm:
+                    t=d.tstr(c['ret']);sfx,bw=FP[t];name='__bennett_sf_'+fm[1]+'_'+sfx
+                    self.decl(name,f'i{bw}',[f'i{bw}',f'i{bw}'])
+                    return [f'%nz.{k}.{r} = bitcast {t} {arg[2]} to i{bw}' for k,arg in enumerate(c['args'])]+[f'%nz.i.{r} = call i{bw} @{name}(i{bw} %nz.0.{r}, i{bw} %nz.1.{r})',f'{i.res} = bitcast i{bw} %nz.i.{r} to {t}']
                 if m:
                     t=d.tstr(c['ret']);name=m[1]+('f' if t=='float' else 'l' if t not in ('float','double') else '')
                     self.decl(name,t,[d.tstr(x[0]) for x in c['args']]);i.text=i.text.replace(c['callee'],'@'+name);return

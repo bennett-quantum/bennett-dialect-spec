@@ -18,6 +18,9 @@ def budget_table(runner,block):
             if k not in allowed|{'identity','region_key','symbol'}:raise d.Fail('§9.2 unexpected field '+k)
     for e in obj['entries']:
         equal(ident,'§9.2 selector count',1,sum(k in e for k in ('identity','region_key','symbol')))
+    if ident=='budget-stage':
+        from dialect_round6 import check_budget_stage
+        return check_budget_stage(runner,json.loads(runner.block('state',ident)['body']))
     src=runner.block('lift',ident);name=src['attrs']['region'].lstrip('@')
     resolved=resolve_budget(obj,name)
     expected={k:int(v) for e in obj['entries'] if fnmatch.fnmatchcase(name,e.get('symbol','')) for k,v in e.items() if k in allowed}
@@ -34,6 +37,31 @@ def resolve_budget(table,symbol,identity='',region_key=''):
             if candidates:defaults[component]=int(candidates[0][component]);break
     return defaults
 
+
+
+def stage_budget(table,symbol,build,region_key='',records=()):
+    """§9.2: freeze raw maxima, hash baseline object, overlay once, build final.
+
+    build(values, capacities) returns (object, interface_hash). Concrete marker
+    records override table fields outside this table lookup, as in §9.1/§9.5.
+    """
+    baseline=resolve_budget(table,symbol,region_key=region_key)
+    capacities=dict(baseline)
+    defaults=resolve_budget(dict(table,entries=[]),'')
+    for row in [defaults,*table.get('entries',[])]:
+        for k in capacities:
+            if k in row:capacities[k]=max(capacities[k],int(row[k]))
+    for row in records:
+        for k in capacities:
+            if k in row and int(row[k])!=(1<<64)-1:capacities[k]=max(capacities[k],int(row[k]))
+    provisional,selection=build(dict(baseline),dict(capacities))
+    resolved=dict(baseline)
+    for k in resolved:
+        matches=[e for e in table['entries'] if e.get('identity')==selection and k in e]
+        if matches:resolved[k]=int(matches[0][k])
+    final,identity=build(dict(resolved),dict(capacities))
+    record={'selection_identity':selection,'identity':identity,'resolved':resolved,'capacities':capacities}
+    return final,record
 
 def xrefs(text):
     own=d.headings(d.SPEC_PATH);isa=d.headings(d.ISA_SPEC);ns=d.headings(d.NORTH_STAR)

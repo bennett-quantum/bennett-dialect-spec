@@ -19,7 +19,8 @@ def bits(t):
 
 
 class Mapper:
-    def __init__(self,text,region,desc,linkmap,arena=None):
+    def __init__(self,text,region,desc,linkmap,arena=None,sstack=None):
+        self.sstack=sstack
         self.m=d.Module(text);self.entry=region.lstrip('@');self.desc=desc;self.linkmap=linkmap
         self.arena=arena or {};self.arena_functions=set()
         for name,f in self.m.funcs.items():
@@ -119,6 +120,9 @@ class Mapper:
         return {lab:base+k for k,lab in enumerate(labels)}
 
     def wrapper(self):
+        if self.entry not in self.names:
+            if self.sstack is not None:self.closure('__bennett_rt_ss_init')
+            self.closure(self.entry)
         f=self.m.funcs[self.entry];desc=self.desc
         param_part=desc.split(';')[0] if not desc.startswith('dev=') else ''
         bindings=re.findall(r'(IN|ARG|MEM_IN|OUT)\(([^)]+)\)',param_part)
@@ -160,6 +164,9 @@ class Mapper:
                 buf=dvalue('lift.alloc '+length);store_global('__bennett_dev_console_buf',buf)
                 zero=dvalue('lift.const.i64 0');store_global('__bennett_dev_console_n',zero)
                 outputs.append((buf,value))
+        if self.sstack is not None:
+            size=const(64,self.sstack)
+            dest('d'+str(dn),1,'lift.call @'+self.names['__bennett_rt_ss_init']+' ('+size+')');dn+=1
         for i,((kind,value),(ty,_,_)) in enumerate(zip(bindings,f.params)):
             w=self.bits(ty);name='w'+str(i)
             if kind=='IN':
@@ -176,7 +183,7 @@ class Mapper:
         if not target:raise d.Fail('§16.2 missing tgt width or null')
         empty=target[1]=='null' and not outputs
         R=self.bits(f.ret);T=1 if empty else (8*outputs[0][1] if target[1]=='null' else int(target[1]))
-        dest('r',R,'lift.call @L1 ('+', '.join(actual)+')')
+        dest('r',R,'lift.call @'+self.names[self.entry]+' ('+', '.join(actual)+')')
         result='r'
         if empty:
             # A discarded return contributes no payload, even when non-void.
@@ -418,6 +425,7 @@ class Mapper:
         return '\n'.join(lines)
 
     def run(self,isa,path):
+        if self.sstack is not None:self.closure('__bennett_rt_ss_init')
         self.closure(self.entry);wrapper=self.wrapper()
         bodies=[wrapper]+[self.lproc(n) for n in self.names]
         used=set(re.findall(r'lift.addr @(G\d+)', '\n'.join(bodies)))

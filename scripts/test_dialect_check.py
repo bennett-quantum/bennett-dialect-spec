@@ -16,6 +16,103 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round6_atomic_sweep(self):
+        # Installed LLVM operation enumerations: all integer forms and all FP
+        # min/max variants (23 adds four spellings). No ordinary NAND exists.
+        integer='xchg add sub and nand or xor max min umax umin uinc_wrap udec_wrap usub_cond usub_sat'.split()
+        floating='fadd fsub fmax fmin fmaximum fminimum fmaximumnum fminimumnum'.split()
+        for op in integer+floating:
+            with self.subTest(op=op):
+                ty='float' if op in floating else 'i32'
+                src=f'define {ty} @f(ptr %p, {ty} %v) {{\n %old = atomicrmw {op} ptr %p, {ty} %v seq_cst, align 4\n ret {ty} %old\n}}\n'
+                got=v.normalise(src,major='23')
+                self.assertNotIn('atomicrmw',got)
+                with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+                    p=v.Path(tmp)/'atomic.ll';p.write_text(got)
+                    v.command([d.toolchains()['23']/'opt','-passes=verify',p,'-disable-output'])
+
+    def test_round6_execution(self):
+        import json
+        from dialect_round6 import check_state
+        from dialect_native import check
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state','native'})
+            for name in ('pt2-wrap','pt5-range','pt5-range-load','budget-stage'):
+                b=self.block('state',name);check_state(runner,b)
+                wrong=json.loads(b['body'])
+                key='calls' if name=='pt2-wrap' else 'width' if name.startswith('pt5') else 'final_sstack'
+                wrong[key]+=1
+                with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
+            b=self.block('native','n-atomic-nand');check(runner,b)
+            with self.assertRaises(d.Fail):check(runner,dict(b,body=b['body'].replace('f()=63','f()=62')))
+
+    def test_round6_budget_staging(self):
+        from dialect_meta import stage_budget
+        table={'version':'0.2','defaults':{'sstack':'16'},'entries':[{'identity':'H16','sstack':'32'},{'symbol':'unused','heap':'2000000'}]}
+        calls=[]
+        def build(values,caps):
+            calls.append((values,caps))
+            return 'object'+str(values['sstack']),'H'+str(values['sstack'])
+        obj,record=stage_budget(table,'f',build)
+        self.assertEqual((record['selection_identity'],record['identity'],record['resolved']['sstack']),('H16','H32',32))
+        self.assertEqual(obj,'object32')
+        self.assertEqual(len(calls),2)
+        self.assertEqual(calls[0][1],calls[1][1])
+        self.assertEqual(record['capacities']['heap'],2000000)
+        # Steps affect token selection but not the object. Region key precedes symbol.
+        table['entries']=[{'identity':'H16','steps':'7'},{'region_key':'K','depth':'5'},{'symbol':'f','depth':'6'}]
+        _,r=stage_budget(table,'f',build,region_key='K')
+        self.assertEqual((r['identity'],r['resolved']['steps'],r['resolved']['depth']),('H16',7,5))
+
+    def test_round6_wrapped_gep(self):
+        src=self.block('example','pt2-wrap')['body']
+        verdict,a=v.recognise(d.with_decls(src))
+        self.assertEqual(verdict,'accept')
+        f=a.m.funcs['top']
+        self.assertEqual(a.ptrs(f,'%p'),{('tab',0)})
+        self.assertEqual(a.atoms(f,'%f'),frozenset({('F','body')}))
+        self.assertEqual(set().union(*a.cands.values()),{'body'})
+        # Scaling, signed small indices and constant expressions use the same wrap.
+        for ty,idx in [('i8','i64 4294967296'),('i16','i64 2147483648'),('i8','i8 -1')]:
+            probe=src.replace('i8, ptr @tab, i64 4294967296',ty+', ptr @tab, '+idx)
+            _,a=v.recognise(d.with_decls(probe))
+            if idx=='i8 -1':self.assertIn(('EXT','*'),a.ptrs(a.m.funcs['top'],'%p'))
+            else:self.assertEqual(a.ptrs(a.m.funcs['top'],'%p'),{('tab',0)})
+
+    def test_round6_gep_constant_expression(self):
+        src=self.block('example','pt2-wrap')['body']
+        src=src.replace(' %p = getelementptr i8, ptr @tab, i64 4294967296\n','').replace('ptr %p,','ptr getelementptr (i8, ptr @tab, i64 4294967296),')
+        # Source has a single-space indent; this exact transformation is checked.
+        self.assertNotIn('%p =',src)
+        verdict,a=v.recognise(d.with_decls(src))
+        self.assertEqual((verdict,a.first_candidates()),('accept',{'body'}))
+        # Actual host-origin pointer stores retain the existing prohibition.
+        host='define void @f(ptr %p) {\n %h = call ptr @__bennett_qalloc(i64 0, i64 1)\n %q = getelementptr i8, ptr %p, i64 8\n store ptr %h, ptr %q\n ret void\n}\n'
+        self.assertEqual(v.recognise(d.with_decls(host))[0],'reject:BD-E-HANDLE-ESCAPE')
+
+    def test_round6_gep_residue_offset(self):
+        # A struct displacement before an unknown sequential index must survive
+        # residue-class formation; dropping it loses the second field's values.
+        src='@tab = internal global {i64, [2 x {i64,i64}]} zeroinitializer\ndefine ptr @f(i64 %i) {\n %p = getelementptr {i64, [2 x {i64,i64}]}, ptr @tab, i64 0, i32 1, i64 %i\n ret ptr %p\n}\n'
+        a=v.Analysis02(d.Module(src));a.analyse()
+        offsets=a.ptrs(a.m.funcs['f'],'%p')
+        self.assertIn(('tab',8),offsets)
+        self.assertIn(('tab',24),offsets)
+        self.assertIn(('EXT','*'),offsets)
+
+    def test_round6_removed_range(self):
+        src='define i64 @f(i64 range(i64 1, 2) %n) {\n %m = and i64 %n, 3\n %w = or i64 %m, 1\n ret i64 %w\n}\n'
+        a=v.Analysis02(d.Module(src));a.analyse()
+        self.assertEqual(a.ints(a.m.funcs['f'],'%w'),{1,3})
+        self.assertNotIn('range(',v.normalise(src,major='23'))
+
+    def test_round6_nand(self):
+        src='define i8 @f(ptr %p, i8 %v) {\n %old = atomicrmw nand ptr %p, i8 %v seq_cst, align 1\n ret i8 %old\n}\n'
+        got=v.normalise(src)
+        self.assertIn('%nz.a.old = and i8 %nz.l.old, %v',got)
+        self.assertIn('%nz.v.old = xor i8 %nz.a.old, -1',got)
+        self.assertIn('ret i8 %nz.l.old',got)
+
     def test_round5_pointer_width(self):
         from dialect_map import Mapper
         source='target datalayout = "e-p:64:64-p270:32:32"\ndefine i64 @f(i64 %x) {\n %p = inttoptr i64 %x to ptr addrspace(270)\n %r = ptrtoint ptr addrspace(270) %p to i64\n ret i64 %r\n}\n'
@@ -409,13 +506,13 @@ entry:
             with self.subTest(format=ty):
                 ir=f'define {ty} @f({ty} %x) {{\n %n = fneg {ty} %x\n ret {ty} %n\n}}\n'
                 self.assertEqual(v.validate(ir),'accept')
-        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.6"}\n'
+        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.7"}\n'
         self.assertEqual(v.recognise(good)[0],'accept')
-        for stale in ('0.2.5','0.2.4','0.2.3','0.2.1'):
-            self.assertEqual(v.recognise(good.replace('0.2.6',stale))[0],'reject:BD-E-VERSION')
+        for stale in ('0.2.6','0.2.5','0.2.4','0.2.3','0.2.1'):
+            self.assertEqual(v.recognise(good.replace('0.2.7',stale))[0],'reject:BD-E-VERSION')
         import tomllib
-        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.6')
-        self.assertIn('**full version string** (`0.2.6`)',self.spec)
+        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.7')
+        self.assertIn('**full version string** (`0.2.7`)',self.spec)
 
     def test_v4_v12_residues_and_clean(self):
         for rule in ('v4','v12'):

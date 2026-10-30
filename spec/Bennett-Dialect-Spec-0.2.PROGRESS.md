@@ -1,3 +1,29 @@
+## Round-6 fixes — b-dialect-spec-wfi — 2026-10-30
+
+Draft 0.2.7; spec/checker edited together. Hand derivations preceded edits:
+GEP 2^32 mod 2^32 = 0 -> tab[0] -> FN(body); removed ranges give widths
+{1,3}, input 2 -> width 3; NAND ~(0xf0 & 0xcc) = 0x3f, returned old 240;
+alloca24 + saved-sp8 needs sstack32, so H16-selection must overlay once.
+LLVM 18/23 O0 probes retained the alloca/GEP/nand/load-range forms; parameter
+range is LLVM 23. Independent native/Rust execution and wrong-result mutations
+cover every new witness. No narrowing, removed examples, ISA edit or push.
+
+| Blocker | Status | Checker case | Commit |
+|---|---|---|---|
+| SOL-R6-01 | resolved (2651/2651 green) | budget-stage; test_round6_budget_staging/execution | current group |
+| R6-CODEX-01 | resolved (2651/2651 green) | pt2-wrap; test_round6_wrapped_gep/gep_constant_expression/gep_residue_offset | current group |
+| R6-CODEX-02 | resolved (2651/2651 green) | pt5-range/pt5-range-load; test_round6_removed_range/execution | current group |
+| R6-CODEX-03 | resolved (2651/2651 green) | n-atomic-nand/atomic-nand; test_round6_nand/atomic_sweep/execution | current group |
+
+Freeze: 2598 → 2651/2651, zero failed or blocked/unavailable; 67 checker and
+4 legacy runtime tests pass. Validation used the exact inherited
+headless gate command (including its historical round5-fixes-freeze.json filename).
+Development runs exposed synthetic unknown-address alternatives mistaken for host
+provenance; base-origin checks now preserve existing handle-table/descriptor verdicts.
+The independent ISA checkout changed concurrently during development; immutable
+snapshots and build-time source/HEAD guards remain in force. No new ISA gap.
+Response: ../bennett/docs/council/dialect-2026-10-29/round-6/response.md.
+
 ## Round-5 final freeze — 2026-10-30
 
 **2598/2598 passed; 0 failed; 0 blocked/unavailable. Baseline 2514 → 2598.**

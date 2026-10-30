@@ -212,13 +212,8 @@ def value_set(mod, f, val, seen=None):
         return 'TOP'
     seen.add(val)
     ins = next((x for x in f.instrs() if x.res == val), None)
+    # PT5 domains describe N3/N4-stripped materialised execution.
     if ins is None:
-        for ty, attrs, name in f.params:
-            if name == val:
-                for attr in attrs:
-                    m = re.match(r'range\(i\d+ (-?\d+), (-?\d+)\)', attr)
-                    if m and 0 <= int(m[2]) - int(m[1]) <= 4096:
-                        return set(range(int(m[1]), int(m[2])))
         return 'TOP'
     body = ins.text.split(' = ', 1)[1]
     if ins.op in ('phi', 'select'):
@@ -291,8 +286,8 @@ def recognise(text, **options):
     try:
         a.s1()
         for version in re.findall(r'!"bennett.dialect", !"([^"\n]+)"', text):
-            if version != "0.2.6":
-                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.6; actual " + version)
+            if version != "0.2.7":
+                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.7; actual " + version)
         a.analyse()
         a.region_rules()
         if options.get("rmode"):a.reversible |= a.closure(options["rmode"].lstrip("@"))
@@ -706,6 +701,8 @@ def action_object(isa,path,name,widths,rows):
 
 
 def state_check(runner,block):
+    from dialect_round6 import STATES as ROUND6, check_state as check_round6
+    if block['attrs']['state'] in ROUND6:return check_round6(runner,block)
     from dialect_round5 import STATES as ROUND5, check_state as check_round5
     if block['attrs']['state'] in ROUND5:return check_round5(runner,block)
     a=block['attrs'];ident=a['state'];at=int(a['at'])

@@ -5,6 +5,7 @@ Array residue classes are enumerated when small, preserving their extent. Large
 classes use (stride,residue,lo,hi); the containment tests retain that extent.
 """
 import itertools
+import math
 import re
 import dialect_check as d
 
@@ -33,6 +34,8 @@ class Flow:
     def av(self, f, val, ty=None):
         val = val.strip()
         if val.startswith('%'): return self.values.get((f.name,val), {})
+        if val.startswith('getelementptr (') and val.endswith(')'):
+            return self.gep(f,'getelementptr '+val[len('getelementptr ('):-1])
         if val.startswith('@'):
             name = val[1:]
             if name in self.m.funcs or name in self.m.aliases: return {0:frozenset({('F',name)})}
@@ -100,34 +103,75 @@ class Flow:
 
     def type_width(self,t): return self.pw if t[0]=='ptr' else t[1] if t[0]=='int' else 8*d.tsize(t)
 
+    def pointer_widths(self,space=0):
+        layout=re.search(r'target datalayout = "([^"]+)"',self.m.text)
+        entries={int(m[1] or 0):(int(m[2]),int(m[5] or m[2])) for m in
+                 re.finditer(r'(?:^|-)p(\d*):(\d+):(\d+)(?::(\d+))?(?::(\d+))?(?=-|$)',layout[1] if layout else '')}
+        return entries.get(space,entries.get(0,(64,64)))
+
     def gep(self,f,body):
         rest=re.sub(r'^getelementptr\s+(?:(?:inbounds|nusw|nuw)\s+)*','',body)
-        parts=d.split_top(rest); t=d.parse_type(parts[0])[0]
-        ptrs=self.ptrs(f,d.typed_val(parts[1])); out=set()
-        for obj,offset in ptrs:
-            current={(offset,t)}
-            for i,part in enumerate(parts[2:]):
-                vals=self.ints(f,d.typed_val(part)); nxt=set()
-                for off,ty in current:
-                    et=ty if i==0 else ty[2] if ty[0] in ('arr','vec') else None
-                    if i>0 and ty[0]=='struct':
-                        if vals=='TOP': raise d.Fail('PT2: variable struct field (LLVM should reject)')
-                        for k in vals:
-                            delta=d.gep_offset(ty,[0,k]); nxt.add((self.shift(off,delta),ty[1][k]))
-                    elif et:
-                        sz=d.tsize(et,self.pw)
-                        if vals=='TOP':
-                            extent=self.object_sizes.get(obj)
-                            if sz>1 and isinstance(off,int) and extent is not None:
-                                residue=off%sz
-                                if (extent+sz-1)//sz<=4096:
-                                    nxt.update((k,et) for k in range(residue,extent,sz))
-                                else:nxt.add(((sz,residue,0,extent),et))
-                            else:nxt.add(('*',et))
-                        else:
-                            nxt.update((self.shift(off,k*sz),et) for k in vals)
-                current=nxt
-            out.update(('P',obj,off) for off,_ in current)
+        parts=d.split_top(rest);t=d.parse_type(parts[0])[0]
+        pt=d.parse_type(parts[1])[0];P,I=self.pointer_widths(pt[1] if len(pt)>1 else 0);M=1<<I
+        base=self.atoms(f,d.typed_val(parts[1]));deltas={0};stride=0
+        for i,part in enumerate(parts[2:]):
+            vals=self.ints(f,d.typed_val(part));it=d.parse_type(part)[0]
+            if i>0 and t[0]=='struct':
+                if vals=='TOP' or len(vals)!=1:raise d.Fail('PT2: variable struct field (LLVM should reject)')
+                k=next(iter(vals));ds={d.gep_offset(t,[0,k])%M};t=t[1][k]
+            else:
+                t=t if i==0 else t[2];sz=d.tsize(t,P)
+                if vals=='TOP':ds=None
+                else:
+                    def index(k):
+                        k%=1<<it[1]
+                        return k-(1<<it[1]) if k&(1<<(it[1]-1)) else k
+                    ds={(index(k)*sz)%M for k in vals}
+            if ds is None:
+                stride=math.gcd(stride or M,sz,M)
+                deltas={a%stride for a in deltas}
+            else:
+                modulus=stride or M
+                if len(deltas)*len(ds)>4096:
+                    a0=min(deltas);b0=min(ds)
+                    stride=math.gcd(modulus,*(a-a0 for a in deltas),*(b-b0 for b in ds))
+                    deltas={(a0+b0)%stride}
+                else:deltas={(a+b)%modulus for a in deltas for b in ds}
+        # Zero Delta preserves the complete AV, including ROOT provenance.
+        if not stride and deltas=={0}:return {0:base}
+        out={x for x in base if x[0]=='R'}
+        if any(x[0] not in ('P','R') for x in base):out.update({('P','EXT','*'),TOP})
+        for atom in base:
+            if atom[0]!='P':continue
+            _,obj,off=atom;extent=self.object_sizes.get(obj)
+            if obj=='EXT' or off=='*' or isinstance(off,tuple):
+                out.update({('P',obj,'*'),('P','EXT','*'),TOP});continue
+            if stride:
+                # Unknown indices range over all bit patterns, never array bounds.
+                if extent is not None:
+                    for residue in {(off+a)%stride for a in deltas}:
+                        if (extent+stride-1)//stride<=4096:out.update(('P',obj,k) for k in range(residue,extent,stride))
+                        else:out.add(('P',obj,(stride,residue,0,extent)))
+                else:out.add(('P',obj,'*'))
+                out.update({('P','EXT','*'),TOP});continue
+            # Base low bits are unknown. Both carry alternatives are required;
+            # alignment rules out impossible ones. Addition keeps bits above I.
+            text=self.m.globals[obj]['text'] if obj in self.m.globals else ''
+            align=re.search(r'\balign (\d+)',text);A=min(M,int(align[1])) if align else 1
+            low=off%A
+            for delta in deltas:
+                signed=delta-M if delta>=M//2 else delta
+                # A live allocation cannot straddle the full P-bit address
+                # space. Interior I=P addresses therefore need no unknown
+                # base-bit alternative; low-I subranges may still wrap.
+                if I==P and extent is not None and 0<=off+signed<=extent:
+                    out.add(('P',obj,off+signed));continue
+                offsets=[]
+                if low < M-delta:offsets.append(off+delta)
+                if low+((M-1-low)//A)*A >= M-delta:offsets.append(off+delta-M)
+                for k in offsets:
+                    if extent is None or 0<=k<=extent:out.add(('P',obj,k))
+                    if extent is None or k<0 or k>=extent:out.update({('P','EXT','*'),TOP})
         return {0:frozenset(out)}
 
     @staticmethod
@@ -346,6 +390,30 @@ class Flow:
         # Integer value sets used by descriptors are read separately using PT5.
         return self.put(f,ins.res,lanes) | changed
 
+    def host_address(self,f,val,seen=None):
+        """PT2's wrap/unknown-address alternative is not host provenance.
+
+        Keep the actual base origins for §6.4 instead of treating analysis
+        imprecision introduced by modular arithmetic as a host boundary.
+        """
+        seen=set() if seen is None else set(seen)
+        if val in seen:return False
+        seen.add(val)
+        if val.startswith('getelementptr ('):
+            parts=d.split_top(val[len('getelementptr ('):-1])
+            return self.host_address(f,d.typed_val(parts[1]),seen)
+        ins=next((i for i in f.instrs() if i.res==val),None)
+        if ins:
+            body=ins.text.split(' = ',1)[-1]
+            if ins.op=='getelementptr':
+                parts=d.split_top(re.sub(r'^getelementptr\s+(?:(?:inbounds|nusw|nuw)\s+)*','',body))
+                return self.host_address(f,d.typed_val(parts[1]),seen)
+            if ins.op in ('phi','select'):
+                return any(self.host_address(f,v,seen) for v in self.value_operands(ins))
+            if ins.op in ('bitcast','addrspacecast','ptrtoint','inttoptr'):
+                return self.host_address(f,d.typed_val(body[len(ins.op):].rsplit(' to ',1)[0]),seen)
+        return any(o=='EXT' for o,_ in self.ptrs(f,val))
+
     def handle_rules(self):
         # §6.2–§6.4. Provenance is tracked lane by lane; aliases never erase ROOT.
         for f in self.funcs():
@@ -390,7 +458,7 @@ class Flow:
                     ptr=d.store_parts(ins)[1] if op=='store' else d.typed_val(d.split_top(body[4:].strip())[1])
                     if ptr in used:raise d.Reject('BD-E-HANDLE-USE','§6.2 dereference '+ins.text)
                     if op=='store':
-                        if any(o=='EXT' for o,_ in self.ptrs(f,ptr)) or not self.ptrs(f,ptr):raise d.Reject('BD-E-HANDLE-ESCAPE','§6.4 '+ins.text)
+                        if self.host_address(f,ptr) or not self.ptrs(f,ptr):raise d.Reject('BD-E-HANDLE-ESCAPE','§6.4 '+ins.text)
                     continue
                 if op=='ret':
                     # §6.6: a device entry returning its allocated register is a QREG result.

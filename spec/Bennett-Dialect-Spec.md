@@ -1,6 +1,6 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.6
+# Bennett LLVM Dialect — Specification, draft 0.2.7
 
-**Date:** 2026-10-29. **Status:** draft 0.2.6 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
+**Date:** 2026-10-29. **Status:** draft 0.2.7 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
 2026-10-29 at its end), revised after council rounds 1–3. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
@@ -11,9 +11,9 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.6: markers 0.2, handles 0.2.6, regions 0.2.6, oracle-abi 0.2.4, tdl 0.2.4,
-effects 0.2.4, norm 0.2.6, map 0.2.6, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2.6`) is the compatibility unit (§23): drafts are not compatible
+**Versioning.** Dialect 0.2.7: markers 0.2, handles 0.2.7, regions 0.2.7, oracle-abi 0.2.4, tdl 0.2.4,
+effects 0.2.4, norm 0.2.7, map 0.2.7, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+The **full version string** (`0.2.7`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -443,7 +443,7 @@ Its value set VS(v) is computed by §5.3. The plugin compiles one alternative pe
   A run-time value outside the table traps (`T-OP`).
 - `cls`: VS(cls) when finite, else {0} ∪ every index of the class-name table. A value outside
   traps (`T-CLASS`).
-- `n`: VS(n) when finite (constants, `range` attributes and metadata, masks, `select`, `phi`,
+- `n`: VS(n) when finite (constants, bounds established by materialised instructions, masks, `select`, `phi`,
   loads from constant tables, §5.3). A value 0 at run time traps (`T-SIZE`). When VS(n)
   is ⊤, ISA 0.8 has no register of run-time width: the verdict is `blocked:BD-B-ISA4` (BLK-1,
   §25.1) and the blocker report names the value.
@@ -1005,10 +1005,10 @@ AV(operand) lane by lane; ⊤ absorbs.
 | Rule | Instruction or source | Effect |
 |---|---|---|
 | PT1 | `alloca`, global `@G`, allocation-site call | AV ∋ (X, 0) |
-| PT2 | `getelementptr T, ptr p, idx…` | for each (X, o) ∈ AV(p), constant indices add their datalayout byte offsets; a nonconstant index gives the residue class with the element stride s over the underlying allocation X, restricted only by a sound index-value bound. Array dimensions determine stride, never an index bound. Mixed strides use their gcd; stride 1 is `*`. Unknown allocation extent covers all possible offsets of X; `*` stays `*` |
+| PT2 | `getelementptr T, ptr p, idx…` | uses P(a), I(a) and the complete finite-width computation of §16.4, also for constant expressions: sequential indices are sign-extended/truncated to I(a), scaling and offset accumulation wrap modulo 2^I(a), and addition preserves pointer bits above I(a). Zero accumulated offset copies AV(p). For every (X,o), include the image of all represented base addresses and index values (unknown base bits range over patterns consistent with DataLayout and X's alignment), using integer/residue-class/`*` offset unions. Unbounded mathematical addition is not a substitute. If an address may leave X, include (EXT, `*`) and the non-handle top flag; PT6 propagates this unknown-address alternative. The unknown-address alternative does not by itself establish host escape (§6.4): retain the original base provenance for that test; actual host/unknown origins keep their restrictions. ROOT provenance and §6.2 restrictions remain explicit. Array dimensions determine stride, never an index bound |
 | PT3 | `phi`, `select` (value operands), `freeze`, `bitcast`, `addrspacecast` | copies (union) |
 | PT4 | `ptrtoint`, `inttoptr`, `zext`/`sext`/`trunc` of a pointer-width integer to pointer width | copies |
-| PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | shifts each pointer atom's offset by each constant (classes and `*` stay); any other integer operation on a pointer atom gives (X, `*`) for each X; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a `range(lo, hi)` attribute or `!range` metadata (read before N3 removes it) restricts ⊤ to [lo, hi) |
+| PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | shifts each pointer atom's offset by each constant (classes and `*` stay); any other integer operation on a pointer atom gives (X, `*`) for each X; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a range attribute or `!range` metadata removed by N3/N4 is not a bound on materialised execution and MUST NOT restrict any verdict, candidate set, descriptor shape or dispatch domain. Only bounds independently established by materialised instructions restrict the set; otherwise retain ⊤ and apply the ordinary operation rules, including finite masks/remainders |
 | PT6 | `load T, ptr p` | for each (X,o) ∈ AV(p): memory atoms carry their storage interval and representation width; copy a whole-value atom only for that identical interval with a compatible representation. A known immutable byte image decodes exactly the accessed bytes using DataLayout and T (including initialisers). For a partial, spanning or overlapping access whose result bits are not represented exactly, the non-handle value is ⊤, never the union of component INT values. X=EXT gives ⊤. ROOT provenance remains explicit and §6.2's partial-handle restrictions still apply |
 | PT7 | `store v, ptr p` | retain each written interval and representation width; partial writes overlapping a larger load participate in PT6's conservative fallback. AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
 | PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when offsets and len are constants and the atom's entire storage interval [s, s + size(atom)) lies in the copied range, copy its atom and representation width to (Z, o_d + s − o_s). Every partially overlapping atom instead contributes non-handle ⊤ and explicit ROOT provenance to the affected destination interval (unknown offsets/len use `*`); do not copy the whole component INT. Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
@@ -1146,7 +1146,72 @@ INT(3) and, through the store of `%n2`, INT(4), INT(5), … until it exceeds K a
 holds no `ROOT` atom, and the arithmetic on it is legal (audit B-27: 0.1 gave the load offset `*`
 and rejected this program).
 
-## 6. Handles (handles 0.2.6)
+**Finite-width and materialised-domain witnesses (round 6).** Under I=32,
+2^32 truncates to zero, so the table load yields FN(body) and dispatch succeeds.
+For the ranged inputs, N3/N4 erase the annotations: `n & 3` gives {0,1,2,3}
+and `| 1` gives {1,3}. At n=2 width 3 admits both X gates on wire 2 and a clean
+free. No new input precondition or fault is introduced.
+
+```llvm example=pt2-wrap verdict=accept
+target datalayout = "e-p:64:64:64:32"
+@tab = internal constant [1 x ptr] [ptr @body]
+declare void @__bennett_adj(ptr, ptr, ptr)
+define internal void @body(ptr %e) {
+ ret void
+}
+define void @top() {
+ %p = getelementptr i8, ptr @tab, i64 4294967296
+ %f = load ptr, ptr %p, align 8
+ call void @__bennett_adj(ptr %f, ptr null, ptr null)
+ ret void
+}
+```
+
+```text state=pt2-wrap
+{"pointer_offset":0,"candidates":["body"],"calls":1,"trap":0}
+```
+
+```llvm example=pt5-range verdict=accept majors=23
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_gate(i32, ptr, i64)
+declare void @__bennett_qfree(ptr)
+define void @top(i64 range(i64 1, 2) %n) {
+  %m = and i64 %n, 3
+  %w = or i64 %m, 1
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %w)
+  call void @__bennett_gate(i32 1, ptr %h, i64 2)
+  call void @__bennett_gate(i32 1, ptr %h, i64 2)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt5-range
+{"value_set":[1,3],"input":2,"width":3,"live_after":0,"trap":0}
+```
+
+```llvm example=pt5-range-load verdict=accept
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_gate(i32, ptr, i64)
+declare void @__bennett_qfree(ptr)
+define void @top(ptr %p) {
+  %n = load i64, ptr %p, !range !0
+  %m = and i64 %n, 3
+  %w = or i64 %m, 1
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %w)
+  call void @__bennett_gate(i32 1, ptr %h, i64 2)
+  call void @__bennett_gate(i32 1, ptr %h, i64 2)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+!0 = !{i64 1, i64 2}
+```
+
+```text state=pt5-range-load
+{"value_set":[1,3],"input":2,"width":3,"live_after":0,"trap":0}
+```
+
+## 6. Handles (handles 0.2.7)
 
 ### 6.1 Representation
 
@@ -1955,7 +2020,7 @@ define void @top() {
 }
 ```
 
-## 7. Regions (regions 0.2.6)
+## 7. Regions (regions 0.2.7)
 
 ### 7.1 Region-entry markers and region kinds
 
@@ -2018,7 +2083,8 @@ interface hash (ISA §9.2) of `@ref` in its reference object (§16.2): every lpr
 layout leaf of the closure is part of it, and `@ref`, `@L<n>`, `@G<n>` are fixed names, so two
 functions with equal materialised bodies have equal identity whatever their source names. Symbol
 names, linkage, aliases and thunks are non-normative: diagnostics and coverage entries MAY print
-them.
+them. Budget lookup uses the separate provisional `selection_identity` and the
+once-only staging of §9.2, never a fixed point in this final semantic identity.
 
 The **region key** of any region is the SHA-256 of the text printed by the LLVM printer of the
 major in use for a module that contains the materialised region function and its closure, after
@@ -2058,7 +2124,7 @@ Only the rules the north star requires:
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). Standalone adj uses the deterministic
   latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
-  `lowered` entry with source `dialect-0.2.6:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.7:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -3370,7 +3436,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.6.
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.7.
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -3382,15 +3448,37 @@ The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON do
                  "steps"?: D, "heap"?: D, "stack"?: D, "depth"?: D, "sstack"?: D } … ] }
 ```
 
-with D a decimal string. An entry matches a region by its identity (§7.3, the interface hash of
-`@ref` of one shape), its region key (§7.3), or a glob over the source symbol name of the region
-function (`*` and `?`). For each component a region takes, in order of precedence, the first
-entry matching by identity, then by region key, then by symbol (in array order), that names the
-component, else the default. Defaults absent from the table and from
-`--bennett-budget-default=<s,h,st,d,ss>` are 1048576 steps, 1048576 heap bytes, 65536 stack
-cells, depth 256 and `sstack` 65536 (§24). `sstack` is the shadow-stack size in bytes (§17.3),
-part of the heap budget. The driver resolves every symbol entry to identities and records the
-resolved table and its SHA-256 in the build record (§19.9).
+with D a decimal string. Selectors are `identity` (a provisional shape interface hash,
+**selection_identity**, defined below), `region_key` (§7.3), or a source-symbol glob
+(`*` and `?`). Resolution is staged and MUST NOT seek a fixed point:
+
+1. Resolve baseline values per region, shape and component, ignoring identity entries:
+   the first matching region-key entry naming that component, else the first matching
+   symbol entry naming it, else the default. Missing defaults come from
+   `--bennett-budget-default=<s,h,st,d,ss>`, then 1048576 steps, 1048576 heap bytes,
+   65536 stack cells, depth 256 and `sstack` 65536 (§24). `sstack` is shadow-stack
+   bytes (§17.3), part of the heap budget.
+2. Freeze the link's layout capacities (§16.3) using componentwise maxima of all
+   effective defaults, every raw table entry (including unmatched identity entries),
+   and non-sentinel statically supplied budget fields (the all-ones sentinel is
+   a lookup request, not a capacity). Neither lookup nor final-object generation
+   shrinks or recomputes these capacities.
+3. Construct each shape's provisional reference object under that frozen layout,
+   with baseline `sstack` and other baseline wrapper inputs. Its interface hash is
+   `selection_identity`.
+4. For each component overlay the first identity entry naming that component whose
+   selector equals `selection_identity`, else keep its baseline value. Apply this
+   overlay **once only**. Generate the final object using the resolved values; its
+   hash is the semantic identity of §7.3. Never rematch against this final hash.
+
+Explicit marker-record fields and table sentinels retain §9.1/§9.5 precedence:
+only table-sourced components use this lookup; non-sentinel explicit fields stay
+explicit. Provisionally and finally, the same explicit fields are applied after
+table lookup. The resolved table and build record (§19.9) record per shape both
+`selection_identity` and final `identity`, the resolved components, frozen capacities
+and the resolved-table SHA-256. Launch tokens bind the **final** object identity
+and resolved budget tuple, never the provisional hash. A steps-only overlay leaves
+the object hash unchanged but changes its token. Multiple shapes resolve separately.
 
 ```json budget-table=rung4-mini
 {"defaults":{"depth":"64","heap":"0","sstack":"0","stack":"1024","steps":"100000"},"entries":[{"depth":"8","heap":"0","stack":"512","steps":"400","symbol":"q"}],"version":"0.2"}
@@ -3401,6 +3489,123 @@ the region function `q` by symbol; the defaults govern every other region of tha
 largest heap (0) and stack (1024) fix that link's `heap_limit_max` and `S_cells` (§16.3); the
 entry's 400 steps, 512 cells and depth 8 cover the 112 steps, 126 cells and depth 4 that the
 runs of §16.7 need.
+
+**Staged identity witness (`budget-stage`).** At O0 the 24-byte alloca survives
+on LLVM 18 and 23. N24 emits one 24-byte frame; with its 8-byte saved-sp header,
+the linked runtime below needs 32 bytes. With all layout inputs fixed, baseline
+sstack=16 gives H16; an entry keyed by H16 supplies 32 once, producing H32.
+Reapplying that entry to H32 would choose 16 and is forbidden. The linked helper
+fixture below fixes the runtime/link input for this example (one valid frame, no
+other shadow-frame users); it is not a replacement specification of the runtimes.
+The source pair is N24's canonical output; `budget-stage-runtime` appends those
+fixed helper definitions before mapping. The checked state pins both hashes,
+resolved fields, final wrapper and final-object token outcomes. Inputs are x=7.
+
+```llvm normalise-in=n-budget-stage
+define i8 @f(i8 %x) {
+ %p = alloca [24 x i8], align 8
+ store i8 %x, ptr %p, align 1
+ %v = load i8, ptr %p, align 1
+ ret i8 %v
+}
+```
+
+```llvm normalise-out=n-budget-stage
+define i8 @f(i8 %x) {
+  %nz.fp.f = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %p = getelementptr i8, ptr %nz.fp.f, i64 0
+  store i8 %x, ptr %p, align 1
+  %v = load i8, ptr %p, align 1
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.f)
+  ret i8 %v
+}
+
+declare ptr @__bennett_rt_ss_push(i64, i64)
+
+declare void @__bennett_rt_ss_pop(ptr)
+```
+
+```llvm example=budget-stage-runtime verdict=accept mode=validate
+define i8 @f(i8 %x) {
+  %nz.fp.f = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %p = getelementptr i8, ptr %nz.fp.f, i64 0
+  store i8 %x, ptr %p, align 1
+  %v = load i8, ptr %p, align 1
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.f)
+  ret i8 %v
+}
+
+
+@ss_base = internal global ptr null, align 8
+@ss_size = internal global i64 0, align 8
+@ss_sp = internal global i64 0, align 8
+declare ptr @__bennett_nz_alloc(i64)
+declare void @__bennett_nz_fault(i64)
+define void @__bennett_rt_ss_init(i64 %size) {
+entry:
+  %base = load ptr, ptr @ss_base, align 8
+  %unset = icmp eq ptr %base, null
+  br i1 %unset, label %init, label %done
+init:
+  %p = call ptr @__bennett_nz_alloc(i64 %size)
+  store ptr %p, ptr @ss_base, align 8
+  store i64 %size, ptr @ss_size, align 8
+  store i64 0, ptr @ss_sp, align 8
+  br label %done
+done:
+  ret void
+}
+define ptr @__bennett_rt_ss_push(i64 %n, i64 %a) {
+entry:
+  %sp = load i64, ptr @ss_sp, align 8
+  %meta = add i64 %sp, 8
+  %am1 = sub i64 %a, 1
+  %pad = add i64 %meta, %am1
+  %neg = sub i64 0, %a
+  %start = and i64 %pad, %neg
+  %end = add i64 %start, %n
+  %size = load i64, ptr @ss_size, align 8
+  %too_big = icmp ugt i64 %end, %size
+  br i1 %too_big, label %bad, label %ok
+bad:
+  call void @__bennett_nz_fault(i64 2)
+  unreachable
+ok:
+  %base = load ptr, ptr @ss_base, align 8
+  %prev = sub i64 %start, 8
+  %slot = getelementptr i8, ptr %base, i64 %prev
+  store i64 %sp, ptr %slot, align 8
+  store i64 %end, ptr @ss_sp, align 8
+  %p = getelementptr i8, ptr %base, i64 %start
+  br label %zero
+zero:
+  %i = phi i64 [ 0, %ok ], [ %next, %byte ]
+  %done = icmp eq i64 %i, %n
+  br i1 %done, label %ret, label %byte
+byte:
+  %b = getelementptr i8, ptr %p, i64 %i
+  store i8 0, ptr %b, align 1
+  %next = add i64 %i, 1
+  br label %zero
+ret:
+  ret ptr %p
+}
+define void @__bennett_rt_ss_pop(ptr %p) {
+entry:
+  %slot = getelementptr i8, ptr %p, i64 -8
+  %prev = load i64, ptr %slot, align 8
+  store i64 %prev, ptr @ss_sp, align 8
+  ret void
+}
+```
+
+```json budget-table=budget-stage
+{"defaults":{"depth":"16","heap":"64","sstack":"16","stack":"512","steps":"10000"},"entries":[{"identity":"5abf922254697a7876cb137143c5142a7a5dd29ef77cb0183704044a09b9ab5d","sstack":"32"}],"version":"0.2"}
+```
+
+```text state=budget-stage
+{"baseline_run":{"code":2,"payload":0,"steps":43},"capacities":{"depth":16,"heap":64,"sstack":32,"stack":512,"steps":10000},"final_sstack":32,"identity":"d32a6a29f9dc1a2fc8baa1f2e07f782e4b5ceed981ca5f82fc780ef4c1b36c82","resolved":{"depth":16,"heap":64,"sstack":32,"stack":512,"steps":10000},"run":{"code":0,"payload":7,"steps":316},"selection_identity":"5abf922254697a7876cb137143c5142a7a5dd29ef77cb0183704044a09b9ab5d","steps_only_run":{"code":1,"payload":0,"steps":0}}
+```
 
 ### 9.3 What each budget governs
 
@@ -4001,7 +4206,7 @@ hostcall: service=bennett.dev.console.write payload=6f6b0a reply=empty
 
 The ENTROPY-bound oracle of rung 8 is §16.8.
 
-## 12. Materialised normalisation (norm 0.2.6)
+## 12. Materialised normalisation (norm 0.2.7)
 
 ### 12.1 Scope, order and naming
 
@@ -4036,14 +4241,14 @@ rules are replaced (outline §12.2); they are kept as anchors.
 | N0 | the intrinsic families that LLVM defines by its own lowering passes: `llvm.coro.*`; `llvm.matrix.*`; `llvm.type.test`, `llvm.public.type.test`, `llvm.type.checked.load`, `llvm.type.checked.load.relative`, `llvm.icall.branch.funnel`; `llvm.instrprof.*`; `llvm.alloc.token.id`; `llvm.experimental.guard`, `llvm.experimental.widenable.condition` | the normaliser runs, only when the module contains one of them, the passes of the major in use, in this order: `coro-early`, `cgscc(coro-split)`, `coro-cleanup`; `lower-matrix-intrinsics`; `lowertypetests`; `instrprof`; `alloc-token`; `lower-guard-intrinsic`; `lower-widenable-condition` (which gives `true`). Their output is then normalised by N1–N35 |
 | N1 | instruction flags `nsw`, `nuw`, `exact`, `inbounds`, `nusw`, `nneg`, `disjoint`, `samesign`, `inrange` (and `inrange(...)`) | removed: wrapping, inexact, out-of-bounds address arithmetic and the unflagged operation are defined |
 | N2 | fast-math flags `nnan`, `ninf`, `nsz`, `arcp`, `contract`, `afn`, `reassoc`, `fast` | removed |
-| N3 | instruction metadata other than `!dbg` (`!range`, `!nonnull`, `!noundef`, `!align`, `!dereferenceable`, `!dereferenceable_or_null`, `!tbaa`, `!tbaa.struct`, `!alias.scope`, `!noalias`, `!invariant.load`, `!invariant.group`, `!llvm.loop`, `!nontemporal`, `!prof`, `!alloc_token`, …) | removed (after §5 has read `!range`, PT5) |
+| N3 | instruction metadata other than `!dbg` (`!range`, `!nonnull`, `!noundef`, `!align`, `!dereferenceable`, `!dereferenceable_or_null`, `!tbaa`, `!tbaa.struct`, `!alias.scope`, `!noalias`, `!invariant.load`, `!invariant.group`, `!llvm.loop`, `!nontemporal`, `!prof`, `!alloc_token`, …) | removed; N3/N4-removed range information is ignored when computing §5 reference domains |
 | N4 | attributes on device function definitions, their parameters and returns, and on every call site in a device function: `noundef`, `nonnull`, `range(...)`, `align` (except together with `byval`, `byref`, `sret`, `inalloca`, `preallocated`), `dereferenceable(...)`, `dereferenceable_or_null(...)`, `nofpclass(...)`, `noalias`, `nocapture`, `captures(...)`, parameter `readnone`/`readonly`/`writeonly`, `returned`, `writable`, `dead_on_unwind`, `initializes(...)`, `allocalign`, `allocptr`; function attributes `memory(...)`, `readnone`, `readonly`, `writeonly`, `argmemonly`, `inaccessiblememonly`, `inaccessiblemem_or_argmemonly`, `willreturn`, `mustprogress`, `nosync`, `nofree`, `norecurse`, `speculatable`, `personality` (after N28) | removed (attribute groups are rewritten; a group shared with an H function is first duplicated) |
 | N5 | calls with no semantic effect: `llvm.assume`, `llvm.sideeffect`, `llvm.donothing`, `llvm.pseudoprobe`, `llvm.fake.use`, `llvm.dbg.*`, `llvm.experimental.noalias.scope.decl`, `llvm.codeview.annotation`, `llvm.var.annotation`, `llvm.reloc.none`, `llvm.prefetch`, `llvm.pcmarker`, `llvm.clear_cache`, `llvm.experimental.convergence.*`, `llvm.seh.*`, `llvm.xray.*`, `llvm.experimental.stackmap`, `llvm.eh.unwind.init`, `llvm.asan.check.memaccess`, `llvm.hwasan.check.memaccess*` | deleted (a token result is never used after deletion of its users) |
 | N5 | calls that return an operand: `llvm.expect`, `llvm.expect.with.probability`, `llvm.annotation`, `llvm.ptr.annotation`, `llvm.launder.invariant.group`, `llvm.strip.invariant.group`, `llvm.ssa.copy`, `llvm.arithmetic.fence`, `llvm.threadlocal.address`, `llvm.protected.field.ptr`, `llvm.ptrauth.sign`, `llvm.ptrauth.auth`, `llvm.ptrauth.resign`, `llvm.ptrauth.auth.with.pc.and.resign`, `llvm.ptrauth.strip` | every use replaced by operand 0; deleted. *(non-normative)* Pointer authentication is a target feature with no device counterpart; the identity is one deterministic choice, made identically in both builds |
 | N6 | `llvm.lifetime.start`, `llvm.lifetime.end`, `llvm.invariant.start`, `llvm.invariant.end` | deleted (a frame is live for its whole activation, §17.3) |
 | N7 | `undef` and `poison` constants: whole operands, vector lanes, aggregate elements, `shufflevector` mask elements, global initialisers | the zero of the type: `0`, `+0.0`, `null`, `zeroinitializer` for a wholly undefined vector or aggregate; mask element `0` |
 | N8 | `%x = freeze T v` | deleted; every use of `%x` replaced by v |
-| N9 | `atomic` and `volatile` on loads and stores; `fence`; `atomicrmw`; `cmpxchg` | plain load/store; fence deleted; `atomicrmw op ptr p, T v` → `%nz.l.r = load T, ptr p`, `%nz.v.r = <op> T %nz.l.r, v` (for `xchg`: v; `min`/`max`/`umin`/`umax`: `icmp` + `select` named `%nz.k.r`, `%nz.v.r`; FP ops: their N32 form; `uinc_wrap`: k=`icmp uge old,v`, i=`add old,1`, new=`select k,0,i`; `udec_wrap`: k=`icmp eq old,0`, g=`icmp ugt old,v`, w=`or k,g`, d=`sub old,1`, new=`select w,v,d`; `usub_cond`/`usub_sat`: k=`icmp uge old,v`, s=`sub old,v`, new=`select k,s,old` / `select k,s,0`. Names are `%nz.{k,i,v}.r`, `%nz.{k,g,w,d,v}.r` and `%nz.{k,s,v}.r` respectively, all arithmetic at T without overflow flags), `store T %nz.v.r, ptr p`, uses of `%r` → `%nz.l.r`; `cmpxchg ptr p, T c, T n` → `%nz.l.r = load`, `%nz.e.r = icmp eq T %nz.l.r, c`, `%nz.s.r = select i1 %nz.e.r, T n, T %nz.l.r`, `store T %nz.s.r, ptr p`, `%nz.a.r = insertvalue { T, i1 } zeroinitializer, T %nz.l.r, 0`, `%r = insertvalue { T, i1 } %nz.a.r, i1 %nz.e.r, 1` (single-thread assumption, recorded in the certificate, §24 D24). Volatile accesses in platform-profile code are first routed by N35 (§20.3) |
+| N9 | `atomic` and `volatile` on loads and stores; `fence`; `atomicrmw`; `cmpxchg` | plain load/store; fence deleted; `atomicrmw op ptr p, T v` → `%nz.l.r = load T, ptr p`, `%nz.v.r = <op> T %nz.l.r, v` for `add`/`sub`/`and`/`or`/`xor` (for `xchg`: v; `min`/`max`/`umin`/`umax`: `icmp` + `select` named `%nz.k.r`, `%nz.v.r`; FP `fadd`/`fsub`: ordinary `fadd`/`fsub` then N32; `fmax`/`fmin`, `fmaximum`/`fminimum`, `fmaximumnum`/`fminimumnum`: respectively `llvm.maxnum`/`llvm.minnum`, `llvm.maximum`/`llvm.minimum`, `llvm.maximumnum`/`llvm.minimumnum` then N32; `nand`: `%nz.a.r = and T %nz.l.r, v`, then `%nz.v.r = xor T %nz.a.r, -1` (these two logical instructions, in this order, without flags); `uinc_wrap`: k=`icmp uge old,v`, i=`add old,1`, new=`select k,0,i`; `udec_wrap`: k=`icmp eq old,0`, g=`icmp ugt old,v`, w=`or k,g`, d=`sub old,1`, new=`select w,v,d`; `usub_cond`/`usub_sat`: k=`icmp uge old,v`, s=`sub old,v`, new=`select k,s,old` / `select k,s,0`. Names are `%nz.{k,i,v}.r`, `%nz.{k,g,w,d,v}.r` and `%nz.{k,s,v}.r` respectively, all arithmetic at T without overflow flags), `store T %nz.v.r, ptr p`, uses of `%r` → `%nz.l.r`; `cmpxchg ptr p, T c, T n` → `%nz.l.r = load`, `%nz.e.r = icmp eq T %nz.l.r, c`, `%nz.s.r = select i1 %nz.e.r, T n, T %nz.l.r`, `store T %nz.s.r, ptr p`, `%nz.a.r = insertvalue { T, i1 } zeroinitializer, T %nz.l.r, 0`, `%r = insertvalue { T, i1 } %nz.a.r, i1 %nz.e.r, 1` (single-thread assumption, recorded in the certificate, §24 D24). Volatile accesses in platform-profile code are first routed by N35 (§20.3) |
 | N10 | `llvm.is.constant.*` | `false` |
 | N10 | `llvm.objectsize.*(p, min, nullunknown, dynamic)` | `-1` (all ones) if `min` is `false`, else `0` |
 | N10 | `llvm.allow.runtime.check`, `llvm.allow.ubsan.check` | `true` (checks stay; a failing check is a fault) |
@@ -4319,6 +4524,119 @@ declare void @__bennett_rt_poll()
 declare i8 @__bennett_rt_mmio_load_i8(ptr)
 ```
 
+
+**N9 NAND and operation sweep.** The ordinary-instruction template applies only to
+add/sub/and/or/xor; all other LLVM 18/23 atomicrmw operations are the explicit
+exceptions above (including the six FP min/max spellings). For old=0xf0 and
+v=0xcc, the canonical two logical rows produce 0xc0 then 0x3f. The old-result
+substitution still returns 240. Both source and output execute on LLVM 18/23.
+
+```llvm normalise-in=n-atomic-nand
+@cell = internal global i8 -16, align 1
+define i8 @f() {
+  %old = atomicrmw nand ptr @cell, i8 -52 seq_cst, align 1
+  %new = load i8, ptr @cell, align 1
+  ret i8 %new
+}
+define i8 @old(ptr %p) {
+  %old = atomicrmw nand ptr %p, i8 -52 seq_cst, align 1
+  ret i8 %old
+}
+```
+
+```llvm normalise-out=n-atomic-nand
+@cell = internal global i8 -16, align 1
+define i8 @f() {
+  %nz.l.old = load i8, ptr @cell, align 1
+  %nz.a.old = and i8 %nz.l.old, -52
+  %nz.v.old = xor i8 %nz.a.old, -1
+  store i8 %nz.v.old, ptr @cell, align 1
+  %new = load i8, ptr @cell, align 1
+  ret i8 %new
+}
+define i8 @old(ptr %p) {
+  %nz.l.old = load i8, ptr %p, align 1
+  %nz.a.old = and i8 %nz.l.old, -52
+  %nz.v.old = xor i8 %nz.a.old, -1
+  store i8 %nz.v.old, ptr %p, align 1
+  ret i8 %nz.l.old
+}
+```
+
+```text native=n-atomic-nand
+f()=63; old(240)=[240,63]; code=0
+```
+
+```llvm lift=atomic-nand region=@f desc=";tgt=8"
+@cell = internal global i8 -16, align 1
+define i8 @f() {
+  %nz.l.old = load i8, ptr @cell, align 1
+  %nz.a.old = and i8 %nz.l.old, -52
+  %nz.v.old = xor i8 %nz.a.old, -1
+  store i8 %nz.v.old, ptr @cell, align 1
+  %new = load i8, ptr @cell, align 1
+  ret i8 %new
+}
+define i8 @old(ptr %p) {
+  %nz.l.old = load i8, ptr %p, align 1
+  %nz.a.old = and i8 %nz.l.old, -52
+  %nz.v.old = xor i8 %nz.a.old, -1
+  store i8 %nz.v.old, ptr %p, align 1
+  ret i8 %nz.l.old
+}
+```
+
+```text linkmap=atomic-nand
+null_size=4096 heap_base=8192 heap_limit_max=0 budget-table: stack max 32, heap max 0
+global @cell -> G0 base=4096 size=1
+```
+
+```isa object=atomic-nand
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"c55111b84ee5e99801d9947547fcec2dbaf65dd0d76d4f8d61eb22f501c6da85","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"37da3ed6706f5e352993eb1a339434688c1a543df28b33b85e1fc411e789058f","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":8,"tier":"q"}},"2":{"interface_hash":"304a4b79978c26ac786890a8596cb309efa7eaa4fd35475b1f585bb7242b6223","kind":"data","name":"G0","signature":{"abi":"0.8","kind":"data","size":1,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) () ()
+regs { r:reg[8] }
+^entry():
+r = lift.call @L1 ()
+lift.retval r
+lproc @L1 () (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[8], c1:reg[8], v1:reg[8], c2:reg[8], v2:reg[8], c3:reg[64], c4:reg[64], v3:reg[8] }
+^b0():
+c0 = lift.addr @G0
+lift.boundscheck c0 1
+v0 = lift.load.i8 c0
+c1 = lift.const.i8 204
+v1 = lift.and v0 c1
+c2 = lift.const.i8 255
+v2 = lift.xor v1 c2
+c3 = lift.addr @G0
+lift.boundscheck c3 1
+lift.store.i8 c3 v2
+c4 = lift.addr @G0
+lift.boundscheck c4 1
+v3 = lift.load.i8 c4
+lift.ret v3
+
+section data
+G0 f0
+
+section layout
+{"A_tab":0,"H":13,"S_cells":5,"globals":{"G0":{"base":4096,"image":"G0","size":1}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=atomic-nand
+ref c55111b84ee5e99801d9947547fcec2dbaf65dd0d76d4f8d61eb22f501c6da85
+L1 37da3ed6706f5e352993eb1a339434688c1a543df28b33b85e1fc411e789058f
+G0 304a4b79978c26ac786890a8596cb309efa7eaa4fd35475b1f585bb7242b6223
+```
+
+```text run=atomic-nand
+input= budget=100,0,32,8 -> code=0 payload=63 steps=16
+```
 
 **N9 wrap/subtract forms.** Compare before the wrapping arithmetic; all return
 the old value. At limit 10, increment maps 9→10 and 10/11→0; decrement maps
@@ -6874,13 +7192,13 @@ define internal i64 @w(i64 %fd, i64 %a) {
 declare i64 @__bennett_rt_syscall(i64, i64, i64, i64, i64, i64, i64)
 ```
 
-## 16. The lifting map (map 0.2.6)
+## 16. The lifting map (map 0.2.7)
 
 The lifting map turns a materialised region function, a binding shape (§8.4) and the link
 layout (§19.5) into the **reference object** of that shape: the ISA object whose oracle `@ref`
 defines F_B and the budget unit by the reference interpreter (ISA §4.2 "Reference body and
 binding", §14.1). It is a function of its inputs alone, so two plugins on the same LLVM version
-and pipeline produce byte-identical reference objects. Its version (`map 0.2.6`) is the
+and pipeline produce byte-identical reference objects. Its version (`map 0.2.7`) is the
 certificate's `dialect_mapping_version` (ISA §12.3). The plugin's device objects (§17.4) are
 plugin-defined; they MUST be extensionally equal to the reference objects (ISA §5.7, T6; §18.7).
 
@@ -6928,7 +7246,8 @@ Its body is one block `^entry():` with, in order:
    `lift.store.i64 d1 d0`, `d2 = lift.const.i64 <2^A>`, `d3 = lift.addr @G(size)`,
    `lift.boundscheck d3 8`, `lift.store.i64 d3 d2`; the position starts at its data image 0; the
    other models likewise in model order); the shadow-stack setup `t = lift.call
-   @L(__bennett_rt_ss_init) (c)` with c = `lift.const.i64 <sstack>` when the closure contains a
+   @L(__bennett_rt_ss_init) (c)` with c = `lift.const.i64 <sstack>` (baseline for the provisional object,
+   resolved for the final object under §9.2; no rematching) when the closure contains a
    call of `__bennett_rt_ss_push` (§17.3).
 2. **Arguments**, for each parameter i in order: `IN` with n = W: the pseudo-location `x<k>`
    itself; `IN` with n < W: `w<i> = lift.zext.iW x<k>` (`lift.sext` for SEXT); `ARG`: `a<k>`
@@ -7002,7 +7321,9 @@ is the smallest value with 2^A_tab ≥ P + `heap_limit_max`, P the link's number
 the largest number of interface regions of any oracle, so that allocation-table overflow never
 precedes heap exhaustion (both fault with code 2, ISA §4.2, and a reference object with fewer
 pre-entries than the device object faults at the same allocation); S_cells is the smallest value
-with 2^S_cells ≥ the largest `stack` of the budget table.
+with 2^S_cells ≥ the frozen `stack` capacity of §9.2. These link capacities are
+frozen before provisional identity construction and include unmatched raw entries
+and static non-sentinel record fields; identity overlays never recompute them.
 
 ### 16.4 Rows
 
@@ -10020,7 +10341,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.6 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.7 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -10136,16 +10457,17 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.6;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.7;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
-pipeline, normaliser_version: "0.2.6"}` and `bindings.dialect_mapping_version = "0.2.6"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.6:<rule id>` (e.g. `dialect-0.2.6:N33`); the
+pipeline, normaliser_version: "0.2.7"}` and `bindings.dialect_mapping_version = "0.2.7"`; the coverage
+report (ISA §13), whose `source` field is `dialect-0.2.7:<rule id>` (e.g. `dialect-0.2.7:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
-budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
+budget table (resolved, including each shape's selection_identity, final semantic identity,
+resolved components and frozen layout capacities under §9.2) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
 hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
 `producer.version` (`<driver version>+build.<hex>`) until the ISA certificate has a field for it
 (§25.2).
@@ -10156,7 +10478,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.6"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.7"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`):
 
@@ -10558,11 +10880,11 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.6`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.7`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
 - Round-4 semantic corrections revise `norm`, `handles`, `regions` and `map` to
-  `0.2.6`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
+  `0.2.7`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
   asm and corpus remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
   again; unchanged ISA-0.8 interface signatures retain their hashes. The map version
   is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
@@ -10751,6 +11073,9 @@ compute expected artefacts only (P-3).
 | `n-wide-sub` (+ `native=`) | N22 subtraction borrows | parse, normalise, native | LLVM; clang 18/23 |
 | `n-fpconv-wide`, `n-wide-intrinsics` (+ `native=`) | N22 repeated after N27/N32; §13.1 wide integer sides | parse, normalise, native | LLVM; clang 18/23 source/output |
 | `n-atomic-wrap`, `n-atomic-usub` (+ `native=`) | N9 wrap/conditional/saturating arithmetic | parse, normalise, native | LLVM; clang source/output |
+| `n-atomic-nand`, `atomic-nand` | N9, §16.4 | parse, normalise, native, map, check, hash, run-oracle | clang 18/23; Rust interpreter (16 rows) |
+| `n-budget-stage`, `budget-stage-runtime`, `budget-stage` | N24, §9.2 | parse, normalise, recognise, state | LLVM; Rust hashes, wrappers and token executions |
+| `pt2-wrap`, `pt5-range`, `pt5-range-load` | PT2, PT5, N3, N4 | parse, recognise, state | LLVM O0/instcombine; clang 18/23 materialised execution |
 | `n-vector`, `n-wideint`, `n-shadow-stack`, `n-memintrinsics`, `n-intrinsics`, `n-atomic` with `native=` | N9, N21, N22, N24, N26, N27 | parse, normalise, native | LLVM; Python; clang + seeds |
 | `residual-nsw`, `residual-clean` | §12.4 V1 | validate | Python |
 | `n-fmuladd` (+ `native=`), `n-fp80`, `n-libm` | N16, N32, N33, §13 | parse, normalise, native | LLVM; Python; clang + seeds |

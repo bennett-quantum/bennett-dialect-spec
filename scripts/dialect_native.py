@@ -30,7 +30,7 @@ def values(text):
 def cases(ident,text):
     """Return C driver, independent expected stdout records, module variants."""
     out=[];expected=[];decl='';variants=('input','output')
-    if ident in {'n-fpconv-wide','n-wide-intrinsics','n-atomic-wrap','n-atomic-usub','pointer-as270'} and not text.strip().endswith('code=0'):raise d.Fail('native witness requires code=0')
+    if ident in {'n-fpconv-wide','n-wide-intrinsics','n-atomic-wrap','n-atomic-usub','n-atomic-nand','pointer-as270'} and not text.strip().endswith('code=0'):raise d.Fail('native witness requires code=0')
     if ident in ('n-bitcast-lanes','n-bitcast-scalar','n-vp-merge','n-vp-select','n-vp-product','n-defined-zero'):
         if ident=='n-bitcast-lanes':
             decl='extern uint16_t f(const void *);\n'
@@ -70,6 +70,12 @@ def cases(ident,text):
         m=re.search(r'ctpop\((\[[^]]+\])\)=(\[[^]]+\])',text)
         out.append('{uint64_t a[3]={'+','.join(str(x)+'ULL' for x in values(m[1]))+'},r[3];count192(a,r);printf("[%llu,%llu,%llu]\\n",(unsigned long long)r[0],(unsigned long long)r[1],(unsigned long long)r[2]);}')
         expected.append(values(m[2]))
+    elif ident=='n-atomic-nand':
+        m=re.fullmatch(r'f\(\)=(\d+); old\((\d+)\)=\[(\d+),(\d+)\]; code=0',text.strip())
+        if not m:raise d.Fail('NAND vector syntax')
+        decl='extern uint8_t f(void);extern uint8_t old(uint8_t*);\n'
+        out=[f'printf("%u\\n",f());uint8_t p={m[2]},r=old(&p);printf("[%u,%u]\\n",r,p);']
+        expected=[int(m[1]),[int(m[3]),int(m[4])]]
     elif ident in ('n-atomic-wrap','n-atomic-usub'):
         decl='extern uint32_t f0(uint32_t*,uint32_t);extern uint32_t f1(uint32_t*,uint32_t);\n'
         for k,old,v,ret,new in re.findall(r'f([01])\((\d+),(\d+)\)=\[(\d+),(\d+)\]',text):
