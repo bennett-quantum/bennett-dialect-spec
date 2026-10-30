@@ -36,12 +36,19 @@ class Flow:
         if val.startswith('%'): return self.values.get((f.name,val), {})
         if val.startswith('getelementptr (') and val.endswith(')'):
             return self.gep(f,'getelementptr '+val[len('getelementptr ('):-1])
+        ce=re.match(r'(ptrtoint|inttoptr|zext|sext|trunc) \((.*)\)$',val)
+        if ce:return self.convert(f,ce[1],ce[2])
+        ce=re.match(r'(add|sub) \((.*)\)$',val)
+        if ce:
+            a,b=d.split_top(ce[2]);t=d.parse_type(a)[0]
+            return {0:self.pointer_arithmetic(f,ce[1],t[1],d.typed_val(a),d.typed_val(b))}
         if val.startswith('@'):
+
             name = val[1:]
             if name in self.m.funcs or name in self.m.aliases: return {0:frozenset({('F',name)})}
             if name in self.m.globals: return {0:frozenset({('P',name,0)})}
         if val in ('null','zeroinitializer','undef','poison'): return {k:frozenset({('I',0)}) for k in range(ty[1] if ty and ty[0] in ('arr','vec') else 1)}
-        if re.fullmatch(r'-?\d+',val): return {0:frozenset({('I',int(val)%(1<<64))})}
+        if re.fullmatch(r'-?\d+',val): return {0:frozenset({('I',int(val) if int(val)>=0 else int(val)%(1<<(ty[1] if ty and ty[0]=='int' else 64)))})}
         if val in ('true','false'): return {0:frozenset({('I',int(val=='true'))})}
         if val.startswith(('<','{','[')) and ty and ty[0] in ('vec','arr','struct'):
             return {k:union(*self.av(f,d.typed_val(x)).values()) for k,x in enumerate(d.split_top(val[1:-1]))}
@@ -174,6 +181,59 @@ class Flow:
                     if extent is None or k<0 or k>=extent:out.update({('P','EXT','*'),TOP})
         return {0:frozenset(out)}
 
+    def modular_pointer(self,atoms,width):
+        """Retain modular displacement witnesses as well as unknown images.
+
+        A P offset is relative to its allocation's base bits at this width;
+        outside-allocation displacements also have EXT/TOP, never a false empty
+        load. Wildcards include every displacement, preserving provenance.
+        """
+        out={a for a in atoms if a[0]!='P'}
+        for _,obj,off in (a for a in atoms if a[0]=='P'):
+            if isinstance(off,int):
+                off%=1<<width
+                # Reassociate the negative spelling with the same allocation.
+                extent=self.object_sizes.get(obj)
+                if extent is not None and off>=1<<(width-1):off-=1<<width
+                out.add(('P',obj,off))
+                if extent is None or not 0<=off<=extent:out.update({('P','EXT','*'),TOP})
+            else:out.update({('P',obj,'*'),('P','EXT','*'),TOP})
+        return frozenset(out)
+
+    def pointer_arithmetic(self,f,op,width,left,right):
+        a=self.atoms(f,left);b=self.atoms(f,right)
+        if op=='add' and not any(x[0]=='P' for x in a):a,b=b,a
+        rhs={x[1] for x in b if x[0]=='I'}
+        if rhs and len(rhs)==len(b):
+            moved={('P',x[1],self.shift(x[2],(-v if op=='sub' else v))) for x in a if x[0]=='P' for v in rhs}
+            return self.modular_pointer(moved|{x for x in a if x[0] in ('R','C','T')},width)
+        return union({('P',x[1],'*') for x in a|b if x[0]=='P'},
+                     {x for x in a|b if x[0] in ('R','C')},{('P','EXT','*'),TOP})
+
+    def convert(self,f,op,body):
+        src,dst=body.rsplit(' to ',1);src=d.strip_flags(src);st,j=d.parse_type(src);dt=d.parse_type(dst)[0]
+        sw=self.pointer_widths(st[1] if len(st)>1 else 0)[0] if st[0]=='ptr' else st[1]
+        dw=self.pointer_widths(dt[1] if len(dt)>1 else 0)[0] if dt[0]=='ptr' else dt[1]
+        lanes=self.av(f,src[j:].strip(),st);out={}
+        for k,ats in lanes.items():
+            vals=set()
+            for x in ats:
+                if x[0]=='I':
+                    v=x[1]%(1<<sw)
+                    if op=='sext' and v&(1<<(sw-1)):v-=1<<sw
+                    vals.add(('I',v%(1<<dw)))
+                else:vals.add(x)
+            if dw<sw:
+                vals=set(self.modular_pointer(vals,dw))
+                # Narrower-than-origin pointers cannot retain an exact address.
+                if dw<self.pw and any(x[0]=='P' for x in ats):
+                    vals.update({('P',x[1],'*') for x in ats if x[0]=='P'}|{('P','EXT','*'),TOP})
+            elif dw>sw and op in ('sext','zext') and any(x[0]=='P' for x in ats):
+                vals.update({('P',x[1],'*') for x in ats if x[0]=='P'}|{('P','EXT','*'),TOP})
+            if op=='inttoptr' and any(x[0]=='I' for x in vals):vals.add(TOP)
+            out[k]=frozenset(vals)
+        return out
+
     @staticmethod
     def shift(off,delta):
         if off=='*': return off
@@ -303,8 +363,9 @@ class Flow:
             for v in self.value_operands(ins):
                 for k,ats in self.av(f,v).items():lanes[k]=union(lanes.get(k,()),ats)
         elif op in ('ptrtoint','inttoptr','bitcast','addrspacecast','freeze','zext','sext','trunc'):
-            src=body[len(op):].rsplit(' to ',1)[0];lanes=self.av(f,d.typed_val(d.strip_flags(src.strip())))
-            if op=='inttoptr' and any(a[0]=='I' for a in union(*lanes.values())):lanes={0:union(*lanes.values(),{TOP})}
+            if op in ('ptrtoint','inttoptr','zext','sext','trunc'):lanes=self.convert(f,op,body[len(op):].strip())
+            else:
+                src=body[len(op):].rsplit(' to ',1)[0];lanes=self.av(f,d.typed_val(d.strip_flags(src.strip())))
         elif op in ('insertvalue','insertelement'):
             parts=d.split_top(body[len(op):].strip());lanes=dict(self.av(f,d.typed_val(parts[0])))
             idx=d.typed_val(parts[2]) if op=='insertelement' else parts[2]
@@ -330,7 +391,7 @@ class Flow:
         elif op=='load':
             parts=d.split_top(re.sub(r'^load\s+(?:(?:atomic|volatile)\s+)*','',body));ty=d.parse_type(parts[0])[0]
             ptrs=self.ptrs(f,d.typed_val(parts[1]));n=ty[1] if ty[0] in ('vec','arr') else 1;et=ty[2] if n>1 else ty;sz=d.tsize(et,self.pw)
-            for k in range(n):lanes[k]=self.getmem({(o,self.shift(off,k*sz)) for o,off in ptrs},sz,self.type_width(et))
+            for k in range(n):lanes[k]=union(self.getmem({(o,self.shift(off,k*sz)) for o,off in ptrs},sz,self.type_width(et)),{TOP} if TOP in self.atoms(f,d.typed_val(parts[1])) else {})
         elif op in ('call','invoke'):
             if ' asm ' in body:return False
             c=d.parse_call(ins);cal=c['callee'];nm=cal[11:] if cal.startswith('@__bennett_') else None
@@ -385,8 +446,9 @@ class Flow:
             if pats:
                 rhs=self.ints(f,right)
                 if op in ('add','sub') and rhs!='TOP' and self.ptrs(f,left):
-                    lanes[0]=union(lanes[0],{('P',o,self.shift(off,(-1 if op=='sub' else 1)*v)) for o,off in self.ptrs(f,left) for v in rhs})
-                else:lanes[0]=union(lanes[0],{('P',o,'*') for _,o,_ in pats})
+                    lanes[0]=self.pointer_arithmetic(f,op,ty[1],left,right)
+                elif op=='add' and self.ptrs(f,right):lanes[0]=self.pointer_arithmetic(f,op,ty[1],left,right)
+                else:lanes[0]=union({('P',o,'*') for _,o,_ in pats},{('P','EXT','*'),TOP},{x for x in self.atoms(f,left)|self.atoms(f,right) if x[0] in ('R','C')})
         # Integer value sets used by descriptors are read separately using PT5.
         return self.put(f,ins.res,lanes) | changed
 

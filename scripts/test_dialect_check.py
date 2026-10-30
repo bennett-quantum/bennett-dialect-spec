@@ -16,6 +16,32 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round7_pointer_execution(self):
+        import json
+        from dialect_round7 import check_state, STATES
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            for name in STATES:
+                b=self.block('state',name);check_state(runner,b)
+                wrong=json.loads(b['body']);wrong['calls']+=1
+                with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
+
+    def test_round7_pointer_arithmetic(self):
+        src=self.block('example','pt5-int-wrap')['body']
+        for wide in (False,True):
+            probe=src
+            if wide:
+                probe=probe.replace('ptr @tab to i64','ptr @tab to i128').replace('%b = add i64 %a, -9223372036854775808','%b = add i128 %a, 18446744073709551616').replace(' %c = add i64 %b, -9223372036854775808\n','').replace('inttoptr i64 %c','inttoptr i128 %b')
+            verdict,a=v.recognise(d.with_decls(probe));f=a.m.funcs['top']
+            self.assertEqual(verdict,'accept')
+            self.assertIn(('tab',0),a.ptrs(f,'%p'))
+            self.assertIn('body',a.first_candidates())
+        # TOP on an address must survive a load even without an explicit EXT.
+        a.values[('top','%p')]={0:frozenset({('P','tab',100),('T',)})}
+        load=next(i for i in f.instrs() if i.res=='%f')
+        a.values.pop(('top','%f'));a.flow_step(f,load)
+        self.assertIn(('T',),a.atoms(f,'%f'))
+
     def test_round6_atomic_sweep(self):
         # Installed LLVM operation enumerations: all integer forms and all FP
         # min/max variants (23 adds four spellings). No ordinary NAND exists.
@@ -506,13 +532,13 @@ entry:
             with self.subTest(format=ty):
                 ir=f'define {ty} @f({ty} %x) {{\n %n = fneg {ty} %x\n ret {ty} %n\n}}\n'
                 self.assertEqual(v.validate(ir),'accept')
-        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.7"}\n'
+        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.8"}\n'
         self.assertEqual(v.recognise(good)[0],'accept')
         for stale in ('0.2.6','0.2.5','0.2.4','0.2.3','0.2.1'):
-            self.assertEqual(v.recognise(good.replace('0.2.7',stale))[0],'reject:BD-E-VERSION')
+            self.assertEqual(v.recognise(good.replace('0.2.8',stale))[0],'reject:BD-E-VERSION')
         import tomllib
-        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.7')
-        self.assertIn('**full version string** (`0.2.7`)',self.spec)
+        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.8')
+        self.assertIn('**full version string** (`0.2.8`)',self.spec)
 
     def test_v4_v12_residues_and_clean(self):
         for rule in ('v4','v12'):

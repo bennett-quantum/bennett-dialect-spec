@@ -1,3 +1,21 @@
+## Round-7 fixes — b-dialect-spec-j08 — 2026-10-30
+
+Sole spec/checker editor; baseline 2651. Before edits, LLVM 18/23 probes
+verified the original pointer/lane/FP sources at O0. Pointer arithmetic:
+2*(-2^63)=0 modulo 2^64; wide +2^64 truncates to zero displacement.
+Dynamic lane {1,3} plus totalised zero gives widths {1,2,4}. Constant index
+2 (or unsigned -1) on two lanes extracts zero / preserves inserted vector.
+fp128 -> x86_fp80 and ppc_fp128 -> fp128 fpext both fail with
+`invalid cast opcode` on both LLVM majors. Direct own-format carrier calls
+avoid these conversions entirely. Probe logs: scripts/.tmp/round7-probes.
+
+| Blocker | Status | Checker case | Commit |
+|---|---|---|---|
+| SOL-R7-01 / R7-CODEX-01 | resolved, gate 2667/2667 | pt5-int-wrap, pt4-wide-wrap, pt6-unknown-address | this group commit (hash in next entry) |
+| R7-CODEX-02 | in progress | planned lane width witness | pending |
+| R7-CODEX-03 | in progress | planned constant lane pair | pending |
+| R7-CODEX-04 | in progress | planned per-triple carrier pairs | pending |
+
 ## Round-6 final freeze — 2026-10-30
 
 **2651/2651 passed; 0 failed; 0 blocked/unavailable. Baseline 2598 → 2651.**

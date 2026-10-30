@@ -1,6 +1,6 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.7
+# Bennett LLVM Dialect — Specification, draft 0.2.8
 
-**Date:** 2026-10-29. **Status:** draft 0.2.7 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
+**Date:** 2026-10-29. **Status:** draft 0.2.8 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
 2026-10-29 at its end), revised after council rounds 1–3. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
@@ -11,9 +11,9 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.7: markers 0.2, handles 0.2.7, regions 0.2.7, oracle-abi 0.2.4, tdl 0.2.4,
-effects 0.2.4, norm 0.2.7, map 0.2.7, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2.7`) is the compatibility unit (§23): drafts are not compatible
+**Versioning.** Dialect 0.2.8: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4,
+effects 0.2.4, norm 0.2.8, map 0.2.8, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+The **full version string** (`0.2.8`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -1007,9 +1007,9 @@ AV(operand) lane by lane; ⊤ absorbs.
 | PT1 | `alloca`, global `@G`, allocation-site call | AV ∋ (X, 0) |
 | PT2 | `getelementptr T, ptr p, idx…` | uses P(a), I(a) and the complete finite-width computation of §16.4, also for constant expressions: sequential indices are sign-extended/truncated to I(a), scaling and offset accumulation wrap modulo 2^I(a), and addition preserves pointer bits above I(a). Zero accumulated offset copies AV(p). For every (X,o), include the image of all represented base addresses and index values (unknown base bits range over patterns consistent with DataLayout and X's alignment), using integer/residue-class/`*` offset unions. Unbounded mathematical addition is not a substitute. If an address may leave X, include (EXT, `*`) and the non-handle top flag; PT6 propagates this unknown-address alternative. The unknown-address alternative does not by itself establish host escape (§6.4): retain the original base provenance for that test; actual host/unknown origins keep their restrictions. ROOT provenance and §6.2 restrictions remain explicit. Array dimensions determine stride, never an index bound |
 | PT3 | `phi`, `select` (value operands), `freeze`, `bitcast`, `addrspacecast` | copies (union) |
-| PT4 | `ptrtoint`, `inttoptr`, `zext`/`sext`/`trunc` of a pointer-width integer to pointer width | copies |
-| PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | shifts each pointer atom's offset by each constant (classes and `*` stay); any other integer operation on a pointer atom gives (X, `*`) for each X; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a range attribute or `!range` metadata removed by N3/N4 is not a bound on materialised execution and MUST NOT restrict any verdict, candidate set, descriptor shape or dispatch domain. Only bounds independently established by materialised instructions restrict the set; otherwise retain ⊤ and apply the ordinary operation rules, including finite masks/remainders |
-| PT6 | `load T, ptr p` | for each (X,o) ∈ AV(p): memory atoms carry their storage interval and representation width; copy a whole-value atom only for that identical interval with a compatible representation. A known immutable byte image decodes exactly the accessed bytes using DataLayout and T (including initialisers). For a partial, spanning or overlapping access whose result bits are not represented exactly, the non-handle value is ⊤, never the union of component INT values. X=EXT gives ⊤. ROOT provenance remains explicit and §6.2's partial-handle restrictions still apply |
+| PT4 | `ptrtoint`, `inttoptr`, `zext`/`sext`/`trunc` | copy only bit-preserving conversions. Otherwise apply the actual source/destination-width bit-vector conversion (§16.4): ptrtoint/inttoptr zero-extend or truncate at P(a), sext sign-extends. Use PT2’s represented-address image construction, retaining originating object and ROOT provenance. A narrowed representation that cannot be reassociated with its original object adds (EXT, `*`) and non-handle ⊤; numerical uncertainty is not host escape. Apply also to constant expressions |
+| PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | computes address bits modulo 2^W at the integer operation’s width W, never unbounded offset addition. Relative displacements from the originating base are modular too: zero net displacement represents that base again, including after an inttoptr truncation to P(a). Use PT2’s represented-address image construction at W bits (full-width arithmetic, no preserved high GEP bits), retaining original object and ROOT provenance. Keep modular displacement alternatives even outside the allocation, and additionally include (EXT, `*`) and non-handle ⊤ when an image may leave it. Residue classes and `*` take the same finite-width image; an unrepresentable image retains (X, `*`) for each originating X plus (EXT, `*`) and non-handle ⊤. Other integer operations on pointer atoms use that conservative image. Widening a pointer-derived integer by zext/sext may use that conservative image too (fixed reference fallback); ptrtoint zero-extension retains its base representation. Numerical uncertainty does not itself establish host escape (PT2). The rules apply also to constant expressions, before candidate/dispatch domains freeze; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a range attribute or `!range` metadata removed by N3/N4 is not a bound on materialised execution and MUST NOT restrict any verdict, candidate set, descriptor shape or dispatch domain. Only bounds independently established by materialised instructions restrict the set; otherwise retain ⊤ and apply the ordinary operation rules, including finite masks/remainders |
+| PT6 | `load T, ptr p` | for each (X,o) ∈ AV(p): memory atoms carry their storage interval and representation width; copy a whole-value atom only for that identical interval with a compatible representation. A known immutable byte image decodes exactly the accessed bytes using DataLayout and T (including initialisers). For a partial, spanning or overlapping access whose result bits are not represented exactly, the non-handle value is ⊤, never the union of component INT values. X=EXT gives ⊤. A non-handle top flag on p contributes the same unknown-address load alternative even when explicit object offsets overlap no known slot; it MUST NOT be dropped. ROOT provenance remains explicit and §6.2's partial-handle restrictions still apply |
 | PT7 | `store v, ptr p` | retain each written interval and representation width; partial writes overlapping a larger load participate in PT6's conservative fallback. AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
 | PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when offsets and len are constants and the atom's entire storage interval [s, s + size(atom)) lies in the copied range, copy its atom and representation width to (Z, o_d + s − o_s). Every partially overlapping atom instead contributes non-handle ⊤ and explicit ROOT provenance to the affected destination interval (unknown offsets/len use `*`); do not copy the whole component INT. Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
 | PT9 | direct call of G, or indirect call with candidate G (§14.2) | AV(parameter i of G) ⊇ AV(argument i); AV(result) ⊇ the union of AV over G's `ret` operands; `byval` arguments copy the pointee's slots into the callee's copy object |
@@ -1038,6 +1038,81 @@ define void @top() {
   call void @__bennett_qfree(ptr %h)
   ret void
 }
+```
+
+**Pointer-integer wrap witnesses.** Two i64 additions of −2^63 have net
+zero displacement modulo 2^64, so p=@tab and f=@body. Modular displacement
+alternatives are retained alongside unknown-address alternatives, never lost at
+an intermediate out-of-object value. A ptrtoint to i128 followed by +2^64 and
+inttoptr to a 64-bit pointer likewise returns @tab. The third witness computes
+the address of a different allocation: unknown-address loading must retain its
+possible function value. With adequate budgets dispatch succeeds exactly once.
+
+```llvm example=pt5-int-wrap verdict=accept candidates=body
+target datalayout = "e-p:64:64"
+@tab = internal constant [1 x ptr] [ptr @body]
+declare void @__bennett_adj(ptr, ptr, ptr)
+define internal void @body(ptr %e) {
+ ret void
+}
+define void @top() {
+ %a = ptrtoint ptr @tab to i64
+ %b = add i64 %a, -9223372036854775808
+ %c = add i64 %b, -9223372036854775808
+ %p = inttoptr i64 %c to ptr
+ %f = load ptr, ptr %p, align 8
+ call void @__bennett_adj(ptr %f, ptr null, ptr null)
+ ret void
+}
+```
+
+```text state=pt5-int-wrap at=0
+{"candidates":["body"],"calls":1,"trap":0}
+```
+
+```llvm example=pt4-wide-wrap verdict=accept candidates=body
+target datalayout = "e-p:64:64"
+@tab = internal constant [1 x ptr] [ptr @body]
+declare void @__bennett_adj(ptr, ptr, ptr)
+define internal void @body(ptr %e) {
+ ret void
+}
+define void @top() {
+ %a = ptrtoint ptr @tab to i128
+ %b = add i128 %a, 18446744073709551616
+ %p = inttoptr i128 %b to ptr
+ %f = load ptr, ptr %p, align 8
+ call void @__bennett_adj(ptr %f, ptr null, ptr null)
+ ret void
+}
+```
+
+```text state=pt4-wide-wrap at=0
+{"candidates":["body"],"calls":1,"trap":0}
+```
+
+```llvm example=pt6-unknown-address verdict=accept candidates=body
+target datalayout = "e-p:64:64"
+@other = internal constant [1 x ptr] [ptr @body]
+@tab = internal constant [1 x ptr] [ptr @body]
+declare void @__bennett_adj(ptr, ptr, ptr)
+define internal void @body(ptr %e) {
+ ret void
+}
+define void @top() {
+ %a = ptrtoint ptr @tab to i64
+ %o = ptrtoint ptr @other to i64
+ %delta = sub i64 %o, %a
+ %c = add i64 %a, %delta
+ %p = inttoptr i64 %c to ptr
+ %f = load ptr, ptr %p, align 8
+ call void @__bennett_adj(ptr %f, ptr null, ptr null)
+ ret void
+}
+```
+
+```text state=pt6-unknown-address at=0
+{"candidates":["body"],"calls":1,"trap":0}
 ```
 
 **PT6 byte reconstruction witnesses.** Immutable bytes [1,1] decode as
@@ -1211,7 +1286,7 @@ define void @top(ptr %p) {
 {"value_set":[1,3],"input":2,"width":3,"live_after":0,"trap":0}
 ```
 
-## 6. Handles (handles 0.2.7)
+## 6. Handles (handles 0.2.8)
 
 ### 6.1 Representation
 
@@ -2020,7 +2095,7 @@ define void @top() {
 }
 ```
 
-## 7. Regions (regions 0.2.7)
+## 7. Regions (regions 0.2.8)
 
 ### 7.1 Region-entry markers and region kinds
 
@@ -2124,7 +2199,7 @@ Only the rules the north star requires:
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). Standalone adj uses the deterministic
   latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
-  `lowered` entry with source `dialect-0.2.7:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.8:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -3436,7 +3511,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.7.
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.8.
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -4206,7 +4281,7 @@ hostcall: service=bennett.dev.console.write payload=6f6b0a reply=empty
 
 The ENTROPY-bound oracle of rung 8 is §16.8.
 
-## 12. Materialised normalisation (norm 0.2.7)
+## 12. Materialised normalisation (norm 0.2.8)
 
 ### 12.1 Scope, order and naming
 
@@ -7192,13 +7267,13 @@ define internal i64 @w(i64 %fd, i64 %a) {
 declare i64 @__bennett_rt_syscall(i64, i64, i64, i64, i64, i64, i64)
 ```
 
-## 16. The lifting map (map 0.2.7)
+## 16. The lifting map (map 0.2.8)
 
 The lifting map turns a materialised region function, a binding shape (§8.4) and the link
 layout (§19.5) into the **reference object** of that shape: the ISA object whose oracle `@ref`
 defines F_B and the budget unit by the reference interpreter (ISA §4.2 "Reference body and
 binding", §14.1). It is a function of its inputs alone, so two plugins on the same LLVM version
-and pipeline produce byte-identical reference objects. Its version (`map 0.2.7`) is the
+and pipeline produce byte-identical reference objects. Its version (`map 0.2.8`) is the
 certificate's `dialect_mapping_version` (ISA §12.3). The plugin's device objects (§17.4) are
 plugin-defined; they MUST be extensionally equal to the reference objects (ISA §5.7, T6; §18.7).
 
@@ -10341,7 +10416,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.7 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.8 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -10457,14 +10532,14 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.7;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.8;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
-pipeline, normaliser_version: "0.2.7"}` and `bindings.dialect_mapping_version = "0.2.7"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.7:<rule id>` (e.g. `dialect-0.2.7:N33`); the
+pipeline, normaliser_version: "0.2.8"}` and `bindings.dialect_mapping_version = "0.2.8"`; the coverage
+report (ISA §13), whose `source` field is `dialect-0.2.8:<rule id>` (e.g. `dialect-0.2.8:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved, including each shape's selection_identity, final semantic identity,
 resolved components and frozen layout capacities under §9.2) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
@@ -10478,7 +10553,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.7"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.8"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`):
 
@@ -10880,11 +10955,11 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.7`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.8`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
 - Round-4 semantic corrections revise `norm`, `handles`, `regions` and `map` to
-  `0.2.7`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
+  `0.2.8`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
   asm and corpus remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
   again; unchanged ISA-0.8 interface signatures retain their hashes. The map version
   is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
@@ -11075,6 +11150,7 @@ compute expected artefacts only (P-3).
 | `n-atomic-wrap`, `n-atomic-usub` (+ `native=`) | N9 wrap/conditional/saturating arithmetic | parse, normalise, native | LLVM; clang source/output |
 | `n-atomic-nand`, `atomic-nand` | N9, §16.4 | parse, normalise, native, map, check, hash, run-oracle | clang 18/23; Rust interpreter (16 rows) |
 | `n-budget-stage`, `budget-stage-runtime`, `budget-stage` | N24, §9.2 | parse, normalise, recognise, state | LLVM; Rust hashes, wrappers and token executions |
+| `pt5-int-wrap`, `pt4-wide-wrap`, `pt6-unknown-address` | PT4/PT5/PT6 modular integer pointers | parse, recognise, state | LLVM O0/instcombine; clang 18/23 native dispatch |
 | `pt2-wrap`, `pt5-range`, `pt5-range-load` | PT2, PT5, N3, N4 | parse, recognise, state | LLVM O0/instcombine; clang 18/23 materialised execution |
 | `n-vector`, `n-wideint`, `n-shadow-stack`, `n-memintrinsics`, `n-intrinsics`, `n-atomic` with `native=` | N9, N21, N22, N24, N26, N27 | parse, normalise, native | LLVM; Python; clang + seeds |
 | `residual-nsw`, `residual-clean` | §12.4 V1 | validate | Python |

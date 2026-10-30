@@ -286,8 +286,8 @@ def recognise(text, **options):
     try:
         a.s1()
         for version in re.findall(r'!"bennett.dialect", !"([^"\n]+)"', text):
-            if version != "0.2.7":
-                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.7; actual " + version)
+            if version != "0.2.8":
+                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.8; actual " + version)
         a.analyse()
         a.region_rules()
         if options.get("rmode"):a.reversible |= a.closure(options["rmode"].lstrip("@"))
@@ -701,6 +701,8 @@ def action_object(isa,path,name,widths,rows):
 
 
 def state_check(runner,block):
+    from dialect_round7 import STATES as ROUND7, check_state as check_round7
+    if block['attrs']['state'] in ROUND7:return check_round7(runner,block)
     from dialect_round6 import STATES as ROUND6, check_state as check_round6
     if block['attrs']['state'] in ROUND6:return check_round6(runner,block)
     from dialect_round5 import STATES as ROUND5, check_state as check_round5
