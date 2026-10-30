@@ -16,6 +16,10 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round4_narrow_lane(self):
+        self.assertEqual(d.collapse(v.normalise(self.block('normalise-in','n-narrow-lane')['body'])),
+                         d.collapse(self.block('normalise-out','n-narrow-lane')['body']))
+
     def test_round4_vector_memory(self):
         self.assertEqual(d.collapse(v.normalise(self.block('normalise-in','n-vector-i24')['body'])),
                          d.collapse(self.block('normalise-out','n-vector-i24')['body']))

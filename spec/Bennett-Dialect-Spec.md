@@ -3876,7 +3876,7 @@ rules are replaced (outline §12.2); they are kept as anchors.
 | N13 | (0.1: `memcpy` → `memmove`) | replaced by N26 |
 | N14 | `%r = shl/lshr/ashr iW a, b` with b not a constant | `%nz.c.r = icmp uge iW b, W`; `%nz.s.r = <op> iW a, b`; `%r = select i1 %nz.c.r, iW 0, iW %nz.s.r` (every shift by ≥ W gives 0, as the ISA's shifts do, ISA §4.1) |
 | N14 | the same with b a constant ≥ W | every use of `%r` replaced by `0`; deleted |
-| N15 | `extractelement`/`insertelement` with a non-constant index i on L lanes | `%nz.c.r = icmp uge iK i, L`; `%nz.e.r = <the original instruction>`; `%r = select i1 %nz.c.r, T Z, T %nz.e.r` with Z = the zero element (extract) or the unchanged vector operand (insert) |
+| N15 | `extractelement`/`insertelement` with a non-constant index i on L lanes | interpret iK index i as unsigned; let W=max(K,⌈log2(L+1)⌉), zero-extend to `%nz.i.r` when W>K (otherwise use i unchanged); `%nz.c.r = icmp uge iW wide_i, L` with exact L; `%nz.e.r = <the original instruction>`; `%r = select i1 %nz.c.r, T Z, T %nz.e.r` with Z = the zero element (extract) or the unchanged vector operand (insert) |
 | N16 | `%r = call T @llvm.fmuladd.*(a, b, c)` | `%nz.m.r = fmul T a, b`; `%r = fadd T %nz.m.r, c` (no fusion; explicit `llvm.fma` keeps fusion through §13) |
 | N17 | (0.1: FP formats and transcendentals → F(8)) | replaced by §13 (N32, N33): no floating-point construct faults |
 | N18 | (0.1: external calls in oracle and reversible closures → F(8)) | replaced by §4.5: shims first; trapped only without bitcode |
@@ -3983,6 +3983,85 @@ entry:
   %r = select i1 %nz.c.r, i8 0, i8 %nz.e.r
   ret i8 %r
 }
+```
+
+```text native=n-dynamic-lane
+f(0)=5; f(1)=9; f(2)=0; f(-1)=0; code=0
+```
+
+**Narrow unsigned lane indices.** An i1 index denotes 0 or 1, both below L=2.
+W=max(1,ceil(log2(3)))=2 represents L exactly; neither valid input is
+zeroed. Insertion yields [7,9] or [5,7], packed as 2311 or 1797.
+The four-lane probe also prevents unreachable lane constants 2/3 aliasing 0/1.
+
+```llvm normalise-in=n-narrow-lane
+define i8 @f(i1 %i) {
+entry:
+  %r = extractelement <2 x i8> <i8 5, i8 9>, i1 %i
+  ret i8 %r
+}
+define i16 @g(i1 %i) {
+entry:
+  %v = insertelement <2 x i8> <i8 5, i8 9>, i8 7, i1 %i
+  %a = extractelement <2 x i8> %v, i32 0
+  %b = extractelement <2 x i8> %v, i32 1
+  %aa = zext i8 %a to i16
+  %bb = zext i8 %b to i16
+  %hi = shl i16 %bb, 8
+  %r = or i16 %aa, %hi
+  ret i16 %r
+}
+define i8 @h(i1 %i) {
+entry:
+  %r = extractelement <4 x i8> <i8 5, i8 9, i8 17, i8 33>, i1 %i
+  ret i8 %r
+}
+```
+
+```llvm normalise-out=n-narrow-lane
+define i8 @f(i1 %i) {
+entry:
+  %nz.i.r = zext i1 %i to i2
+  %nz.c.r = icmp uge i2 %nz.i.r, 2
+  %nz.k0.r = icmp eq i2 %nz.i.r, 0
+  %nz.l0.r = select i1 %nz.k0.r, i8 5, i8 0
+  %nz.k1.r = icmp eq i2 %nz.i.r, 1
+  %nz.e.r = select i1 %nz.k1.r, i8 9, i8 %nz.l0.r
+  %r = select i1 %nz.c.r, i8 0, i8 %nz.e.r
+  ret i8 %r
+}
+define i16 @g(i1 %i) {
+entry:
+  %nz.i.v = zext i1 %i to i2
+  %nz.k0.v = icmp eq i2 %nz.i.v, 0
+  %nz.l0.v = select i1 %nz.k0.v, i8 7, i8 5
+  %nz.k1.v = icmp eq i2 %nz.i.v, 1
+  %nz.l1.v = select i1 %nz.k1.v, i8 7, i8 9
+  %aa = zext i8 %nz.l0.v to i16
+  %bb = zext i8 %nz.l1.v to i16
+  %hi = shl i16 %bb, 8
+  %r = or i16 %aa, %hi
+  ret i16 %r
+}
+define i8 @h(i1 %i) {
+entry:
+  %nz.i.r = zext i1 %i to i3
+  %nz.c.r = icmp uge i3 %nz.i.r, 4
+  %nz.k0.r = icmp eq i3 %nz.i.r, 0
+  %nz.l0.r = select i1 %nz.k0.r, i8 5, i8 0
+  %nz.k1.r = icmp eq i3 %nz.i.r, 1
+  %nz.l1.r = select i1 %nz.k1.r, i8 9, i8 %nz.l0.r
+  %nz.k2.r = icmp eq i3 %nz.i.r, 2
+  %nz.l2.r = select i1 %nz.k2.r, i8 17, i8 %nz.l1.r
+  %nz.k3.r = icmp eq i3 %nz.i.r, 3
+  %nz.e.r = select i1 %nz.k3.r, i8 33, i8 %nz.l2.r
+  %r = select i1 %nz.c.r, i8 0, i8 %nz.e.r
+  ret i8 %r
+}
+```
+
+```text native=n-narrow-lane
+f(0)=5; f(1)=9; g(0)=2311; g(1)=1797; h(0)=5; h(1)=9; code=0
 ```
 
 **`n-byval-copy`.** N25 copies the one-byte argument into the caller frame before the call. N24 gives that slot offset 0 in a one-byte, align-1 frame. The callee writes 9 into the copy; the caller still loads the original byte (7 when p initially holds 7).
@@ -4465,7 +4544,14 @@ lane order k = 0, 1, …:
   not only packed i1. See [LangRef vector layout](https://llvm.org/docs/LangRef.html#vector-type)
   and [load/store semantics](https://llvm.org/docs/LangRef.html#load-instruction);
 - `insertelement`, `extractelement`, `shufflevector` with constant indices: lane renaming; with a
-  non-constant index (after N15): a `select` chain over the L lanes in lane order;
+  non-constant index (after N15): a `select` chain over the L lanes in lane order,
+  using the same widened unsigned index and exact lane constants as N15. Constants
+  must never wrap to iK. Insertion may fuse the out-of-range unchanged-vector
+  select into per-lane equality selects: all equalities are false out of range.
+  LLVM admits an index of any integer width, independent of L
+  ([extractelement](https://llvm.org/docs/LangRef.html#extractelement-instruction),
+  [insertelement](https://llvm.org/docs/LangRef.html#insertelement-instruction));
+  LangRef out-of-range poison is totalised by N15, not by truncating L;
 - `llvm.vector.reduce.<op>(v)` with op ∈ {add, mul, and, or, xor, smax, smin, umax, umin, fadd,
   fmul, fmax, fmin, fmaximum, fminimum}: a **left fold** in lane order: `%nz.f1.r = <op> lane0,
   lane1`, `%nz.f<k>.r = <op> %nz.f<k−1>.r, lane k`, the last named `%r`; the ordered `fadd`/`fmul`
@@ -9974,6 +10060,7 @@ compute expected artefacts only (P-3).
 | `tdl`, `tdl-overwrite`, `tdl-effect`, `tdl-angle` with `tdl=` and `state=` blocks | TDL-1–TDL-12, §18.2–§18.4 | parse, recognise, tdl, run-action | LLVM; Python TDL; isa-ref `run-action` (requested) |
 | `effect-console-r`, `effect-console-cc` | §11.1, §11.2 | parse, recognise, run-cc, reverse | isa-ref `run-cc`, `reverse` (requested) |
 | `n-flags`, `n-shift`, `n-undef`, `n-query`, `n-trap` | N1–N8, N10, N11, N14 | parse, normalise | LLVM; Python normaliser |
+| `n-narrow-lane` (+ `native=`) | N15/N21 narrow index | parse, normalise, native | LLVM; clang 18/23 |
 | `n-vector-i24` (+ `native=`) | N21 vector memory spacing | parse, normalise, native | LLVM; clang 18/23 |
 | `n-gep-index` (+ `native=`, `state=`) | §16.4 pointer-index widths | parse, normalise, native, state | LLVM; clang 18/23; Rust mapped run-oracle |
 | `n-wide-sub` (+ `native=`) | N22 subtraction borrows | parse, normalise, native | LLVM; clang 18/23 |

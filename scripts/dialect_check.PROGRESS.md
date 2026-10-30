@@ -650,3 +650,5 @@ SOL-R4-01 resolved: explicit two-stage borrow; n-wide-sub exact pair and clang 1
 SOL-R4-02 resolved: index-width GEP rows and CC/R/C agreement; n-gep-index Rust mapping executes truncation, negative offset, low wrap and constant-expression wrap. Native LLVM-fold/clang 18/23 checks the council truncation vector (clang overwrites custom layouts; LLVM18 constant folding does not correctly fold wrap). Red old-map 8589934592 vs 4294967296; green source-mapped interpreter regression with mutation. SOL-R4-01 commit bec39eb / response fc97aa7.
 
 R4-CODEX-01 resolved: n-vector-i24 load/store at offsets 0/3, align 1; exact pair red → green and native clang18/23 both source/output pass; sentinels preserved. SOL-R4-02 commit 68d8f5b / response a285b98.
+
+R4-CODEX-02 resolved: W=max(K,ceil(log2(L+1))), exact lane constants; n-narrow-lane extraction/insertion/four-lane alias probe red → green. Native clang18/23 source/output pass; n-dynamic-lane output 2/-1 both zero. R4-CODEX-01 commit 22d23e9 / response 29c3944.

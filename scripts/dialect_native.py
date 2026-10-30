@@ -41,6 +41,11 @@ def cases(ident,text):
                 out.append(f'printf("%u\\n",f({x}));');expected.append(int(want))
         else:
             decl='extern uint32_t f(void);\n';out=['printf("%u\\n",f());'];expected=[int(re.fullmatch(r'f=(\d+)',text.strip())[1])]
+    elif ident in ('n-narrow-lane','n-dynamic-lane'):
+        decl='extern uint8_t f('+('_Bool' if ident=='n-narrow-lane' else 'uint32_t')+'); extern uint16_t g(_Bool); extern uint8_t h(_Bool);\n'
+        variants=('input','output') if ident=='n-narrow-lane' else ('output',)
+        for fn,args,want in re.findall(r'([fgh])\((-?\d+)\)=(\d+)',text):
+            out.append(f'printf("%u\\n",{fn}({args}));');expected.append(int(want))
     elif ident=='n-vector-i24':
         decl='extern uint32_t f(const void *); extern void s(void *);\n'
         m=re.fullmatch(r'bytes=([0-9a-f]+) -> f=(\d+); code=0\nstore=(\[[^]]+\]); code=0',text.strip())

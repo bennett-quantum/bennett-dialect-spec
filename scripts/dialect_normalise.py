@@ -143,6 +143,11 @@ class Normaliser:
             if v.startswith('<'):return [d.typed_val(x) for x in d.split_top(v[1:-1])]
             if v in self.lanes:return self.lanes[v]
             raise d.Fail('N21 vector source '+v)
+        def lane_index(index,L,r):
+            t=d.parse_type(index)[0];K=t[1];W=max(K,L.bit_length());idx=d.typed_val(index)
+            if W==K:return [],d.tstr(t),idx
+            wide=f'%nz.i.{r}'
+            return [f'{wide} = zext i{K} {idx} to i{W}'],f'i{W}',wide
         def memory_lane(t,p,k,original):
             e=d.tstr(t);ew=t[1] if t[0]=='int' else d.tsize(t)*8
             # Byte lanes need not share their scalar allocation stride.
@@ -225,7 +230,7 @@ class Normaliser:
             if i.op=='insertelement':
                 ps=d.split_top(b[len(i.op):].strip());t=d.parse_type(ps[0])[0];lanes=list(get(d.typed_val(ps[0]),t[1],t[2]));idx=d.typed_val(ps[2])
                 if not idx.isdigit():
-                    it=d.tstr(d.parse_type(ps[2])[0]);et=d.tstr(t[2]);value=d.typed_val(ps[1]);out=[];vals=[]
+                    out,it,idx=lane_index(ps[2],t[1],r);et=d.tstr(t[2]);value=d.typed_val(ps[1]);vals=[]
                     for k,old in enumerate(lanes):
                         c=f'%nz.k{k}.{r}';v=f'%nz.l{k}.{r}'
                         out += [f'{c} = icmp eq {it} {idx}, {k}',f'{v} = select i1 {c}, {et} {value}, {et} {old}'];vals.append(v)
@@ -234,8 +239,8 @@ class Normaliser:
             if i.op=='extractelement':
                 ps=d.split_top(b[len(i.op):].strip());t=d.parse_type(ps[0])[0];lanes=get(d.typed_val(ps[0]),t[1],t[2]);idx=d.typed_val(ps[1])
                 if not idx.isdigit():
-                    it=d.tstr(d.parse_type(ps[1])[0]);et=d.tstr(t[2]);L=len(lanes)
-                    out=[f'%nz.c.{r} = icmp uge {it} {idx}, {L}'];prev='0'
+                    L=len(lanes);out,it,idx=lane_index(ps[1],L,r);et=d.tstr(t[2])
+                    out.append(f'%nz.c.{r} = icmp uge {it} {idx}, {L}');prev='0'
                     for k,value in enumerate(lanes):
                         c=f'%nz.k{k}.{r}';v=f'%nz.e.{r}' if k==L-1 else f'%nz.l{k}.{r}'
                         out += [f'{c} = icmp eq {it} {idx}, {k}',f'{v} = select i1 {c}, {et} {value}, {et} {prev}'];prev=v
