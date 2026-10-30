@@ -36,8 +36,8 @@ class Flow:
         if val.startswith('%'): return self.values.get((f.name,val), {})
         if val.startswith('getelementptr (') and val.endswith(')'):
             return self.gep(f,'getelementptr '+val[len('getelementptr ('):-1])
-        ce=re.match(r'(ptrtoint|inttoptr|zext|sext|trunc) \((.*)\)$',val)
-        if ce:return self.convert(f,ce[1],ce[2])
+        ce=re.match(r'(bitcast|ptrtoint|inttoptr|zext|sext|trunc) \((.*)\)$',val)
+        if ce:return self.bitcast(f,ce[2]) if ce[1]=='bitcast' else self.convert(f,ce[1],ce[2])
         ce=re.match(r'(add|sub) \((.*)\)$',val)
         if ce:
             a,b=d.split_top(ce[2]);t=d.parse_type(a)[0]
@@ -210,6 +210,43 @@ class Flow:
         return union({('P',x[1],'*') for x in a|b if x[0]=='P'},
                      {x for x in a|b if x[0] in ('R','C')},{('P','EXT','*'),TOP})
 
+    def bitcast(self,f,body):
+        """PT3: direct finite evaluation of the virtual N21 bit-string expansion.
+
+        Project to each destination lane before Cartesian products: irrelevant
+        source bits cannot cause a premature K overflow in a small output lane.
+        """
+        src,dst=body.rsplit(' to ',1);st,j=d.parse_type(src.strip());dt=d.parse_type(dst)[0]
+        ns,se=(st[1],st[2]) if st[0]=='vec' else (1,st)
+        nd,de=(dt[1],dt[2]) if dt[0]=='vec' else (1,dt)
+        sw,dw=self.type_width(se),self.type_width(de)
+        lanes=self.av(f,src.strip()[j:].strip(),st)
+        if (ns,sw)==(nd,dw):return lanes
+        if ns*sw!=nd*dw:raise d.Fail('PT3 unequal bitcast representation widths')
+        out={}
+        for k in range(nd):
+            shift=k*dw if self.byteorder=='little' else (nd-1-k)*dw
+            result=frozenset({('I',0)});provenance=set();unknown=False;ready=True
+            for i in range(ns):
+                start=i*sw if self.byteorder=='little' else (ns-1-i)*sw
+                lo,hi=max(start,shift),min(start+sw,shift+dw)
+                if lo>=hi:continue
+                ats=lanes.get(i,frozenset())
+                if not ats:ready=False;break
+                provenance.update(x for x in ats if x[0] in ('R','C'))
+                for x in ats:
+                    if x[0]=='P':provenance.add(('P',x[1],'*'))
+                    if x[0]=='F':provenance.add(x)
+                if any(x[0]!='I' for x in ats):unknown=True
+                mask=(1<<(hi-lo))-1
+                pieces={((x[1]%(1<<sw)>>(lo-start))&mask)<<(lo-shift) for x in ats if x[0]=='I'}
+                # These bit fields are disjoint, so an intermediate projected
+                # set >K cannot shrink on subsequent field concatenation.
+                result=union({('I',a[1]|b) for a in result if a[0]=='I' for b in pieces},
+                             {TOP} if TOP in result else {})
+            if ready:out[k]=union(result if not unknown else {TOP},provenance)
+        return out
+
     def convert(self,f,op,body):
         src,dst=body.rsplit(' to ',1);src=d.strip_flags(src);st,j=d.parse_type(src);dt=d.parse_type(dst)[0]
         sw=self.pointer_widths(st[1] if len(st)>1 else 0)[0] if st[0]=='ptr' else st[1]
@@ -375,7 +412,8 @@ class Flow:
             for v in self.value_operands(ins):
                 for k,ats in self.av(f,v).items():lanes[k]=union(lanes.get(k,()),ats)
         elif op in ('ptrtoint','inttoptr','bitcast','addrspacecast','freeze','zext','sext','trunc'):
-            if op in ('ptrtoint','inttoptr','zext','sext','trunc'):lanes=self.convert(f,op,body[len(op):].strip())
+            if op=='bitcast':lanes=self.bitcast(f,body[len(op):].strip())
+            elif op in ('ptrtoint','inttoptr','zext','sext','trunc'):lanes=self.convert(f,op,body[len(op):].strip())
             else:
                 src=body[len(op):].rsplit(' to ',1)[0];lanes=self.av(f,d.typed_val(d.strip_flags(src.strip())))
         elif op in ('insertvalue','insertelement'):

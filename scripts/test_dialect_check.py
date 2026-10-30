@@ -16,6 +16,47 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round8_bitcast_execution(self):
+        import json
+        from dialect_round8 import check_state, STATES
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            for name in sorted(STATES):
+                b=self.block('state',name);check_state(runner,b)
+                wrong=json.loads(b['body']);wrong['widths'][0]+=1
+                with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
+
+    def test_round8_bitcast_transfer(self):
+        from dialect_flow import TOP
+        src='define void @top() {\n ret void\n}\n'
+        a=v.Analysis02(d.Module(src));a.analyse();f=a.m.funcs['top']
+        a.put(f,'%v',{0:{('I',0),('I',1)},1:{('I',1),('I',2)}})
+        self.assertEqual(a.bitcast(f,'<2 x i8> %v to i16'),{0:frozenset(('I',x) for x in (256,257,512,513))})
+        self.assertEqual(a.av(f,'bitcast (<2 x i8> <i8 0, i8 1> to i16)'),{0:frozenset({('I',256)})})
+        a.byteorder='big'
+        self.assertEqual(a.bitcast(f,'<2 x i8> %v to i16'),{0:frozenset(('I',x) for x in (1,2,257,258))})
+        a.byteorder='little'
+        a.put(f,'%unknown',{0:{TOP,('R','root'),('P','obj',0)},1:{('I',1)}})
+        result=a.bitcast(f,'<2 x i8> %unknown to i16')[0]
+        self.assertIn(TOP,result);self.assertIn(('R','root'),result);self.assertIn(('P','obj','*'),result)
+        # K is per resulting lane, not the full packed Cartesian product.
+        a.put(f,'%wide',{0:{('I',x) for x in range(256)},1:{('I',x) for x in range(256)}})
+        result=a.bitcast(f,'<2 x i8> %wide to <4 x i4>')
+        self.assertEqual(result,{k:frozenset(('I',x) for x in range(16)) for k in range(4)})
+
+    def test_round8_bitcast_domains(self):
+        import json
+        for name in ('pt3-pack257','pt3-pack256','pt3-unpack'):
+            src=self.block('example',name)['body']
+            for major in ('18','23'):
+                with self.subTest(name=name,major=major):
+                    p=v.SCRATCH/('r8-red-'+name+'-'+major+'.ll');p.write_text(d.with_decls(src))
+                    ir=v.command([d.toolchains()[major]/'opt','-S','-passes=default<O0>',p,'-o','-'])
+                    verdict,a=v.recognise(ir);f=a.m.funcs['top']
+                    self.assertEqual(verdict,'accept')
+                    for val,want in json.loads(self.block('state',name)['body'])['domains'].items():
+                        self.assertEqual(a.av(f,val),{0:frozenset(('I',x) for x in want)})
+
     def test_canonical_global_numbering(self):
         from dialect_map import Mapper
         b=self.block('lift','atomic-nand')

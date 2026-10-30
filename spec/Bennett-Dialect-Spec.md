@@ -1000,13 +1000,15 @@ set; unions and inclusions are taken component-wise.
 Before the fixpoint, seed the initialiser atoms of every global, mutable or constant,
 into its slots. Subsequent stores union additional atoms; they never erase initial contents.
 The analysis is the least fixpoint of the following rules over AV. "Copies" means AV(result) ⊇
-AV(operand) lane by lane; ⊤ absorbs.
+AV(operand) lane by lane; ⊤ absorbs. S2 models the value effects of the specified
+normalisation before verdicts and dispatch domains freeze; pre-normalisation syntax does
+not permit omitting a value produced by the materialised execution.
 
 | Rule | Instruction or source | Effect |
 |---|---|---|
 | PT1 | `alloca`, global `@G`, allocation-site call | AV ∋ (X, 0) |
 | PT2 | `getelementptr T, ptr p, idx…` | uses P(a), I(a) and the complete finite-width computation of §16.4, also for constant expressions: sequential indices are sign-extended/truncated to I(a), scaling and offset accumulation wrap modulo 2^I(a), and addition preserves pointer bits above I(a). Zero accumulated offset copies AV(p). For every (X,o), include the image of all represented base addresses and index values (unknown base bits range over patterns consistent with DataLayout and X's alignment), using integer/residue-class/`*` offset unions. Unbounded mathematical addition is not a substitute. If an address may leave X, include (EXT, `*`) and the non-handle top flag; PT6 propagates this unknown-address alternative. The unknown-address alternative does not by itself establish host escape (§6.4): retain the original base provenance for that test; actual host/unknown origins keep their restrictions. ROOT provenance and §6.2 restrictions remain explicit. Array dimensions determine stride, never an index bound |
-| PT3 | `phi`, `select` (value operands), `freeze`, `bitcast`, `addrspacecast` | copies (union) |
+| PT3 | `phi`, `select` (value operands), `freeze`, `addrspacecast`; `bitcast` | the first four copy (union). A bitcast copies lane by lane only when source and destination have identical lane counts and per-lane representation widths, treating a scalar as one lane. Otherwise use the virtual N21 bitcast expansion of §12.6: pack source-lane bit patterns into its prescribed bit string in DataLayout order, then resegment at the destination representation width. Compute output AV through PT4/PT5 transfers of that expansion; finite INT lane sets denote their full Cartesian product, and K applies per resulting lane. Never copy a source-lane INT atom as the value of a packed destination scalar. Unknown bits propagate non-handle top through those transfers. Explicit object and ROOT provenance follows the same expansion and remains subject to §6.2; top never substitutes for ROOT. Apply also to constant expressions and fixed-vscale forms during S2 before verdicts, candidate sets, shapes and dispatch domains freeze. Direct finite bit-string evaluation is equivalent; no LLVM optimisation is required |
 | PT4 | `ptrtoint`, `inttoptr`, `zext`/`sext`/`trunc` | copy only bit-preserving conversions. Otherwise apply the actual source/destination-width bit-vector conversion (§16.4): ptrtoint/inttoptr zero-extend or truncate at P(a), sext sign-extends. Use PT2’s represented-address image construction, retaining originating object and ROOT provenance. A narrowed representation that cannot be reassociated with its original object adds (EXT, `*`) and non-handle ⊤; numerical uncertainty is not host escape. Apply also to constant expressions |
 | PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | computes address bits modulo 2^W at the integer operation’s width W, never unbounded offset addition. Relative displacements from the originating base are modular too: zero net displacement represents that base again, including after an inttoptr truncation to P(a). Use PT2’s represented-address image construction at W bits (full-width arithmetic, no preserved high GEP bits), retaining original object and ROOT provenance. Keep modular displacement alternatives even outside the allocation, and additionally include (EXT, `*`) and non-handle ⊤ when an image may leave it. Residue classes and `*` take the same finite-width image; an unrepresentable image retains (X, `*`) for each originating X plus (EXT, `*`) and non-handle ⊤. Other integer operations on pointer atoms use that conservative image. Widening a pointer-derived integer by zext/sext uses that conservative image too (fixed reference fallback); ptrtoint zero-extension retains its base representation. Numerical uncertainty does not itself establish host escape (PT2). The rules apply also to constant expressions, before candidate/dispatch domains freeze; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a range attribute or `!range` metadata removed by N3/N4 is not a bound on materialised execution and MUST NOT restrict any verdict, candidate set, descriptor shape or dispatch domain. Only bounds independently established by materialised instructions restrict the set; otherwise retain ⊤ and apply the ordinary operation rules, including finite masks/remainders |
 | PT6 | `load T, ptr p` | for each (X,o) ∈ AV(p): memory atoms carry their storage interval and representation width; copy a whole-value atom only for that identical interval with a compatible representation. A known immutable byte image decodes exactly the accessed bytes using DataLayout and T (including initialisers). For a partial, spanning or overlapping access whose result bits are not represented exactly, the non-handle value is ⊤, never the union of component INT values. X=EXT gives ⊤. A non-handle top flag on p contributes the same unknown-address load alternative even when explicit object offsets overlap no known slot; it MUST NOT be dropped. ROOT provenance remains explicit and §6.2's partial-handle restrictions still apply |
@@ -1038,6 +1040,71 @@ define void @top() {
   call void @__bennett_qfree(ptr %h)
   ret void
 }
+```
+
+**PT3 geometry-changing bitcast witnesses (DB/DN/DS).** On this little-endian
+layout, <1,1> packs to 1 | (1 << 8) = 257, and <0,1> packs to 256.
+Each result is one scalar INT atom, never two source-lane atoms. The inverse
+probe splits 769 = 1 + (3 << 8) into <1,3>, then selects 3. All three
+are accepted with finite dispatch; no BLK-1 applies. The state checks verify
+source O0, instcombine and virtual-N21 materialisation on LLVM 18/23, then
+execute the source and materialised forms with native width-domain guards at
+O0/O3. The first flips wire 256 twice; every allocation frees cleanly, code 0.
+
+```llvm example=pt3-pack257 verdict=accept
+target datalayout = "e-p:64:64"
+define void @top() {
+ %v0 = insertelement <2 x i8> zeroinitializer, i8 1, i32 0
+ %v1 = insertelement <2 x i8> %v0, i8 1, i32 1
+ %bits = bitcast <2 x i8> %v1 to i16
+ %n = zext i16 %bits to i64
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %n)
+ call void @__bennett_gate(i32 1, ptr %h, i64 256)
+ call void @__bennett_gate(i32 1, ptr %h, i64 256)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt3-pack257 at=0
+{"domains":{"%bits":[257],"%n":[257]},"value_set":[257],"widths":[257],"gates":2,"index":256,"frees":1,"final_bit":0,"live_after":0,"code":0}
+```
+
+```llvm example=pt3-pack256 verdict=accept
+target datalayout = "e-p:64:64-i64:64-n8:16:32:64"
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+define void @top() {
+ %a = insertelement <2 x i8> zeroinitializer, i8 1, i32 1
+ %b = bitcast <2 x i8> %a to i16
+ %width = zext i16 %b to i64
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt3-pack256 at=0
+{"domains":{"%b":[256],"%width":[256]},"value_set":[256],"widths":[256],"gates":0,"index":0,"frees":1,"final_bit":0,"live_after":0,"code":0}
+```
+
+```llvm example=pt3-unpack verdict=accept
+target datalayout = "e-p:64:64-i64:64-n8:16:32:64"
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+define void @top() {
+ %packed = add i16 0, 769
+ %v = bitcast i16 %packed to <2 x i8>
+ %b = extractelement <2 x i8> %v, i32 1
+ %width = zext i8 %b to i64
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt3-unpack at=0
+{"domains":{"%b":[3],"%width":[3]},"value_set":[3],"widths":[3],"gates":0,"index":0,"frees":1,"final_bit":0,"live_after":0,"code":0}
 ```
 
 **PT10 totalised lane domain.** The dynamic extraction from <1,3>
@@ -11438,6 +11505,7 @@ compute expected artefacts only (P-3).
 
 | `n-lower-widenable` | N0 | parse, normalise | LLVM 18/20/23; Python normaliser |
 | `n-defined-zero` | N12 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `pt3-pack257`, `pt3-pack256`, `pt3-unpack` | PT3/PT4/PT5, N21; DB/DN/DS | parse, recognise, state | LLVM 18/23 O0/instcombine/materialised; clang O0/O3 width guards, gates and clean free |
 | `pt10-lane-zero`, `n-constant-lane` | PT10, N15/N21 | parse, recognise, normalise, native, state | LLVM O0; clang 18/23 materialised widths and constant lanes |
 | `n-dynamic-lane` | N15 | parse, normalise | LLVM 18/20/23; Python normaliser |
 | `n-byval-copy` | N25 | parse, normalise | LLVM 18/20/23; Python normaliser |

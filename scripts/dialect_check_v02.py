@@ -702,6 +702,8 @@ def action_object(isa,path,name,widths,rows):
 
 
 def state_check(runner,block):
+    from dialect_round8 import STATES as ROUND8, check_state as check_round8
+    if block['attrs']['state'] in ROUND8:return check_round8(runner,block)
     from dialect_round7 import STATES as ROUND7, check_state as check_round7
     if block['attrs']['state'] in ROUND7:return check_round7(runner,block)
     from dialect_round6 import STATES as ROUND6, check_state as check_round6

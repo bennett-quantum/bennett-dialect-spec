@@ -1,3 +1,19 @@
+## Round-8 fixes — in progress — 2026-10-30
+
+Owner: implementation sub-agent; bead b-dialect-spec-jip. Baseline 2732/2732.
+Read binding round-5/6/7/8 briefs and full round-8 blocker witnesses.
+Hand derivation: <1,1> -> 257, <0,1> -> 256; 769 -> <1,3>.
+Conditional stack/heap store: initial 0 union stored 1 -> lane widths {1,3}.
+Implementing PT3 first; DB/DN/DS examples pt3-pack257/pack256/unpack added.
+PT3 group green: 2749/2749 freeze, 0 failed/blocked; 79 units pass.
+Red: test_round8_bitcast_domains failed six subtests (18/23 x three geometries),
+then green after Flow.bitcast. Native source/O0/instcombine/materialised O0/O3
+checks observe widths 257/256/3, two gates at 256 in sol, clean frees/code 0.
+SOL-R8-01 ≡ R8-CODEX-02 resolved; checker dialect_round8.check_state.
+Next: R8-CODEX-01 zero initial images; version/final receipts after both groups.
+PT3 commit: this green group commit (record hash in next progress update).
+Owned paths only; headless; no push; no source narrowing or ISA change planned.
+
 ## Plugin-relay final freeze — 0.2.9 — 2026-10-30
 
 **2732/2732 passed; 0 failed; 0 blocked/unavailable. Baseline 2731 → 2732.**
