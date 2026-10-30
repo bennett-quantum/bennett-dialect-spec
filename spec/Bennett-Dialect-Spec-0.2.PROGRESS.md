@@ -1,3 +1,65 @@
+## Round-7 final freeze — 2026-10-30
+
+**2731/2731 passed; 0 failed; 0 blocked/unavailable. Baseline 2651 → 2731.**
+Draft/full version `0.2.8` (`dialect-0.2.8;isa-0.8`); ISA grading target 0.8.
+75 checker unit tests and 4 legacy runtime tests pass headless.
+Final spec/checker code snapshot: `d627fd10b3feae73e25f04b189ddc90d549a6fa5`.
+Resolved groups: pointer `8f83291`, lanes `8694e5f`, FP `d627fd1`.
+Spec SHA-256: `8f493e36ab5dee9a934d55312767589b81e7961ab22877bc1d0db5cf4ed95cdc`.
+Checker/source file-set SHA-256: `b61294a4199b057417f5f23b9c0feeab49bb86aec84a8845f631a4e72390680e`.
+Independent interpreter final snapshot: `0b70157c65ddf91184e9ef9e753dd61ab94a7c0b`;
+source fingerprint `cebb8019f4e657361ce395b89bab04efb590fdd157bda73281c2ea18b48d8097`.
+The gate also used immutable initial snapshot `c37b9698c6208303cb63498626649ec183179171`,
+fingerprint `bfc88c5be2029d66bc77e59c15f21cbf9dd6313eaf8069ff2cdd028d1db41290` before the ISA checkout advanced.
+The final snapshot matched dependency HEAD and its source-file manifest at
+validation end (checked immediately after the gate). The working dependency
+source changed again before receipt writing; this is not a claim that the
+current checkout is byte-equal to that immutable snapshot. No ISA source was edited. Earlier development runs, including
+the snapshot-guard rejection while HEAD moved during a build, are not receipts.
+Normative/checker source manifest was unchanged throughout this final freeze.
+Machine receipt: `scripts/dialect_check.LAST-RUN.json`; complete executed rows:
+`scripts/.tmp/round5-fixes-freeze.json` (inherited historical filename).
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 19 | 0 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 22 | 0 | 0 |
+| coverage | 125 | 0 | 0 |
+| driver | 2 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 21 | 0 | 0 |
+| hash | 9 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 21 | 0 | 0 |
+| native | 31 | 0 | 0 |
+| normalise | 46 | 0 | 0 |
+| parse | 770 | 0 | 0 |
+| recognise | 142 | 0 | 0 |
+| run-oracle | 22 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 70 | 0 | 0 |
+| step-check | 6 | 0 | 0 |
+| tdl | 10 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1393 | 0 | 0 |
+| **Total** | **2731** | **0** | **0** |
+
+All five blocker IDs (four distinct) resolved. No declines, partials, narrowed
+capabilities, removed/weakened expectations, ISA edits or push. These fixes need
+no ISA 0.8 change. Existing §25.1 ISA-4/ISA-1/ISA-12/ISA-7 blocked-verdict checks
+remain named dependencies, not claims that their mechanisms landed in 0.8.
+The native FP fixture proves the tagged carrier vectors, not a production
+soft-float library or cross-native ARM/RISC-V execution.
+
+Exact final command (scripts/.tmp existed):
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/round5-fixes-freeze.json
+```
+
 ## Round-7 fixes — b-dialect-spec-j08 — 2026-10-30
 
 Sole spec/checker editor; baseline 2651. Before edits, LLVM 18/23 probes
@@ -14,7 +76,7 @@ avoid these conversions entirely. Probe logs: scripts/.tmp/round7-probes.
 | SOL-R7-01 / R7-CODEX-01 | resolved, gate 2667/2667 | pt5-int-wrap, pt4-wide-wrap, pt6-unknown-address | 8f83291 |
 | R7-CODEX-02 | resolved, gate 2680/2680 | pt10-lane-zero; test_round7_lane_domains/execution | 8694e5f |
 | R7-CODEX-03 | resolved, gate 2680/2680 | n-constant-lane; test_round7_constant_lanes/lane_execution | 8694e5f |
-| R7-CODEX-04 | resolved, gate 2731/2731 | n-libm-{x86,arm,riscv}-*; libm-invalid-casts; test_round7_fp_formats/execution | this FP group commit (hash in freeze receipt) |
+| R7-CODEX-04 | resolved, gate 2731/2731 | n-libm-{x86,arm,riscv}-*; libm-invalid-casts; test_round7_fp_formats/execution | d627fd1 |
 
 ## Round-6 final freeze — 2026-10-30
 

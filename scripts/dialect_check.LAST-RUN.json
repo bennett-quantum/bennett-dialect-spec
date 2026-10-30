@@ -1,12 +1,23 @@
 {
-  "spec_commit": "8c7fb5264384c53e8659b101aa30c4416ef4d4ee",
-  "checker_commit": "8c7fb5264384c53e8659b101aa30c4416ef4d4ee",
-  "spec_sha256": "d183190bd4d8f924e617b2de570beda317175cb388b2bead635bcd847275e09c",
-  "dialect_version": "0.2.7",
+  "spec_commit": "d627fd10b3feae73e25f04b189ddc90d549a6fa5",
+  "checker_commit": "d627fd10b3feae73e25f04b189ddc90d549a6fa5",
+  "spec_sha256": "8f493e36ab5dee9a934d55312767589b81e7961ab22877bc1d0db5cf4ed95cdc",
+  "dialect_version": "0.2.8",
   "isa_grading_target": "0.8",
-  "interpreter_commit": "0bc842653c2cbf860fec90a79ac2115d3d5e11fa",
-  "interpreter_source_sha256": "1d4920cd86333b6902202e1472245b917dd1340a62c7166aaadc35a03784743d",
-  "checker_source_snapshot_sha256": "90c2c9374896f2ef8ed3abd796348ad6b2afedaf21179ad29b01d3ab5857e875",
+  "interpreter_commit": "0b70157c65ddf91184e9ef9e753dd61ab94a7c0b",
+  "interpreter_source_sha256": "cebb8019f4e657361ce395b89bab04efb590fdd157bda73281c2ea18b48d8097",
+  "interpreter_snapshots": [
+    {
+      "commit": "c37b9698c6208303cb63498626649ec183179171",
+      "source_sha256": "bfc88c5be2029d66bc77e59c15f21cbf9dd6313eaf8069ff2cdd028d1db41290"
+    },
+    {
+      "commit": "0b70157c65ddf91184e9ef9e753dd61ab94a7c0b",
+      "source_sha256": "cebb8019f4e657361ce395b89bab04efb590fdd157bda73281c2ea18b48d8097"
+    }
+  ],
+  "interpreter_note": "The ISA checkout advanced during validation. The checker used these immutable snapshots; the final snapshot matched both HEAD and source files at validation end. No ISA files were edited by this task.",
+  "checker_source_snapshot_sha256": "b61294a4199b057417f5f23b9c0feeab49bb86aec84a8845f631a4e72390680e",
   "counts": {
     "asm": {
       "passed": 1,
@@ -64,22 +75,22 @@
       "blocked": 0
     },
     "native": {
-      "passed": 30,
+      "passed": 31,
       "failed": 0,
       "blocked": 0
     },
     "normalise": {
-      "passed": 39,
+      "passed": 46,
       "failed": 0,
       "blocked": 0
     },
     "parse": {
-      "passed": 716,
+      "passed": 770,
       "failed": 0,
       "blocked": 0
     },
     "recognise": {
-      "passed": 138,
+      "passed": 142,
       "failed": 0,
       "blocked": 0
     },
@@ -99,7 +110,7 @@
       "blocked": 0
     },
     "state": {
-      "passed": 61,
+      "passed": 70,
       "failed": 0,
       "blocked": 0
     },
@@ -119,41 +130,43 @@
       "blocked": 0
     },
     "xrefs": {
-      "passed": 1388,
+      "passed": 1393,
       "failed": 0,
       "blocked": 0
     }
   },
-  "baseline_total": 2598,
-  "total": 2651,
-  "passed": 2651,
+  "baseline_total": 2651,
+  "total": 2731,
+  "passed": 2731,
   "failed": 0,
   "blocked": 0,
-  "checker_unit_tests": 67,
+  "checker_unit_tests": 75,
   "runtime_unit_tests": 4,
   "rows": "scripts/.tmp/round5-fixes-freeze.json",
   "source_files": {
-    "SPEC_VERSIONS.toml": "e077001817f78cb6fa31a8ee968bfcf9cd0ddb276ba8676ff00472bcc0f43331",
+    "SPEC_VERSIONS.toml": "1f92cd268635bc946e7c6c4b369b3cc5e87e413a819403012814dac5b1ab2cde",
     "scripts/dialect_bounds.py": "169972367a433bc845558214f7d55bba2a09decd3d5c539eb5e01dbcc2234d83",
     "scripts/dialect_cc.py": "802fa64ef42cc0bcec5d2837bdf0ab52c44cbd7301b87a6fe9cc1a13451e5bc8",
     "scripts/dialect_check.py": "bc5ca75a72cbcb1cb4cfd7bba15024ff49bdce86717b0c61ae95ab6cd6757974",
-    "scripts/dialect_check_v02.py": "d5d995bd3a79c39e00420cc3a6950b39f0fcc0c18d4dcb9076a3c9d670b9f705",
+    "scripts/dialect_check_v02.py": "0a80fb7d96a5a2cb62e4f2b48b27b6e5f3fb212c50ca5eeeafd8207a81070b34",
     "scripts/dialect_driver.py": "af83d67b92b7064a9e0e2bfe9c55a045b59cffdef5388fff038350627fd14f55",
-    "scripts/dialect_flow.py": "93b6a5e69d73409d422e9313d10b20a730d2c7cd3eab30de3626e687031f330a",
+    "scripts/dialect_flow.py": "d1e13ed1fd17be0722c89b3b7bdee313479459a2129c20eb62bb239a4a01144e",
     "scripts/dialect_map.py": "76d1b10ffddbf7b51cd62466c6e8a00e4b5c1c31c4946235322bfc49c67e8f55",
     "scripts/dialect_meta.py": "2f7cd48779ce49b99a50e0e0b25098a78f6fa268c550cd5cc9592391d66432c6",
-    "scripts/dialect_native.py": "5e5aa93e189a0aa98be7e50e3fc71ed29547f5b40566664f29e071190e458841",
-    "scripts/dialect_normalise.py": "342f52ae75d560b3870c9e3934e4afe59518dd290986cab632219c3c97a7e37e",
+    "scripts/dialect_native.py": "7d4dbc806c060c3c48378323f07da70b5ca2941c6c1f0316be73ca010c573189",
+    "scripts/dialect_normalise.py": "ee053b9b77479036aea9253060cd0f4371e2dac4cf2a9b3c6ba3f9094c1b3cbd",
     "scripts/dialect_round2.py": "ee01a9a8c9bbba071f3a90f47c05444397fe584721d9f561b9ab997e550d0d1f",
     "scripts/dialect_round3.py": "b2ac14dedab5e3659085c3ad669aa1e60abd3b2cf41d10c9def0533eb77d0387",
     "scripts/dialect_round4.py": "8371fa5212b9f3556ce21e6f3b8e5700a85763653d8716d59db0b7743977ff61",
     "scripts/dialect_round5.py": "7b023195bb9225d2e768f13e899e50a9bb3dd86cb68c6ad41f015aba2af1ec34",
     "scripts/dialect_round6.py": "e1063f20c4e0df4b32e2474c4aad61aacbf00f908b827af4b39f55b6176460a3",
+    "scripts/dialect_round7.py": "b799f10f9454e5a5a850385662ecee31b221ddbeef64760523bfe768cea86b95",
     "scripts/dialect_state.py": "af1a99288b761833db91c6e4634074d3290bb6628bca5d11affa22c387a90eef",
     "scripts/dialect_tdl.py": "e4d5b4cdf85658799c9ed762d8c4aa2d6e8c65241c36c137c44a70084783a854",
     "scripts/dialect_wide.py": "1e776972c918c1e810746f465abe5aeac2db7e171be8ab126b30e9ee573083bf",
-    "scripts/test_dialect_check.py": "539c4eed7c0058a6d6962bcf12bf0196b0d3dbc1f7e70f071115392211843a4a",
-    "spec/Bennett-Dialect-Spec.md": "d183190bd4d8f924e617b2de570beda317175cb388b2bead635bcd847275e09c",
+    "scripts/round7_libm.c": "1fb28b8696b09edc105dd18eda24d85c6c6e14e954b8109c6699b6b7bc748793",
+    "scripts/test_dialect_check.py": "d0a221cb034c38c06dea1ad041ea4847d465b91038f256596f7d77773ecce2e2",
+    "spec/Bennett-Dialect-Spec.md": "8f493e36ab5dee9a934d55312767589b81e7961ab22877bc1d0db5cf4ed95cdc",
     "spec/seeds/coherence.c": "c61990e95a2308157d25d15f0a91a8fe1091e43fbe842f07a777f8a2bf7462af",
     "spec/seeds/contexts.c": "17346e9d66ebdabe7987fb15a26cf37bf6d90daab60e35d0c798b948c3a6aaf2",
     "spec/seeds/devices.c": "ebab3802d530c993a35ae50b5eb296a84c512b0882fe0345e9c95b8dfbb9f203",
@@ -161,5 +174,7 @@
     "spec/seeds/softfloat.c": "de3f03231c39b2286568f6e913ea8f7aa8c7f64bae3af37db5b0f172c38d9ed3"
   },
   "source_manifest_unchanged_during_freeze": true,
-  "dependency_head_matched_at_validation_end": true
+  "dependency_head_matched_at_validation_end": true,
+  "dependency_sources_matched_at_validation_end": true,
+  "dependency_sources_match_at_receipt_write": false
 }
