@@ -1,5 +1,6 @@
 """Materialised normalisation, dialect §12 (expected IR producer)."""
 import re
+import math
 import dialect_check as d
 
 FP={'half':('f16',16),'bfloat':('bf16',16),'float':('f32',32),'double':('f64',64),
@@ -142,6 +143,17 @@ class Normaliser:
             if v.startswith('<'):return [d.typed_val(x) for x in d.split_top(v[1:-1])]
             if v in self.lanes:return self.lanes[v]
             raise d.Fail('N21 vector source '+v)
+        def memory_lane(t,p,k,original):
+            e=d.tstr(t);ew=t[1] if t[0]=='int' else d.tsize(t)*8
+            # Byte lanes need not share their scalar allocation stride.
+            abi=d.talign(t)
+            if t[0]=='int':
+                alignments={8:1,16:2,32:4,64:8}
+                alignments.update({int(w):int(a)//8 for w,a in re.findall(r'(?:^|[-"])i(\d+):(\d+)',self.original)})
+                abi=alignments.get(ew,next((alignments[w] for w in sorted(alignments) if w>=ew),alignments[max(alignments)]))
+            size=(ew+7)//8;stride=(size+abi-1)//abi*abi
+            offset=k*size;align=min(abi,math.gcd(original,offset))
+            return (e,k,align) if stride==size else ('i8',offset,align)
         def go(f,i,r):
             b=i.text.split(' = ',1)[-1]
             if i.op=='bitcast' and '<' in b:
@@ -184,7 +196,7 @@ class Normaliser:
                 return out
             if i.op=='load' and re.search(r'<\d+ x ',b):
                 ps=d.split_top(b[5:]);t=d.parse_type(ps[0])[0];n=t[1];e=d.tstr(t[2]);p=d.typed_val(ps[1])
-                al=re.search(r', align (\d+)',b);align=min(int(al[1]),d.talign(t[2])) if al else d.talign(t[2])
+                al=re.search(r', align (\d+)',b);original=int(al[1]) if al else d.talign(t)
                 vals=[];out=[]
                 if t[2][0]=='int' and t[2][1]%8:
                     ew=t[2][1];mw=((n*ew+7)//8)*8
@@ -197,8 +209,16 @@ class Normaliser:
                     self.lanes[i.res]=vals;return out
                 for k in range(n):
                     q=f'%nz.p{k}.{r}';v=f'%nz.l{k}.{r}';vals.append(v)
-                    out += [f'{q} = getelementptr {e}, ptr {p}, i64 {k}',f'{v} = load {e}, ptr {q}, align {align}']
+                    gt,off,align=memory_lane(t[2],p,k,original)
+                    out += [f'{q} = getelementptr {gt}, ptr {p}, i64 {off}',f'{v} = load {e}, ptr {q}, align {align}']
                 self.lanes[i.res]=vals;return out
+            if i.op=='store' and re.search(r'<\d+ x ',b):
+                ps=d.split_top(b[6:]);t=d.parse_type(ps[0])[0];n=t[1];e=d.tstr(t[2]);p=d.typed_val(ps[1]);vals=get(d.typed_val(ps[0]),n,t[2])
+                al=re.search(r', align (\d+)',b);original=int(al[1]) if al else d.talign(t);out=[]
+                for k,value in enumerate(vals):
+                    gt,off,align=memory_lane(t[2],p,k,original);q=f'%nz.p{k}.{r}'
+                    out += [f'{q} = getelementptr {gt}, ptr {p}, i64 {off}',f'store {e} {value}, ptr {q}, align {align}']
+                return out
             if i.op in d.BINOPS and re.search(r'<\d+ x ',b):
                 rest=b.split(None,1)[1];t,j=d.parse_type(rest);a,z=d.split_top(rest[j:]);aa=get(a,t[1],t[2]);zz=get(z,t[1],t[2]);vals=[f'%nz.l{k}.{r}' for k in range(t[1])];self.lanes[i.res]=vals
                 return [f'{v} = {i.op} {d.tstr(t[2])} {x}, {y}' for v,x,y in zip(vals,aa,zz)]

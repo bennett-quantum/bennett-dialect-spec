@@ -41,6 +41,13 @@ def cases(ident,text):
                 out.append(f'printf("%u\\n",f({x}));');expected.append(int(want))
         else:
             decl='extern uint32_t f(void);\n';out=['printf("%u\\n",f());'];expected=[int(re.fullmatch(r'f=(\d+)',text.strip())[1])]
+    elif ident=='n-vector-i24':
+        decl='extern uint32_t f(const void *); extern void s(void *);\n'
+        m=re.fullmatch(r'bytes=([0-9a-f]+) -> f=(\d+); code=0\nstore=(\[[^]]+\]); code=0',text.strip())
+        if not m:raise d.Fail('native vector memory syntax: '+text)
+        out=['uint8_t p[]={'+','.join(map(str,bytes.fromhex(m[1])))+'};',
+             'printf("%u\\n",f(p));uint8_t q[8];memset(q,170,8);s(q);printf("[");for(int i=0;i<8;i++)printf("%s%u",i?",":"",q[i]);puts("]");']
+        expected=[int(m[2]),values(m[3])]
     elif ident=='n-gep-index':
         for j,(fn,args,want) in enumerate(re.findall(r'([fg])\(([-\d,]+)\)=(\d+); code=0',text)):
             decl+=f'extern uint64_t probe{j}(void);\n'

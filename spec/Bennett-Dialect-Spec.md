@@ -4452,12 +4452,18 @@ lane order k = 0, 1, …:
   carriers to total width, shift by cumulative widths and OR in source-lane order;
   extract by logical right shift and truncation in destination-lane order. Omit identity
   casts and zero shifts; N22 legalises total widths above 128. Drop no source memory access.
-- `load <L x T>, ptr p` → `%nz.p<k>.r = getelementptr T, ptr p, i64 k` and `%nz.l<k>.r = load T,
-  ptr %nz.p<k>.r` with alignment min(original, abi-align(T)); `store` likewise in lane order,
-  except packed lanes: for `<L x iM>` with M not a multiple of 8, access the vector's packed
-  byte range, extract lane k from bits [kM, (k+1)M), and pack stores into that same range.
-  Never use scalar allocation stride for these lanes. Masked accesses touch only bytes
-  containing active lanes and preserve inactive bits; padding follows N22;
+- Every vector load/store follows the vector's datalayout bit string: lane k
+  begins at bit k·bitwidth(T), with no scalar allocation padding between lanes.
+  `getelementptr T, ptr p, i64 k` followed by load/store T is permitted only
+  when T's allocation stride equals that lane spacing. Otherwise byte-sized
+  lanes use `getelementptr i8, ptr p, i64 (k·bitwidth(T)/8)`; sub-byte lanes
+  use packed-byte extraction/insertion. Replacement accesses stay within the
+  original vector storage range. At byte offset o, scalar alignment is
+  min(abi-align(T), gcd(original alignment,o)); gcd(a,0)=a. Masked accesses
+  touch only bytes containing active lanes and preserve inactive bits; padding
+  follows N22. This applies also to byte-multiple integer lanes such as i24,
+  not only packed i1. See [LangRef vector layout](https://llvm.org/docs/LangRef.html#vector-type)
+  and [load/store semantics](https://llvm.org/docs/LangRef.html#load-instruction);
 - `insertelement`, `extractelement`, `shufflevector` with constant indices: lane renaming; with a
   non-constant index (after N15): a `select` chain over the L lanes in lane order;
 - `llvm.vector.reduce.<op>(v)` with op ∈ {add, mul, and, or, xor, smax, smin, umax, umin, fadd,
@@ -4650,6 +4656,53 @@ entry:
 f=15
 ```
 
+**Padded scalar, contiguous vector.** Scalar i24 allocation stride is four under
+this datalayout, but vector lane spacing is 24 bits. Lane 1 reads bytes 04 05 06,
+so 4+5·256+6·65536=394500. Store writes six contiguous bytes and leaves the
+following sentinel bytes untouched. These ordinary accesses stay within six bytes.
+
+```llvm normalise-in=n-vector-i24
+target datalayout = "e-p:64:64-i64:64-i24:32-n8:16:32:64-S128"
+define i32 @f(ptr %p) {
+entry:
+  %v = load <2 x i24>, ptr %p, align 1
+  %r = extractelement <2 x i24> %v, i32 1
+  %z = zext i24 %r to i32
+  ret i32 %z
+}
+define void @s(ptr %p) {
+entry:
+  store <2 x i24> <i24 197121, i24 394500>, ptr %p, align 1
+  ret void
+}
+```
+
+```llvm normalise-out=n-vector-i24
+target datalayout = "e-p:64:64-i64:64-i24:32-n8:16:32:64-S128"
+define i32 @f(ptr %p) {
+entry:
+  %nz.p0.v = getelementptr i8, ptr %p, i64 0
+  %nz.l0.v = load i24, ptr %nz.p0.v, align 1
+  %nz.p1.v = getelementptr i8, ptr %p, i64 3
+  %nz.l1.v = load i24, ptr %nz.p1.v, align 1
+  %z = zext i24 %nz.l1.v to i32
+  ret i32 %z
+}
+define void @s(ptr %p) {
+entry:
+  %nz.p0.s.0 = getelementptr i8, ptr %p, i64 0
+  store i24 197121, ptr %nz.p0.s.0, align 1
+  %nz.p1.s.0 = getelementptr i8, ptr %p, i64 3
+  store i24 394500, ptr %nz.p1.s.0, align 1
+  ret void
+}
+```
+
+```text native=n-vector-i24
+bytes=0102030405060708 -> f=394500; code=0
+store=[1,2,3,4,5,6,170,170]; code=0
+```
+
 ### 12.7 Wide integers (N22)
 
 Let w_k = min(64, N − 64k). Limbs a_k, b_k (k = 0 … L − 1) have type i<w_k>.
@@ -4772,7 +4825,9 @@ g(4294967296,4294967296)=4294967296; code=0
 
 ### 12.9 Examples
 
-The following vectors fix packed memory, partial limbs and GC provenance. For byte 0x80,
+The following vectors fix packed memory, partial limbs and GC provenance. The
+scalar GEP fast path of §12.6 exempts only lanes whose scalar allocation stride
+equals their vector bit spacing; n-vector-i24 above checks the padded-byte case. For byte 0x80,
 bit 7 = 1; 2^128−1 carries through two 64-bit limbs into the one-bit limb; −1 sign-fills.
 
 ```text state=normalisation-boundaries at=0
@@ -9919,6 +9974,7 @@ compute expected artefacts only (P-3).
 | `tdl`, `tdl-overwrite`, `tdl-effect`, `tdl-angle` with `tdl=` and `state=` blocks | TDL-1–TDL-12, §18.2–§18.4 | parse, recognise, tdl, run-action | LLVM; Python TDL; isa-ref `run-action` (requested) |
 | `effect-console-r`, `effect-console-cc` | §11.1, §11.2 | parse, recognise, run-cc, reverse | isa-ref `run-cc`, `reverse` (requested) |
 | `n-flags`, `n-shift`, `n-undef`, `n-query`, `n-trap` | N1–N8, N10, N11, N14 | parse, normalise | LLVM; Python normaliser |
+| `n-vector-i24` (+ `native=`) | N21 vector memory spacing | parse, normalise, native | LLVM; clang 18/23 |
 | `n-gep-index` (+ `native=`, `state=`) | §16.4 pointer-index widths | parse, normalise, native, state | LLVM; clang 18/23; Rust mapped run-oracle |
 | `n-wide-sub` (+ `native=`) | N22 subtraction borrows | parse, normalise, native | LLVM; clang 18/23 |
 | `n-vector`, `n-wideint`, `n-shadow-stack`, `n-memintrinsics`, `n-intrinsics`, `n-atomic` with `native=` | N9, N21, N22, N24, N26, N27 | parse, normalise, native | LLVM; Python; clang + seeds |
