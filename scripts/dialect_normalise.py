@@ -255,23 +255,26 @@ class Normaliser:
                 return [f'{v} = {i.op} {d.tstr(t[2])} {x}, {y}' for v,x,y in zip(vals,aa,zz)]
             if i.op=='insertelement':
                 ps=d.split_top(b[len(i.op):].strip());t=d.parse_type(ps[0])[0];lanes=list(get(d.typed_val(ps[0]),t[1],t[2]));idx=d.typed_val(ps[2])
-                if not idx.isdigit():
+                if not re.fullmatch(r'-?\d+',idx):
                     out,it,idx=lane_index(ps[2],t[1],r);et=d.tstr(t[2]);value=d.typed_val(ps[1]);vals=[]
                     for k,old in enumerate(lanes):
                         c=f'%nz.k{k}.{r}';v=f'%nz.l{k}.{r}'
                         out += [f'{c} = icmp eq {it} {idx}, {k}',f'{v} = select i1 {c}, {et} {value}, {et} {old}'];vals.append(v)
                     self.lanes[i.res]=vals;return out
-                lanes[int(idx)]=d.typed_val(ps[1]);self.lanes[i.res]=lanes;return []
+                index=int(idx)%(1<<d.parse_type(ps[2])[0][1])
+                if index<t[1]:lanes[index]=d.typed_val(ps[1])
+                self.lanes[i.res]=lanes;return []
             if i.op=='extractelement':
                 ps=d.split_top(b[len(i.op):].strip());t=d.parse_type(ps[0])[0];lanes=get(d.typed_val(ps[0]),t[1],t[2]);idx=d.typed_val(ps[1])
-                if not idx.isdigit():
+                if not re.fullmatch(r'-?\d+',idx):
                     L=len(lanes);out,it,idx=lane_index(ps[1],L,r);et=d.tstr(t[2])
                     out.append(f'%nz.c.{r} = icmp uge {it} {idx}, {L}');prev='0'
                     for k,value in enumerate(lanes):
                         c=f'%nz.k{k}.{r}';v=f'%nz.e.{r}' if k==L-1 else f'%nz.l{k}.{r}'
                         out += [f'{c} = icmp eq {it} {idx}, {k}',f'{v} = select i1 {c}, {et} {value}, {et} {prev}'];prev=v
                     return out+[f'{i.res} = select i1 %nz.c.{r}, {et} 0, {et} {prev}']
-                self.replace(f,i.res,lanes[int(idx)]);return []
+                index=int(idx)%(1<<d.parse_type(ps[1])[0][1])
+                self.replace(f,i.res,lanes[index] if index<t[1] else '0');return []
             if i.op=='call' and '@llvm.vector.reduce.' in b:
                 c=d.parse_call(i);op=c['callee'].split('.')[3];t=c['args'][0][0];vals=get(c['args'][0][2],t[1],t[2]);out=[];a=vals[0]
                 for k,z in enumerate(vals[1:],1):

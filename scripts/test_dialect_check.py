@@ -16,12 +16,52 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round7_lane_execution(self):
+        import json
+        from dialect_round7 import check_lanes
+        from dialect_native import check
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state','native'})
+            b=self.block('state','pt10-lane-zero');want=json.loads(b['body'])
+            check_lanes(runner,want)
+            with self.assertRaises(d.Fail):check_lanes(runner,dict(want,widths=[2,4,2,1]))
+            b=self.block('native','n-constant-lane');check(runner,b)
+            with self.assertRaises(d.Fail):check(runner,dict(b,body=b['body'].replace('"f":0','"f":1')))
+
+    def test_round7_lane_domains(self):
+        src='''define i64 @top(i32 %index) {
+ %v0 = insertelement <2 x i64> zeroinitializer, i64 1, i32 0
+ %v1 = insertelement <2 x i64> %v0, i64 3, i32 1
+ %lane = extractelement <2 x i64> %v1, i32 %index
+ %frozen = freeze i64 %lane
+ %width = add i64 %frozen, 1
+ ret i64 %width
+}
+'''
+        a=v.Analysis02(d.Module(src));a.analyse();f=a.m.funcs['top']
+        self.assertEqual(a.ints(f,'%lane'),{0,1,3})
+        self.assertEqual(a.ints(f,'%width'),{1,2,4})
+        for index,want in [('0',{1}),('1',{3}),('2',{0}),('-1',{0})]:
+            probe=src.replace('i32 %index\n','i32 '+index+'\n')
+            a=v.Analysis02(d.Module(probe));a.analyse()
+            self.assertEqual(a.ints(a.m.funcs['top'],'%lane'),want)
+        # An i1 index cannot select the zero alternative of a two-lane vector.
+        a=v.Analysis02(d.Module(src.replace('i32','i1')));a.analyse()
+        self.assertEqual(a.ints(a.m.funcs['top'],'%lane'),{1,3})
+
+    def test_round7_constant_lanes(self):
+        for idx in ('2','-1'):
+            src='define i8 @f() {\n %lane = extractelement <2 x i8> <i8 5, i8 9>, i32 '+idx+'\n %v = freeze i8 %lane\n ret i8 %v\n}\n'
+            self.assertIn('ret i8 0',v.normalise(src))
+            src='define i8 @g() {\n %v = insertelement <2 x i8> <i8 5, i8 9>, i8 7, i32 '+idx+'\n %f = freeze <2 x i8> %v\n %r = extractelement <2 x i8> %f, i32 0\n ret i8 %r\n}\n'
+            self.assertIn('ret i8 5',v.normalise(src))
+
     def test_round7_pointer_execution(self):
         import json
         from dialect_round7 import check_state, STATES
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
-            for name in STATES:
+            for name in ('pt5-int-wrap','pt4-wide-wrap','pt6-unknown-address'):
                 b=self.block('state',name);check_state(runner,b)
                 wrong=json.loads(b['body']);wrong['calls']+=1
                 with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))

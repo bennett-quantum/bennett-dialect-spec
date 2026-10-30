@@ -11,9 +11,9 @@ avoid these conversions entirely. Probe logs: scripts/.tmp/round7-probes.
 
 | Blocker | Status | Checker case | Commit |
 |---|---|---|---|
-| SOL-R7-01 / R7-CODEX-01 | resolved, gate 2667/2667 | pt5-int-wrap, pt4-wide-wrap, pt6-unknown-address | this group commit (hash in next entry) |
-| R7-CODEX-02 | in progress | planned lane width witness | pending |
-| R7-CODEX-03 | in progress | planned constant lane pair | pending |
+| SOL-R7-01 / R7-CODEX-01 | resolved, gate 2667/2667 | pt5-int-wrap, pt4-wide-wrap, pt6-unknown-address | 8f83291 |
+| R7-CODEX-02 | resolved, gate 2680/2680 | pt10-lane-zero; test_round7_lane_domains/execution | this lane group commit (hash in next entry) |
+| R7-CODEX-03 | resolved, gate 2680/2680 | n-constant-lane; test_round7_constant_lanes/lane_execution | this lane group commit (hash in next entry) |
 | R7-CODEX-04 | in progress | planned per-triple carrier pairs | pending |
 
 ## Round-6 final freeze — 2026-10-30

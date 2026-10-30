@@ -30,6 +30,13 @@ def values(text):
 def cases(ident,text):
     """Return C driver, independent expected stdout records, module variants."""
     out=[];expected=[];decl='';variants=('input','output')
+    if ident=='n-constant-lane':
+        want=json.loads(text);variants=('output',)
+        if want.pop('code')!=0:raise d.Fail('constant lane native requires code=0')
+        for fn,value in want.items():
+            decl+=f'extern uint8_t {fn}(void);\n'
+            out.append(f'printf("%u\\n",{fn}());');expected.append(value)
+        return PREFIX+decl+'int main(void){'+''.join(out)+'return 0;}\n',expected,variants
     if ident in {'n-fpconv-wide','n-wide-intrinsics','n-atomic-wrap','n-atomic-usub','n-atomic-nand','pointer-as270'} and not text.strip().endswith('code=0'):raise d.Fail('native witness requires code=0')
     if ident in ('n-bitcast-lanes','n-bitcast-scalar','n-vp-merge','n-vp-select','n-vp-product','n-defined-zero'):
         if ident=='n-bitcast-lanes':
@@ -163,6 +170,9 @@ def check(runner,block):
     (directory/'driver.c').write_text(driver)
     for major in ('18','23'):
         clang=runner.frontends[major]/'clang'
+        if ident=='n-constant-lane':
+            original=directory/'original.ll';original.write_text(runner.block('normalise-in',ident)['body'])
+            command([runner.tc[major]/'opt','-passes=default<O0>',original,'-disable-output'])
         for variant in variants:
             if ident=='n-atomic-usub' and variant=='input' and major=='18':continue # not an LLVM 18 source opcode
             if variant=='seed':

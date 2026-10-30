@@ -1013,7 +1013,7 @@ AV(operand) lane by lane; ⊤ absorbs.
 | PT7 | `store v, ptr p` | retain each written interval and representation width; partial writes overlapping a larger load participate in PT6's conservative fallback. AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
 | PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when offsets and len are constants and the atom's entire storage interval [s, s + size(atom)) lies in the copied range, copy its atom and representation width to (Z, o_d + s − o_s). Every partially overlapping atom instead contributes non-handle ⊤ and explicit ROOT provenance to the affected destination interval (unknown offsets/len use `*`); do not copy the whole component INT. Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
 | PT9 | direct call of G, or indirect call with candidate G (§14.2) | AV(parameter i of G) ⊇ AV(argument i); AV(result) ⊇ the union of AV over G's `ret` operands; `byval` arguments copy the pointee's slots into the callee's copy object |
-| PT10 | `insertelement`/`extractelement`/`shufflevector`/`insertvalue`/`extractvalue` | atoms move with constant lanes and index paths; a non-constant lane index moves the union of all lanes (a handle-table read, audit B-23) |
+| PT10 | `insertelement`/`extractelement`/`shufflevector`/`insertvalue`/`extractvalue` | extraction/insertion use N15’s total unsigned index semantics. Constant in-range extraction copies its lane; constant out-of-range extraction gives the element type’s zero. Dynamic extraction unions every source lane selected by a represented index, plus zero iff the index set includes an unsigned value >= L (including top when 2^K > L). No zero is added if every represented index is in range; zero adds no ROOT. In-range insertion replaces the selected lane; out-of-range insertion preserves the vector. Dynamic insertion includes each old lane unless it is certainly replaced, and the inserted value whenever that lane can be selected. Valid shuffle indices and aggregate paths move atoms unchanged (handle-table reads, audit B-23) |
 | PT11 | a parameter of a function with a host caller, a device entry, or a function whose address host code uses | AV ⊇ {(EXT, `*`)} for `ptr` parameters, ⊤ for integer parameters, plus the atoms of the device-side arguments by PT9; for a pointer parameter i of a device entry E, also the candidate atom ROOT(E, i) of §6.6 |
 | PT12 | a `qalloc`/`qborrow` call; a call of a function with no definition that resolves to a host call (§4.5) or is trapped; an `atomicrmw`/`cmpxchg` (before N9) | `qalloc`/`qborrow`: AV ∋ ROOT(site) (§6.5). An undefined callee: the result is ⊤ and every slot reachable from its pointer arguments gets ⊤. `atomicrmw`/`cmpxchg`: a load plus a store (PT6, PT7) |
 
@@ -1038,6 +1038,28 @@ define void @top() {
   call void @__bennett_qfree(ptr %h)
   ret void
 }
+```
+
+**PT10 totalised lane domain.** The dynamic extraction from <1,3>
+has domain {0,1,3}, so adding one gives finite width dispatch {1,2,4}.
+Indices 0,1,2,-1 allocate 2,4,1,1 wires and free cleanly; no precondition
+excludes the out-of-range host inputs.
+
+```llvm example=pt10-lane-zero verdict=accept
+define void @top(i32 %index) {
+ %v0 = insertelement <2 x i64> zeroinitializer, i64 1, i32 0
+ %v1 = insertelement <2 x i64> %v0, i64 3, i32 1
+ %lane = extractelement <2 x i64> %v1, i32 %index
+ %frozen = freeze i64 %lane
+ %width = add i64 %frozen, 1
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt10-lane-zero at=0
+{"lane_set":[0,1,3],"value_set":[1,2,4],"inputs":[0,1,2,-1],"widths":[2,4,1,1],"live_after":0,"trap":0}
 ```
 
 **Pointer-integer wrap witnesses.** Two i64 additions of −2^63 have net
@@ -4336,7 +4358,7 @@ rules are replaced (outline §12.2); they are kept as anchors.
 | N13 | (0.1: `memcpy` → `memmove`) | replaced by N26 |
 | N14 | `%r = shl/lshr/ashr iW a, b` with b not a constant | `%nz.c.r = icmp uge iW b, W`; `%nz.s.r = <op> iW a, b`; `%r = select i1 %nz.c.r, iW 0, iW %nz.s.r` (every shift by ≥ W gives 0, as the ISA's shifts do, ISA §4.1) |
 | N14 | the same with b a constant ≥ W | every use of `%r` replaced by `0`; deleted |
-| N15 | `extractelement`/`insertelement` with a non-constant index i on L lanes | interpret iK index i as unsigned; let W=max(K,⌈log2(L+1)⌉), zero-extend to `%nz.i.r` when W>K (otherwise use i unchanged); `%nz.c.r = icmp uge iW wide_i, L` with exact L; `%nz.e.r = <the original instruction>`; `%r = select i1 %nz.c.r, T Z, T %nz.e.r` with Z = the zero element (extract) or the unchanged vector operand (insert) |
+| N15 | `extractelement`/`insertelement` with any integer index i on L lanes | interpret iK index i as unsigned, including negative spellings. A constant i<L is left for N21’s in-range lane renaming. A constant i>=L replaces all result uses by the zero element (extract) or the unchanged input vector (insert), then deletes the instruction. For a non-constant index: let W=max(K,⌈log2(L+1)⌉), zero-extend to `%nz.i.r` when W>K (otherwise use i unchanged); `%nz.c.r = icmp uge iW wide_i, L` with exact L; `%nz.e.r = <the original instruction>`; `%r = select i1 %nz.c.r, T Z, T %nz.e.r` with Z = the zero element (extract) or the unchanged vector operand (insert) |
 | N16 | `%r = call T @llvm.fmuladd.*(a, b, c)` | `%nz.m.r = fmul T a, b`; `%r = fadd T %nz.m.r, c` (no fusion; explicit `llvm.fma` keeps fusion through §13) |
 | N17 | (0.1: FP formats and transcendentals → F(8)) | replaced by §13 (N32, N33): no floating-point construct faults |
 | N18 | (0.1: external calls in oracle and reversible closures → F(8)) | replaced by §4.5: shims first; trapped only without bitcode |
@@ -4420,6 +4442,56 @@ declare i8 @__bennett_rt_cttz_i8(i8, i1)
 
 ```text native=n-defined-zero
 f(0)=16; f(1)=7
+```
+
+**Constant lane totalisation.** At index 2 or unsigned -1 no lane of
+<5,9> is selected. N15 therefore returns zero for extraction and the unchanged
+vector for insertion; N8 then erases freeze. The original LLVM sources verify
+and retain the operations at O0 on 18/23. Native results below execute the
+materialised output, since source poison/freeze does not promise these values.
+
+```llvm normalise-in=n-constant-lane
+define i8 @f() {
+ %lane = extractelement <2 x i8> <i8 5, i8 9>, i32 2
+ %v = freeze i8 %lane
+ ret i8 %v
+}
+define i8 @negative() {
+ %lane = extractelement <2 x i8> <i8 5, i8 9>, i32 -1
+ %v = freeze i8 %lane
+ ret i8 %v
+}
+define i8 @g() {
+ %v = insertelement <2 x i8> <i8 5, i8 9>, i8 7, i32 2
+ %f = freeze <2 x i8> %v
+ %r = extractelement <2 x i8> %f, i32 0
+ ret i8 %r
+}
+define i8 @gnegative() {
+ %v = insertelement <2 x i8> <i8 5, i8 9>, i8 7, i32 -1
+ %f = freeze <2 x i8> %v
+ %r = extractelement <2 x i8> %f, i32 0
+ ret i8 %r
+}
+```
+
+```llvm normalise-out=n-constant-lane
+define i8 @f() {
+  ret i8 0
+}
+define i8 @negative() {
+  ret i8 0
+}
+define i8 @g() {
+  ret i8 5
+}
+define i8 @gnegative() {
+  ret i8 5
+}
+```
+
+```text native=n-constant-lane
+{"f":0,"negative":0,"g":5,"gnegative":5,"code":0}
 ```
 
 **`n-dynamic-lane`.** N15 chooses zero when unsigned i >= 2; N21 selects lanes in order. Indices 0, 1, 2 and -1 therefore return 5, 9, 0 and 0. The scalar select chain retains the N15 guard.
@@ -5194,7 +5266,7 @@ lane order k = 0, 1, …:
   follows N22. This applies also to byte-multiple integer lanes such as i24,
   not only packed i1. See [LangRef vector layout](https://llvm.org/docs/LangRef.html#vector-type)
   and [load/store semantics](https://llvm.org/docs/LangRef.html#load-instruction);
-- `insertelement`, `extractelement`, `shufflevector` with constant indices: lane renaming; with a
+- `insertelement`, `extractelement` with constant in-range indices and `shufflevector` with valid indices: lane renaming; N15 has already removed constant out-of-range extraction/insertion. With a
   non-constant index (after N15): a `select` chain over the L lanes in lane order,
   using the same widened unsigned index and exact lane constants as N15. Constants
   must never wrap to iK. Insertion may fuse the out-of-range unchanged-vector
@@ -11167,6 +11239,7 @@ compute expected artefacts only (P-3).
 
 | `n-lower-widenable` | N0 | parse, normalise | LLVM 18/20/23; Python normaliser |
 | `n-defined-zero` | N12 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `pt10-lane-zero`, `n-constant-lane` | PT10, N15/N21 | parse, recognise, normalise, native, state | LLVM O0; clang 18/23 materialised widths and constant lanes |
 | `n-dynamic-lane` | N15 | parse, normalise | LLVM 18/20/23; Python normaliser |
 | `n-byval-copy` | N25 | parse, normalise | LLVM 18/20/23; Python normaliser |
 | `n-rstep-return` | N34 | parse, normalise | LLVM 18/20/23; Python normaliser |

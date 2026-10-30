@@ -241,6 +241,18 @@ class Flow:
             s,r,lo,hi=off;return (s,(r+delta)%s,lo+delta,hi+delta)
         return off+delta
 
+    def lane_expression(self,f,v,seen=None):
+        # Refine acyclic lane expressions without replacing the existing TOP
+        # fallback for loop-carried scalars or mutable-memory recurrences.
+        seen=set() if seen is None else set(seen)
+        if v in seen:return False
+        seen.add(v);ins=next((i for i in f.instrs() if i.res==v),None)
+        if not ins:return False
+        if ins.op=='extractelement':return True
+        if ins.op in d.BINOPS|{'freeze','zext','sext','trunc'}:
+            return any(self.lane_expression(f,x,seen) for x in re.findall(r'%[-\w.$]+',ins.text.split(' = ',1)[-1]))
+        return False
+
     def ints(self,f,v):
         from dialect_check_v02 import value_set
         atoms=self.atoms(f,v)
@@ -367,17 +379,27 @@ class Flow:
             else:
                 src=body[len(op):].rsplit(' to ',1)[0];lanes=self.av(f,d.typed_val(d.strip_flags(src.strip())))
         elif op in ('insertvalue','insertelement'):
-            parts=d.split_top(body[len(op):].strip());lanes=dict(self.av(f,d.typed_val(parts[0])))
+            parts=d.split_top(body[len(op):].strip());t=d.parse_type(parts[0])[0];lanes=dict(self.av(f,d.typed_val(parts[0]),t))
             idx=d.typed_val(parts[2]) if op=='insertelement' else parts[2]
             val=union(*self.av(f,d.typed_val(parts[1])).values())
-            if re.fullmatch(r'\d+',idx):lanes[int(idx)]=val
+            if op=='insertvalue':lanes[int(idx)]=val
             else:
-                t=d.parse_type(parts[0])[0]
-                for k in range(t[1]):lanes[k]=union(lanes.get(k,()),val)
+                K=d.parse_type(parts[2])[0][1];indices=self.ints(f,idx)
+                if indices!='TOP':indices={x%(1<<K) for x in indices}
+                for k in range(t[1]):
+                    if indices=={k}:lanes[k]=val
+                    elif indices=='TOP' and k<1<<K or indices!='TOP' and k in indices:lanes[k]=union(lanes.get(k,()),val)
         elif op in ('extractvalue','extractelement'):
-            parts=d.split_top(body[len(op):].strip());src=self.av(f,d.typed_val(parts[0]))
+            parts=d.split_top(body[len(op):].strip());t=d.parse_type(parts[0])[0];src=self.av(f,d.typed_val(parts[0]),t)
             idx=d.typed_val(parts[1]) if op=='extractelement' else parts[1]
-            lanes={0:src.get(int(idx),frozenset()) if re.fullmatch(r'\d+',idx) else union(*src.values())}
+            if op=='extractvalue':lanes={0:src.get(int(idx),frozenset())}
+            else:
+                K=d.parse_type(parts[1])[0][1];indices=self.ints(f,idx);L=t[1]
+                if indices=='TOP':
+                    value=union(*(src.get(k,()) for k in range(min(L,1<<K))))
+                    if (1<<K)>L:value=union(value,{('I',0)})
+                else:value=union(*(src.get(k,()) if k<L else {('I',0)} for k in {x%(1<<K) for x in indices}))
+                lanes={0:value}
         elif op=='shufflevector':
             parts=d.split_top(body[len(op):].strip());a=self.av(f,d.typed_val(parts[0]));b=self.av(f,d.typed_val(parts[1]));n=d.parse_type(parts[0])[0][1]
             for k,p in enumerate(d.split_top(d.typed_val(parts[2])[1:-1])):
@@ -442,6 +464,14 @@ class Flow:
             vals=value_set(self.m,f,ins.res)
             lanes={0:{TOP} if vals=='TOP' else {('I',x) for x in vals}}
             rest=d.strip_flags(body.split(None,1)[1]);ty,j=d.parse_type(rest);left,right=d.split_top(rest[j:])
+            if vals=='TOP' and (self.lane_expression(f,left) or self.lane_expression(f,right)):
+                sa,sb=self.ints(f,left),self.ints(f,right);W=ty[1]
+                ops={'add':lambda a,b:a+b,'sub':lambda a,b:a-b,'mul':lambda a,b:a*b,
+                     'and':lambda a,b:a&b,'or':lambda a,b:a|b,'xor':lambda a,b:a^b,
+                     'shl':lambda a,b:a<<b if b<W else 0,'lshr':lambda a,b:a>>b if b<W else 0,
+                     'urem':lambda a,b:a%b if b else 0,'udiv':lambda a,b:a//b if b else 0}
+                if sa!='TOP' and sb!='TOP' and len(sa)*len(sb)<=4096 and op in ops:
+                    lanes={0:{('I',ops[op](a%(1<<W),b%(1<<W))%(1<<W)) for a in sa for b in sb}}
             pats={a for a in self.atoms(f,left)|self.atoms(f,right) if a[0]=='P'}
             if pats:
                 rhs=self.ints(f,right)
