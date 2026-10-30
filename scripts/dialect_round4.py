@@ -4,7 +4,7 @@ import dialect_check as d
 from dialect_check_v02 import equal
 from dialect_map import Mapper
 
-STATES={'n-gep-index','handle-cross-entry'}
+STATES={'n-gep-index','handle-cross-entry','handle-param-cross-entry'}
 
 def check_state(runner,block):
     name=block['attrs']['state'];v=json.loads(block['body'])
@@ -21,7 +21,7 @@ def check_state(runner,block):
                 for x in case[:-2]:argv+=['--arg',str(x%(1<<64))]
                 got=runner.isa.call('run-oracle',path,'ref','--input','',*argv,'--budget','1000,0,32,8')
                 equal(name,fn+' mapped payload/code',case[-2:],[int(got['payload']),int(got['code'])])
-    elif name=='handle-cross-entry':
+    elif name in ('handle-cross-entry','handle-param-cross-entry'):
         from dialect_check_v02 import recognise
         from dialect_state import run_native
         source=runner.block('example',name)['body']
@@ -38,5 +38,8 @@ void __bennett_qfree(void*h){unsigned k=slot(h);if(value[k])abort();live[k]=0;}
 extern void put(void);extern void use(void);
 int main(void){put();++calls;put();++calls;use();unsigned total=0;for(unsigned k=0;k<64;k++)total+=live[k];
 printf("[%u,%u,%u,%u,%u]\\n",calls,next,first!=second,total,code);return 0;}'''
+        if name=='handle-param-cross-entry':
+            driver=driver.replace('extern void put(void);extern void use(void);','extern void stash(void*);extern void useall(void);')
+            driver=driver.replace('put();++calls;put();++calls;use();','void *a=__bennett_qalloc(0,1),*b=__bennett_qalloc(0,1);stash(a);++calls;stash(b);++calls;useall();++calls;')
         run_native(runner,name,source,driver,[[v['entry_calls'],v['instances'],int(v['distinct']),v['live_after'],v['trap']]])
     else:raise d.Fail('unknown round-4 state '+name)

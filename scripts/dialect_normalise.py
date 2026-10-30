@@ -102,9 +102,16 @@ class Normaliser:
             if i.op=='atomicrmw':
                 m=re.match(r'atomicrmw (\w+) ptr ([^,]+), (i\d+) ([^ ]+).*?(, align \d+)?$',b)
                 op,p,t,v,al=m.groups();al=al or ''
-                if op not in ('add','sub','and','or','xor','xchg'):raise d.Fail('N9 atomicrmw '+op)
+                if op not in ('add','sub','and','or','xor','xchg','uinc_wrap','udec_wrap','usub_cond','usub_sat'):raise d.Fail('N9 atomicrmw '+op)
                 out=[f'%nz.l.{r} = load {t}, ptr {p}{al}']
                 if op=='xchg':nv=v
+                elif op=='uinc_wrap':
+                    out += [f'%nz.k.{r} = icmp uge {t} %nz.l.{r}, {v}',f'%nz.i.{r} = add {t} %nz.l.{r}, 1',f'%nz.v.{r} = select i1 %nz.k.{r}, {t} 0, {t} %nz.i.{r}'];nv=f'%nz.v.{r}'
+                elif op=='udec_wrap':
+                    out += [f'%nz.k.{r} = icmp eq {t} %nz.l.{r}, 0',f'%nz.g.{r} = icmp ugt {t} %nz.l.{r}, {v}',f'%nz.w.{r} = or i1 %nz.k.{r}, %nz.g.{r}',f'%nz.d.{r} = sub {t} %nz.l.{r}, 1',f'%nz.v.{r} = select i1 %nz.w.{r}, {t} {v}, {t} %nz.d.{r}'];nv=f'%nz.v.{r}'
+                elif op in ('usub_cond','usub_sat'):
+                    otherwise=f'%nz.l.{r}' if op=='usub_cond' else '0'
+                    out += [f'%nz.k.{r} = icmp uge {t} %nz.l.{r}, {v}',f'%nz.s.{r} = sub {t} %nz.l.{r}, {v}',f'%nz.v.{r} = select i1 %nz.k.{r}, {t} %nz.s.{r}, {t} {otherwise}'];nv=f'%nz.v.{r}'
                 else:out.append(f'%nz.v.{r} = {op} {t} %nz.l.{r}, {v}');nv=f'%nz.v.{r}'
                 out.append(f'store {t} {nv}, ptr {p}{al}')
                 self.replace(f,i.res,f'%nz.l.{r}');return out
@@ -275,6 +282,9 @@ class Normaliser:
                 if re.fullmatch(r'-?\d+',v):
                     return [str((int(v)>>(64*k))% (1<<lw)) for k,lw in enumerate(widths)]
                 raise d.Fail('N22 missing limb source '+v)
+            from dialect_wide import extra
+            expanded=extra(self,f,i,r,w,widths,parts)
+            if expanded is not None:return expanded
             if i.op in ('sext','zext'):
                 src,dst=b[len(i.op):].rsplit(' to ',1);st,j=d.parse_type(src);sw=st[1];dw=int(dst.strip()[1:]);v=src[j:].strip()
                 source=parts(v);out=[];result=list(source);top=sw%64 or 64
@@ -436,8 +446,8 @@ class Normaliser:
         return ('\n'.join(self.globals)+'\n\n' if self.globals else '')+d.print_module(self.m,self.original.rstrip('\n').split('\n'),self.appended)
 
     def run(self):
-        self.byval();self.basic();self.platform_hooks();self.atomics();self.traps();self.shifts();self.fmuladd();self.vector();self.wide()
-        self.varargs();self.shadow();self.memory();self.intrinsics();self.gc();self.eh();self.asm();self.fp()
+        self.byval();self.basic();self.platform_hooks();self.atomics();self.traps();self.shifts();self.fmuladd();self.vector();self.intrinsics();self.wide()
+        self.varargs();self.shadow();self.memory();self.intrinsics();self.gc();self.eh();self.asm();self.fp();self.wide()
         self.rsteps()
         return self.result()
 

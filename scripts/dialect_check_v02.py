@@ -291,8 +291,8 @@ def recognise(text, **options):
     try:
         a.s1()
         for version in re.findall(r'!"bennett.dialect", !"([^"\n]+)"', text):
-            if version != "0.2.5":
-                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.5; actual " + version)
+            if version != "0.2.6":
+                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.6; actual " + version)
         a.analyse()
         a.region_rules()
         if options.get("rmode"):a.reversible |= a.closure(options["rmode"].lstrip("@"))
@@ -313,6 +313,7 @@ def recognise(text, **options):
 # exemption for arbitrary unresolved functions. Full L/R validation defaults to
 # an empty link environment.
 NORMALISATION_LINK={
+    '__bennett_rt_i192_ctpop','__bennett_sf_sitofp_f64_wide','__bennett_sf_fptosi_f64_wide',
     '__bennett_rt_ctlz_i8','__bennett_rt_cttz_i8','__bennett_rt_ss_push','__bennett_rt_ss_pop','__bennett_rt_memmove',
     '__bennett_rt_memset','__bennett_rt_ctpop_i32','__bennett_rt_eh_match',
     '__bennett_rt_syscall','__bennett_rt_poll','may_throw','exp','sinf',
@@ -489,7 +490,7 @@ class Runner:
     def normalisation(self, b):
         ident=b['attrs']['normalise-in']
         want=self.block('normalise-out',ident)['body']
-        for major in d.MAJORS:
+        for major in b['attrs'].get('majors',','.join(d.MAJORS)).split(','):
             got=normalise(b['body'],rmode=b['attrs'].get('rmode'),platform=b['attrs'].get('platform'),major=major)
             if d.collapse(want)!=d.collapse(got):
                 diff='\n'.join(difflib.unified_diff(d.collapse(want),d.collapse(got),'expected','actual',lineterm=''))
@@ -524,7 +525,7 @@ class Runner:
             if b['lang'] in ('llvm','isa') and not a:
                 self.check('inventory', ident, '§1.5', lambda:self.unsupported('untagged normative block', 'add a tag in spec', 'b-dialect-spec-gvr'))
             if b['lang'] == 'llvm':
-                for major in d.MAJORS:
+                for major in a.get('majors',','.join(d.MAJORS)).split(','):
                     self.check('parse', f'{ident}/llvm{major}', '§1.5', lambda b=b,k=major:self.verify(b,k))
             if b['lang'] == 'llvm' and 'example' in a:
                 self.check('recognise', ident, '§3–§10', lambda b=b:self.recognition(b))
@@ -540,7 +541,7 @@ class Runner:
                 self.check('native',ident,'§1.5 native',lambda b=b:check_native(self,b))
             if b['lang'] in ('c','rust','julia') and 'example' in a:
                 from dialect_native import frontend
-                for major in d.MAJORS:
+                for major in a.get('majors',','.join(d.MAJORS)).split(','):
                     self.check('frontend',str(ident)+'/llvm'+major,'§1.5 frontend',lambda b=b,k=major:frontend(self,b,k))
             if 'lift' in a:
                 from dialect_map import map_object
@@ -705,6 +706,8 @@ def action_object(isa,path,name,widths,rows):
 
 
 def state_check(runner,block):
+    from dialect_round5 import STATES as ROUND5, check_state as check_round5
+    if block['attrs']['state'] in ROUND5:return check_round5(runner,block)
     a=block['attrs'];ident=a['state'];at=int(a['at'])
     from dialect_round4 import STATES as ROUND4, check_state as check_round4
     if ident in ROUND4:return check_round4(runner,block)

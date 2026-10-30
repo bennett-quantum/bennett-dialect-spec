@@ -1,3 +1,25 @@
+## Round-5 fixes — b-dialect-spec-p7u
+
+Hand-derived before edits; red regressions reproduced pointer two-move result,
+PT6 {1} rather than {257}, parameter-root accept, unsupported FP/wide call and
+atomicrmw forms. Paired normative rules and executable witnesses now implemented;
+full freeze 2598/2598 green; final unit rerun and commit receipt follow. Draft full/norm/handles/
+regions/map versions 0.2.6; untouched subversions retain their earlier values.
+
+| Blocker | Status | Checker case | Commit |
+|---|---|---|---|
+| SOL-R5-01 | resolved | pointer-as270; test_round5_pointer_width | implementation commit follows |
+| R5-CODEX-02 | resolved (same pointer defect) | pointer-as270 | implementation commit follows |
+| R5-CODEX-01 | resolved | pt6-byte-width; pt6-subrange; test_round5_memory_intervals | implementation commit follows |
+| BD3-R5-1 | resolved | handle-param-cross-entry; test_round5_parameter_liveness | implementation commit follows |
+| BD3-R5-2 | resolved | n-fpconv-wide; test_round5_fp_wide | implementation commit follows |
+| BD3-R5-3 | resolved | n-wide-intrinsics; test_round5_wide_intrinsics | implementation commit follows |
+| BD3-R5-4 | resolved | n-atomic-wrap; n-atomic-usub; test_round5_atomic_forms | implementation commit follows |
+| BD3-R5-5 | resolved | gep-index-obj/const; test_round5_gep_rows | implementation commit follows |
+
+Baseline 2514/2514. Native/state mutation test_round5_execution passes. Named
+ISA-4/ISA-12 gap tracked as b-dialect-spec-cbe; no ISA edits or scope restriction.
+
 # Dialect 0.2 full text — progress
 
 Job: write the normative text of dialect draft 0.2 (`spec/Bennett-Dialect-Spec.md`) from the

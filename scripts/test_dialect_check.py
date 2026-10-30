@@ -16,6 +16,115 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round5_pointer_width(self):
+        from dialect_map import Mapper
+        source='target datalayout = "e-p:64:64-p270:32:32"\ndefine i64 @f(i64 %x) {\n %p = inttoptr i64 %x to ptr addrspace(270)\n %r = ptrtoint ptr addrspace(270) %p to i64\n ret i64 %r\n}\n'
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            path=v.Path(tmp)/'p.bisa';isa=v.Interpreter()
+            obj=Mapper(source,'@f','ARG(64);tgt=64','null_size=4096 heap_base=4096 heap_limit_max=0 stack max 32').run(isa,path)
+            self.assertIn('lift.trunc.i32 a0',obj)
+            path.write_text(obj)
+            for x,want in ((4294967296,0),(4294967297,1)):
+                got=isa.call('run-oracle',path,'ref','--input','','--arg',str(x),'--budget','100,0,32,8')
+                self.assertEqual((got['payload'],got['code']),(want,0))
+
+    def test_round5_gep_rows(self):
+        from dialect_map import map_object
+        row=self.spec.split('### 16.4 Rows',1)[1].split('**Edge moves**',1)[0]
+        self.assertIn('For I<P always emit recombination',row)
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'map'})
+            for name in ('gep-index-obj','gep-index-const','pointer-as270'):
+                map_object(runner,self.block('lift',name))
+                runner.hashes(self.block('hash',name))
+                runner.oracle_run(self.block('run',name))
+            self.assertIn('For I<P always emit recombination',self.spec)
+            b=self.block('lift','gep-index-obj')
+            with self.assertRaises(d.Fail):map_object(runner,dict(b,body=b['body'].replace('getelementptr i8','getelementptr i16')))
+
+    def test_round5_parameter_liveness(self):
+        src=self.block('example','handle-param-cross-entry')['body']
+        self.assertEqual(v.recognise(d.with_decls(src))[0],'blocked:BD-B-ISA4')
+        freed=src.replace('  store ptr %h, ptr %p','  store ptr %h, ptr %p\n  call void @__bennett_qfree(ptr %h)',1)
+        self.assertEqual(v.recognise(d.with_decls(freed))[0],'accept')
+        rin=src.replace('define void @stash(ptr %h) {\nentry:', 'define internal void @stash(ptr %env) {\nentry:\n  %h = load ptr, ptr %env')+'\ndefine void @launch(ptr %h) {\n %env = alloca ptr\n store ptr %h, ptr %env\n call void @__bennett_reversible(ptr @stash, ptr null, ptr %env)\n ret void\n}\n'
+        _,ra=v.recognise(d.with_decls(rin))
+        self.assertTrue(any(code=='BD-B-ISA12' and 'parameter' in reason for code,reason in ra.blockers))
+        direct='define void @f(ptr %h) {\n call void @__bennett_gate(i32 1, ptr %h, i64 0)\n ret void\n}\n'
+        self.assertEqual(v.recognise(d.with_decls(direct))[0],'accept')
+        result='define ptr @make() {\n %s = alloca ptr\n %h = call ptr @__bennett_qalloc(i64 0, i64 1)\n store ptr %h, ptr %s\n %r = load ptr, ptr %s\n ret ptr %r\n}\n'
+        self.assertEqual(v.recognise(d.with_decls(result))[0],'blocked:BD-B-ISA4')
+
+    def test_round5_memory_intervals(self):
+        for name,want,verdict in (('pt6-byte-width',{257},'accept'),('pt6-subrange','TOP','blocked:BD-B-ISA4')):
+            src=self.block('example',name)['body'];got,a=v.recognise(d.with_decls(src))
+            self.assertEqual(a.ints(a.m.funcs['top'],'%n'),want)
+            self.assertEqual(got,verdict)
+        # A partial write/copy must invalidate the exact larger atom.
+        src='define i32 @f() {\n %p = alloca i32\n store i32 1, ptr %p\n store i8 2, ptr %p\n %r = load i32, ptr %p\n ret i32 %r\n}\n'
+        a=v.Analysis02(d.Module(src));a.analyse()
+        self.assertEqual(a.ints(a.m.funcs['f'],'%r'),'TOP')
+        copied='declare void @llvm.memcpy.p0.p0.i64(ptr,ptr,i64,i1)\ndefine i32 @f() {\n %p = alloca i32\n %q = alloca i32\n store i32 66049, ptr %p\n store i32 0, ptr %q\n %s = getelementptr i8, ptr %p, i64 1\n call void @llvm.memcpy.p0.p0.i64(ptr %q, ptr %s, i64 2, i1 false)\n %r = load i32, ptr %q\n ret i32 %r\n}\n'
+        a=v.Analysis02(d.Module(copied));a.analyse()
+        self.assertEqual(a.ints(a.m.funcs['f'],'%r'),'TOP')
+
+    def test_round5_atomic_forms(self):
+        for op in ('uinc_wrap','udec_wrap','usub_cond','usub_sat'):
+            src='define i32 @f(ptr %p, i32 %v) {\n %old = atomicrmw '+op+' ptr %p, i32 %v seq_cst, align 4\n ret i32 %old\n}\n'
+            got=v.normalise(src,major='23')
+            self.assertNotIn('atomicrmw',got)
+            self.assertIn('select i1',got)
+
+    def test_round5_fp_wide(self):
+        for op,ty,result in (('sitofp','i192','double'),('fptosi','double','i192')):
+            val='%a' if ty=='double' else '%v'
+            src='define void @f(ptr %p, ptr %q, double %a) {\n %v = load i192, ptr %p\n %r = '+op+' '+ty+' '+val+' to '+result+'\n store '+result+' %r, ptr %q\n ret void\n}\n'
+            got=v.normalise(src)
+            self.assertIn('__bennett_sf_'+op+'_f64_wide',got)
+            self.assertNotIn('i192',got)
+
+    def test_round5_wide_intrinsics(self):
+        src='declare i192 @llvm.ctpop.i192(i192)\ndefine void @f(ptr %p, ptr %q) {\n %a = load i192, ptr %p\n %r = call i192 @llvm.ctpop.i192(i192 %a)\n store i192 %r, ptr %q\n ret void\n}\n'
+        got=v.normalise(src)
+        self.assertIn('__bennett_rt_i192_ctpop',got)
+        self.assertNotIn('call i192',got)
+
+    def test_round5_execution(self):
+        import json
+        from dialect_native import check
+        from dialect_round5 import check_state
+        from dialect_round4 import check_state as check_handle
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'native','state'})
+            for name in ('n-fpconv-wide','n-wide-intrinsics','n-atomic-wrap','n-atomic-usub','pointer-as270'):
+                b=self.block('native',name);check(runner,b)
+                before,after={
+                    'n-fpconv-wide':('=5183643171103440896','=5183643171103440897'),
+                    'n-wide-intrinsics':('=[0,1,0,0]','=[0,2,0,0]'),
+                    'n-atomic-wrap':('[9,10]','[9,11]'),
+                    'n-atomic-usub':('[9,9]','[9,8]'),
+                    'pointer-as270':('f(4294967296)=0','f(4294967296)=1'),
+                }[name]
+                wrong=b['body'].replace(before,after)
+                # A well-formed wrong expected result must fail execution.
+
+                with self.assertRaises(d.Fail):check(runner,dict(b,body=wrong))
+            for name in ('pt6-byte-width','pt6-subrange','handle-param-cross-entry'):
+                b=self.block('state',name);fn=check_handle if name.startswith('handle') else check_state
+                fn(runner,b);wrong=json.loads(b['body']);wrong['live_after']=1
+                with self.assertRaises(d.Fail):fn(runner,dict(b,body=json.dumps(wrong)))
+
+    def test_round5_pointer_storage(self):
+        from dialect_map import Mapper
+        source='target datalayout = "e-p:64:64-p270:32:32"\ndefine i64 @f(ptr %p, i64 %x) {\n %a = inttoptr i64 %x to ptr addrspace(270)\n store ptr addrspace(270) %a, ptr %p\n %b = load ptr addrspace(270), ptr %p\n %r = ptrtoint ptr addrspace(270) %b to i64\n ret i64 %r\n}\n'
+        mapper=Mapper(source,'@f','MEM_IN(3),ARG(64);tgt=64','null_size=4096 heap_base=4096 heap_limit_max=0 stack max 32')
+        self.assertEqual(mapper.size(d.parse_type('{ptr addrspace(270), i32}')[0]),8)
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            p=v.Path(tmp)/'storage.bisa';isa=v.Interpreter();obj=mapper.run(isa,p);p.write_text(obj)
+            self.assertIn('lift.load.i32',obj);self.assertIn('lift.store.i32',obj)
+            got=isa.call('run-oracle',p,'ref','--input','','--arg','4294967297','--mem','m0=00000000aaaaaaaa','--budget','100,0,32,8')
+            self.assertEqual((got['payload'],got['code']),(1,0))
+
     def test_round4_cross_entry(self):
         ir=self.block('example','handle-cross-entry')['body']
         verdict,a=v.recognise(d.with_decls(ir))
@@ -300,13 +409,13 @@ entry:
             with self.subTest(format=ty):
                 ir=f'define {ty} @f({ty} %x) {{\n %n = fneg {ty} %x\n ret {ty} %n\n}}\n'
                 self.assertEqual(v.validate(ir),'accept')
-        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.5"}\n'
+        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.6"}\n'
         self.assertEqual(v.recognise(good)[0],'accept')
-        for stale in ('0.2.3','0.2.1'):
-            self.assertEqual(v.recognise(good.replace('0.2.5',stale))[0],'reject:BD-E-VERSION')
+        for stale in ('0.2.5','0.2.4','0.2.3','0.2.1'):
+            self.assertEqual(v.recognise(good.replace('0.2.6',stale))[0],'reject:BD-E-VERSION')
         import tomllib
-        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.5')
-        self.assertIn('**full version string** (`0.2.5`)',self.spec)
+        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.6')
+        self.assertIn('**full version string** (`0.2.6`)',self.spec)
 
     def test_v4_v12_residues_and_clean(self):
         for rule in ('v4','v12'):

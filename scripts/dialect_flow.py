@@ -58,20 +58,44 @@ class Flow:
             return True
         return False
 
-    def slot(self,obj,off,size,atoms):
-        key=(obj,off,size); old=self.memory.get(key,frozenset())
+    def slot(self,obj,off,size,atoms,width=None):
+        key=(obj,off,size); widths=self.memory_widths.setdefault(key,set());new_width=(width or 8*size) not in widths
+        widths.add(width or 8*size)
+        old=self.memory.get(key,frozenset())
         new=union(old,atoms)
         if new!=old:
             self.memory[key]=new
             return True
-        return False
+        return new_width
 
-    def getmem(self,ptrs,size):
+    def immutable_image(self,obj):
+        g=self.m.globals.get(obj)
+        if not g or not re.search(r'\bconstant\b',g['text']):return None
+        def encode(t,v):
+            n=d.tsize(t,self.pw)
+            if v in ('zeroinitializer','null'):return bytes(n)
+            if t[0]=='int':return (int(v)%(1<<t[1])).to_bytes(n,self.byteorder)
+            if t[0]=='arr':return b''.join(encode(t[2],d.typed_val(x)) for x in d.split_top(v[1:-1]))
+            raise ValueError('image contains relocations or unsupported representation')
+        try:return encode(g['type'],g['init'])
+        except (ValueError,OverflowError):return None
+
+    def getmem(self,ptrs,size,width=None):
         result=frozenset()
         for obj,off in ptrs:
+            image=self.immutable_image(obj)
+            if image is not None and isinstance(off,int) and 0<=off and off+size<=len(image):
+                result=union(result,{('I',int.from_bytes(image[off:off+size],self.byteorder)%(1<<(width or 8*size)))})
+                continue
             if obj=='EXT': result=union(result,{TOP})
             for (o,k,n),a in self.memory.items():
-                if o==obj and overlap(off,size,k,n): result=union(result,a)
+                if o!=obj or not overlap(off,size,k,n):continue
+                # Provenance survives partial accesses, so handle_rules can reject
+                # them. Component integers/functions/pointers are not whole values.
+                if all(x[0]=='B' for x in a) and isinstance(off,int) and isinstance(k,int) and k<=off and off+size<=k+n:
+                    result=union(result,{('I',int.from_bytes(bytes([x[1]])*size,self.byteorder)) for x in a})
+                elif isinstance(off,int) and off==k and size==n and self.memory_widths.get((o,k,n),{8*n})=={width or 8*size}:result=union(result,a)
+                else:result=union(result,{x for x in a if x[0] in ('R','C')},{TOP})
         return result
 
     def type_width(self,t): return self.pw if t[0]=='ptr' else t[1] if t[0]=='int' else 8*d.tsize(t)
@@ -165,7 +189,9 @@ class Flow:
         return next(iter(self.indirect.values()),set())
 
     def analyse(self):
-        self.values={};self.memory={};self.indirect={};self.cands={}; self.blockers=[]
+        layout=re.search(r'target datalayout = "([^"]+)"',self.m.text)
+        self.byteorder='big' if layout and layout[1].startswith('E') else 'little'
+        self.values={};self.memory={};self.memory_widths={};self.indirect={};self.cands={}; self.blockers=[]
         self.object_sizes={n:d.tsize(g['type']) for n,g in self.m.globals.items()}
         for f in self.funcs():
             for i in f.instrs():
@@ -182,8 +208,8 @@ class Flow:
             if t[0] in ('arr','vec'):
                 if init=='zeroinitializer':lanes={k:{('I',0)} for k in range(t[1])}
                 sz=d.tsize(t[2],self.pw)
-                for k,atoms in lanes.items():self.slot(name,k*sz,sz,atoms)
-            else:self.slot(name,0,d.tsize(t,self.pw),union(*lanes.values()))
+                for k,atoms in lanes.items():self.slot(name,k*sz,sz,atoms,self.type_width(t[2]))
+            else:self.slot(name,0,d.tsize(t,self.pw),union(*lanes.values()),self.type_width(t))
         # PT11 host roots. Handle candidate roots are activated below only at marker operands.
         for f in self.funcs():
             if self.nonlocal_linkage(f.name):
@@ -256,11 +282,11 @@ class Flow:
             ptrs=self.ptrs(f,d.typed_val(parts[1]));vals=self.av(f,d.typed_val(parts[0]),ty)
             et=ty[2] if ty[0] in ('vec','arr') else ty;sz=d.tsize(et,self.pw)
             for obj,off in ptrs:
-                for k,ats in vals.items():changed|=self.slot(obj,self.shift(off,k*sz),sz,ats)
+                for k,ats in vals.items():changed|=self.slot(obj,self.shift(off,k*sz),sz,ats,self.type_width(et))
         elif op=='load':
             parts=d.split_top(re.sub(r'^load\s+(?:(?:atomic|volatile)\s+)*','',body));ty=d.parse_type(parts[0])[0]
             ptrs=self.ptrs(f,d.typed_val(parts[1]));n=ty[1] if ty[0] in ('vec','arr') else 1;et=ty[2] if n>1 else ty;sz=d.tsize(et,self.pw)
-            for k in range(n):lanes[k]=self.getmem({(o,self.shift(off,k*sz)) for o,off in ptrs},sz)
+            for k in range(n):lanes[k]=self.getmem({(o,self.shift(off,k*sz)) for o,off in ptrs},sz,self.type_width(et))
         elif op in ('call','invoke'):
             if ' asm ' in body:return False
             c=d.parse_call(ins);cal=c['callee'];nm=cal[11:] if cal.startswith('@__bennett_') else None
@@ -273,15 +299,18 @@ class Flow:
                     for obj,off in self.ptrs(f,dst):changed|=self.slot(obj,'*',1,{TOP})
                 else:
                     for obj,off in self.ptrs(f,dst):
-                        for k in range(max(n)):
-                            changed|=self.slot(obj,self.shift(off,k),1,{TOP} if bs=='TOP' else {('I',x&255) for x in bs})
+                        for length in n:changed|=self.slot(obj,off,length,{TOP} if bs=='TOP' else {('B',x&255) for x in bs})
             elif cal.startswith(('@llvm.memcpy','@llvm.memmove')):
                 dst,src=c['args'][0][2],c['args'][1][2];length=self.ints(f,c['args'][2][2])
                 for so,s in self.ptrs(f,src):
                     for (o,k,n),ats in list(self.memory.items()):
                         if o!=so:continue
-                        if length!='TOP' and isinstance(s,int) and isinstance(k,int) and not any(s<=k<s+ln for ln in length):continue
-                        for do,z in self.ptrs(f,dst):changed|=self.slot(do,z+k-s if all(isinstance(x,int) for x in (z,k,s)) else '*',n,ats)
+                        if length!='TOP' and isinstance(s,int) and isinstance(k,int) and not any(overlap(s,ln,k,n) for ln in length):continue
+                        exact=length!='TOP' and isinstance(s,int) and isinstance(k,int) and all(s<=k and k+n<=s+ln for ln in length)
+                        for do,z in self.ptrs(f,dst):
+                            if exact:
+                                for rw in self.memory_widths.get((o,k,n),{8*n}):changed|=self.slot(do,z+k-s if all(isinstance(x,int) for x in (z,k,s)) else '*',n,ats,rw)
+                            else:changed|=self.slot(do,'*',1,union({x for x in ats if x[0] in ('R','C')},{TOP}))
             elif nm in d.REGION_OPS:
                 for k,kind in d.REGION_OPS[nm].items():
                     cs=self.candidates(f,c['args'][k][2],kind);self.cands[id(ins),k]=cs

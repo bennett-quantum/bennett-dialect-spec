@@ -86,3 +86,9 @@ uint8_t __bennett_rt_ctlz_i8(uint8_t x, _Bool flag) {
 uint8_t __bennett_rt_cttz_i8(uint8_t x, _Bool flag) {
   (void)flag; uint8_t n=0; while(n<8 && !(x&1)){++n; x>>=1;} return n;
 }
+
+/* §12.8 full-width population-count slot fixture. */
+void __bennett_rt_i192_ctpop(uint64_t *dst,const uint64_t *src){
+    uint64_t n=0;for(unsigned k=0;k<3;k++){uint64_t v=src[k];while(v){n+=v&1;v>>=1;}}
+    dst[0]=n;dst[1]=dst[2]=0;
+}

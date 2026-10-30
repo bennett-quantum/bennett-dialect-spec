@@ -70,14 +70,14 @@ def setjmp_reentry(f,site,a=None):
     return False
 
 
-def entry_boundary_live(a,f,site,in_r=False):
+def entry_boundary_live(a,f,site,in_r=False,root=None):
     """May-live persistent ROOT and an augmented call/return path avoiding free.
 
     Return edges conservatively include every possible caller continuation.
     Thus an internal callee return alone is not an entry boundary, and frees
     in its caller can discharge the obligation.
     """
-    root=f.name+site.res
+    root=root or f.name+site.res
     objects={o for (o,_,_),ats in a.memory.items() if ('R',root) in ats}
     allocas={fun.name+i.res for fun in a.funcs() for i in fun.instrs() if i.op=='alloca'}
     persistent=set(a.m.globals)|(objects-allocas)
@@ -91,8 +91,10 @@ def entry_boundary_live(a,f,site,in_r=False):
         for (o,_,_),ats in a.memory.items():
             if o in persistent:persistent.update(x[1] for x in ats if x[0]=='P')
         if persistent==before:break
-    if not objects & persistent:return False
-    entries={fun.name for fun in a.funcs() if fun.name in a.device and not re.search(r'\b(?:internal|private)\b',fun.header)}
+    returned=any(ins.op=='ret' and ins.text!='ret void' and root in a.roots(fun,d.typed_val(ins.text[4:]))
+                 for fun in a.funcs() if a.nonlocal_linkage(fun.name) for ins in fun.instrs())
+    if not objects & persistent and not returned:return False
+    entries={fun.name for fun in a.funcs() if (fun.name in a.device or fun is f) and not re.search(r'\b(?:internal|private)\b',fun.header)}
     if in_r:
         entries=set()
         for fun in a.funcs():
@@ -109,7 +111,7 @@ def entry_boundary_live(a,f,site,in_r=False):
                 node=(fun.name,lab,k);nodes[node]=(fun,ins)
                 succ[node]=[(fun.name,lab,k+1)] if k+1<len(blk) else [labels[x] for x in re.findall(r'label %([-\w.$]+)',ins.text)]
                 if ins is site:target=node
-                if ins.op=='ret':returns[fun.name].append(node)
+                if ins.op in ('ret','resume'):returns[fun.name].append(node)
                 if ins.op in ('call','invoke') and ' asm ' not in ins.text:
                     c=d.parse_call(ins)
                     if c['callee']=='@__bennett_qfree' and a.roots(fun,c['args'][0][2])=={root}:succ[node]=[]
@@ -123,12 +125,12 @@ def entry_boundary_live(a,f,site,in_r=False):
             for n in defined:
                 for ret in returns[n]:succ[ret].extend(after)
     # N29 continuation cases are handled first by setjmp_reentry.
-    stack=list(succ[target]);seen=set()
+    stack=list(succ[target]) if site is not None else [starts[f.name]];seen=set()
     while stack:
         node=stack.pop()
         if node in seen:continue
         seen.add(node);fun,ins=nodes[node]
-        if ins.op=='ret' and fun.name in entries:return True
+        if ins.op in ('ret','resume') and fun.name in entries:return True
         stack.extend(succ[node])
     return False
 
@@ -173,6 +175,24 @@ def self_disjoint(a,f,site):
 
 
 def instance_rules(a):
+    # Parameter roots have no allocation site and cannot inherit per-call bounds.
+    for f in sorted(a.funcs(),key=lambda f:f.name not in a.reversible):
+        for _,_,param in f.params:
+            received=set(a.roots(f,param))
+            if f.name in a.reversible:
+                queue=[o for o,_ in a.ptrs(f,param)];seen=set()
+                while queue:
+                    obj=queue.pop()
+                    if obj in seen:continue
+                    seen.add(obj)
+                    for (o,_,_),ats in a.memory.items():
+                        if o!=obj:continue
+                        received.update(x[1] for x in ats if x[0]=='R')
+                        queue.extend(x[1] for x in ats if x[0]=='P')
+            for root in sorted(r for r in received if r.startswith('ENTRY:')):
+                if not entry_boundary_live(a,f,None,f.name in a.reversible,root):continue
+                a.blockers.append(('BD-B-ISA12' if f.name in a.reversible else 'BD-B-ISA4',
+                    ('BLK-4 ' if f.name in a.reversible else 'BLK-1 ')+'handle parameter may outlive an entry return in persistent memory: @'+f.name+' '+param))
     sites=[]
     for f in a.funcs():
         for ins,c,mk in a.marker_calls(f):

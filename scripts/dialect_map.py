@@ -41,6 +41,45 @@ class Mapper:
         self.stack=int(stack[1]);self.regions={}
         self.analysis=Analysis02(self.m,materialised=True);self.analysis.analyse()
 
+    def pointer_widths(self,space=0):
+        layout=re.search(r'target datalayout = "([^"]+)"',self.m.text)
+        entries={}
+        for m in re.finditer(r'(?:^|-)p(\d*):(\d+):(\d+)(?::(\d+))?(?::(\d+))?(?=-|$)',layout[1] if layout else ''):
+            entries[int(m[1] or 0)]=(int(m[2]),int(m[5] or m[2]))
+        return entries.get(space,entries.get(0,(64,64)))
+
+    def bits(self,t):
+        if t[0]=='ptr':return self.pointer_widths(t[1] if len(t)>1 else 0)[0]
+        if t[0]=='struct':return sum(self.bits(x) for x in t[1])
+        if t[0] in ('arr','vec'):return t[1]*self.bits(t[2])
+        return bits(t)
+
+    def align(self,t):
+        if t[0]=='ptr':
+            space=t[1] if len(t)>1 else 0
+            layout=re.search(r'target datalayout = "([^"]+)"',self.m.text)
+            entries={int(m[1] or 0):int(m[3])//8 for m in re.finditer(r'(?:^|-)p(\d*):(\d+):(\d+)',layout[1] if layout else '')}
+            return entries.get(space,entries.get(0,8))
+        if t[0]=='struct':return max([self.align(x) for x in t[1]] or [1])
+        if t[0] in ('arr','vec'):return self.align(t[2])
+        return d.talign(t)
+
+    def field_offset(self,t,k):
+        off=0
+        for j,field in enumerate(t[1]):
+            a=self.align(field);off=(off+a-1)//a*a
+            if j==k:return off
+            off+=self.size(field)
+        return off
+
+    def size(self,t):
+        if t[0]=='ptr':return self.bits(t)//8
+        if t[0]=='arr':return t[1]*self.size(t[2])
+        if t[0]=='struct':
+            n=len(t[1]);end=self.field_offset(t,n-1)+self.size(t[1][-1]) if n else 0
+            a=self.align(t);return (end+a-1)//a*a
+        return d.tsize(t)
+
     def closure(self,name):
         if name in self.names:return
         if not self.m.defined(name):raise d.Fail('§16.1 unmaterialised external function '+name)
@@ -54,14 +93,14 @@ class Mapper:
             for target in sorted(candidates,key=lambda n:self.addresses.get(n,0)):self.closure(target)
 
     def image(self,name):
-        g=self.m.globals[name];ty=g['type'];value=g['init'];width=d.tsize(ty)
+        g=self.m.globals[name];ty=g['type'];value=g['init'];width=self.size(ty)
         if value in ('null','zeroinitializer'):return bytes(width)
         if ty[0]=='arr':
             return b''.join(self.constant_bytes(ty[2],d.typed_val(x)) for x in d.split_top(value[1:-1]))
         return self.constant_bytes(ty,value)
 
     def constant_bytes(self,ty,value):
-        n=d.tsize(ty)
+        n=self.size(ty)
         if value.startswith('blockaddress('):
             fn,lab=re.fullmatch(r'blockaddress\(@([-\w.$]+), %([-\w.$]+)\)',value).groups()
             v=self.block_addresses(fn)[lab]
@@ -122,7 +161,7 @@ class Mapper:
                 zero=dvalue('lift.const.i64 0');store_global('__bennett_dev_console_n',zero)
                 outputs.append((buf,value))
         for i,((kind,value),(ty,_,_)) in enumerate(zip(bindings,f.params)):
-            w=bits(ty);name='w'+str(i)
+            w=self.bits(ty);name='w'+str(i)
             if kind=='IN':
                 n,mode=value.split(',');n=int(n);x='x'+str(len(ins));ins.append(n)
                 actual.append(x if n==w else dest(name,w,f'lift.{"sext" if mode=="sext" else "zext"}.i{w} {x}'))
@@ -136,7 +175,7 @@ class Mapper:
         target=re.search(r'\btgt=(null|\d+)\b',desc)
         if not target:raise d.Fail('§16.2 missing tgt width or null')
         empty=target[1]=='null' and not outputs
-        R=bits(f.ret);T=1 if empty else (8*outputs[0][1] if target[1]=='null' else int(target[1]))
+        R=self.bits(f.ret);T=1 if empty else (8*outputs[0][1] if target[1]=='null' else int(target[1]))
         dest('r',R,'lift.call @L1 ('+', '.join(actual)+')')
         result='r'
         if empty:
@@ -170,15 +209,15 @@ class Mapper:
             else:n='t'+str(temps);temps+=1
             return assign(n,w,row,rows)
         def gep(body,v,current):
-            ps=d.split_top(body[len("getelementptr"): ].strip());ty=d.parse_type(ps[0])[0];P=operand(d.typed_val(ps[1]),('ptr',),current);acc=P;delta=0;dynamic=[];ct=ty
+            ps=d.split_top(body[len("getelementptr"): ].strip());ty=d.parse_type(ps[0])[0];P=operand(d.typed_val(ps[1]),d.parse_type(ps[1])[0],current);acc=P;delta=0;dynamic=[];ct=ty
             for k,p in enumerate(ps[2:]):
                 idx=d.typed_val(p);ity=d.parse_type(p)[0]
-                if k==0:sz=d.tsize(ct)
-                elif ct[0] in ('arr','vec'):ct=ct[2];sz=d.tsize(ct)
-                elif ct[0]=='struct':delta+=d.gep_offset(ct,[0,int(idx)]);ct=ct[1][int(idx)];continue
+                if k==0:sz=self.size(ct)
+                elif ct[0] in ('arr','vec'):ct=ct[2];sz=self.size(ct)
+                elif ct[0]=='struct':delta+=self.field_offset(ct,int(idx));ct=ct[1][int(idx)];continue
                 else:raise d.Fail('§16.4 GEP scalar indexing')
                 if re.fullmatch(r'-?\d+',idx):
-                    raw=int(idx)%(1<<bits(ity));signed=raw-(1<<bits(ity)) if raw>>(bits(ity)-1) else raw;delta+=signed*sz
+                    raw=int(idx)%(1<<self.bits(ity));signed=raw-(1<<self.bits(ity)) if raw>>(self.bits(ity)-1) else raw;delta+=signed*sz
                 else:dynamic.append((idx,ity,sz))
             # GEP's arithmetic width is distinct from its pointer carrier.
             space=re.search(r'addrspace\((\d+)\)',ps[1]);space=space[1] if space else '0'
@@ -191,7 +230,7 @@ class Mapper:
                 acc=fresh('t',iw,f'lift.trunc.i{iw} '+P,current)
                 for idx,ity,sz in dynamic:
                     I=operand(idx,ity,current)
-                    if bits(ity)!=iw:I=fresh('t',iw,'lift.'+('sext' if bits(ity)<iw else 'trunc')+f'.i{iw} '+I,current)
+                    if self.bits(ity)!=iw:I=fresh('t',iw,'lift.'+('sext' if self.bits(ity)<iw else 'trunc')+f'.i{iw} '+I,current)
                     if sz!=1:
                         c=fresh('c',iw,f'lift.const.i{iw} {sz%(1<<iw)}',current);I=fresh('t',iw,f'lift.mul {I} {c}',current)
                     acc=fresh('t',iw,f'lift.add {acc} {I}',current)
@@ -202,25 +241,26 @@ class Mapper:
                 high=fresh('t',pw,f'lift.and {P} {mask}',current)
                 assign(v,pw,f'lift.or {high} {low}',current)
                 return
+            delta %= 1<<iw
             for k,(idx,ity,sz) in enumerate(dynamic):
                 I=operand(idx,ity,current)
-                if bits(ity)!=64:I=fresh('t',64,'lift.'+('sext' if bits(ity)<64 else 'trunc')+'.i64 '+I,current)
+                if self.bits(ity)!=iw:I=fresh('t',iw,'lift.'+('sext' if self.bits(ity)<iw else 'trunc')+f'.i{iw} '+I,current)
                 if sz!=1:
-                    c=fresh('c',64,f'lift.const.i64 {sz}',current);I=fresh('t',64,f'lift.mul {I} {c}',current)
+                    c=fresh('c',iw,f'lift.const.i{iw} {sz%(1<<iw)}',current);I=fresh('t',iw,f'lift.mul {I} {c}',current)
                 last=k==len(dynamic)-1 and delta==0
-                acc=assign(v,64,f'lift.add {acc} {I}',current) if last else fresh('t',64,f'lift.add {acc} {I}',current)
+                acc=assign(v,iw,f'lift.add {acc} {I}',current) if last else fresh('t',iw,f'lift.add {acc} {I}',current)
             if delta:
-                C=fresh('c',64,'lift.const.i64 '+str(delta%(1<<64)),current);assign(v,64,f'lift.add {acc} {C}',current)
-            elif not dynamic:assign(v,64,'lift.mov '+P,current)
+                C=fresh('c',iw,f'lift.const.i{iw} '+str(delta%(1<<iw)),current);assign(v,iw,f'lift.add {acc} {C}',current)
+            elif not dynamic:assign(v,iw,'lift.mov '+P,current)
         def operand(v,ty,rows):
             if v in params:return params[v]
             if v in values:return values[v]
-            w=bits(ty)
+            w=self.bits(ty)
             for cast in ('inttoptr','ptrtoint'):
                 if v.startswith(cast+' ('):
                     src,dst=v[len(cast)+2:-1].rsplit(' to ',1);st=d.parse_type(src)[0]
                     x=operand(d.typed_val(src),st,rows)
-                    return x if bits(st)==w else fresh('t',w,'lift.'+('zext' if bits(st)<w else 'trunc')+f'.i{w} '+x,rows)
+                    return x if self.bits(st)==w else fresh('t',w,'lift.'+('zext' if self.bits(st)<w else 'trunc')+f'.i{w} '+x,rows)
             if v.startswith('getelementptr ('):
                 n='expr'+str(len(widths));gep('getelementptr '+v[len('getelementptr ('):-1],n,rows);return n
             if v.startswith('@'):
@@ -244,7 +284,7 @@ class Mapper:
             for phi in phis[dst]:
                 body=phi.text.split(' = ',1)[1][4:];ty,j=d.parse_type(body)
                 inc={b.strip()[1:]:v.strip() for v,b in (d.split_top(x[1:-1]) for x in d.split_top(body[j:]))}
-                srcs.append(operand(inc[src],ty,rows));dst=values[phi.res];dests.append(dst);widths[dst]=bits(ty)
+                srcs.append(operand(inc[src],ty,rows));dst=values[phi.res];dests.append(dst);widths[dst]=self.bits(ty)
             rows.append('('+', '.join(dests)+') = lift.parmov ('+', '.join(srcs)+')')
         for i,(lab,blk) in enumerate(f.blocks):
             rows=[];extra=[];edge=set();compare_count=0;call_count=0
@@ -271,24 +311,28 @@ class Mapper:
                 inst=live[j];op=inst.op;body=inst.text.split(' = ',1)[-1];v=values.get(inst.res)
                 rt=self.analysis.result_type(inst) if inst.res else None
                 if op in d.BINOPS:
-                    rest=body.split(None,1)[1];ty,k=d.parse_type(rest);a,b=d.split_top(rest[k:]);A=operand(a,ty,current);B=operand(b,ty,current);assign(v,bits(ty),'lift.'+op+' '+A+' '+B,current)
+                    rest=body.split(None,1)[1];ty,k=d.parse_type(rest);a,b=d.split_top(rest[k:]);A=operand(a,ty,current);B=operand(b,ty,current);assign(v,self.bits(ty),'lift.'+op+' '+A+' '+B,current)
                 elif op=='icmp':
                     _,pred,rest=body.split(None,2);ty,k=d.parse_type(rest);a,b=d.split_top(rest[k:]);A=operand(a,ty,current);B=operand(b,ty,current)
                     if pred in ('ugt','uge','sgt','sge'):pred={'ugt':'ult','uge':'ule','sgt':'slt','sge':'sle'}[pred];A,B=B,A
                     assign(v,1,f'lift.icmp.{pred} {A} {B}',current)
                 elif op=='select':
-                    ps=d.split_top(body[6:].strip());parts=[operand(d.typed_val(p),d.parse_type(p)[0],current) for p in ps];assign(v,bits(rt),'lift.select '+' '.join(parts),current)
+                    ps=d.split_top(body[6:].strip());parts=[operand(d.typed_val(p),d.parse_type(p)[0],current) for p in ps];assign(v,self.bits(rt),'lift.select '+' '.join(parts),current)
                 elif op in ('zext','sext','trunc','ptrtoint','inttoptr','bitcast','addrspacecast'):
                     src,dst=body[len(op):].rsplit(' to ',1);ty=d.parse_type(src)[0];dt=d.parse_type(dst)[0];A=operand(d.typed_val(src),ty,current)
                     operation=op
-                    if op in ('ptrtoint','inttoptr','bitcast','addrspacecast'):operation='mov' if bits(ty)==bits(dt) else 'trunc' if bits(ty)>bits(dt) else 'zext'
-                    assign(v,bits(dt),'lift.'+operation+('' if operation=='mov' else '.i'+str(bits(dt)))+' '+A,current)
+                    if op in ('ptrtoint','inttoptr','bitcast','addrspacecast'):operation='mov' if self.bits(ty)==self.bits(dt) else 'trunc' if self.bits(ty)>self.bits(dt) else 'zext'
+                    assign(v,self.bits(dt),'lift.'+operation+('' if operation=='mov' else '.i'+str(self.bits(dt)))+' '+A,current)
                 elif op=='getelementptr':
                     gep(body,v,current)
                 elif op=='load':
-                    ps=d.split_top(body[5:]);ty=d.parse_type(ps[0])[0];P=operand(d.typed_val(ps[1]),('ptr',),current);w=bits(ty);current.append(f'lift.boundscheck {P} {w//8}');assign(v,w,f'lift.load.i{w} {P}',current)
+                    ps=d.split_top(body[5:]);ty=d.parse_type(ps[0])[0];pt=d.parse_type(ps[1])[0];P=operand(d.typed_val(ps[1]),pt,current);w=self.bits(ty);aw=self.pointer_widths()[0]
+                    if self.bits(pt)!=aw:P=fresh('t',aw,'lift.'+('zext' if self.bits(pt)<aw else 'trunc')+f'.i{aw} '+P,current)
+                    current.append(f'lift.boundscheck {P} {w//8}');assign(v,w,f'lift.load.i{w} {P}',current)
                 elif op=='store':
-                    ps=d.split_top(body[6:]);ty=d.parse_type(ps[0])[0];V=operand(d.typed_val(ps[0]),ty,current);P=operand(d.typed_val(ps[1]),('ptr',),current);w=bits(ty);current += [f'lift.boundscheck {P} {w//8}',f'lift.store.i{w} {P} {V}']
+                    ps=d.split_top(body[6:]);ty=d.parse_type(ps[0])[0];V=operand(d.typed_val(ps[0]),ty,current);pt=d.parse_type(ps[1])[0];P=operand(d.typed_val(ps[1]),pt,current);w=self.bits(ty);aw=self.pointer_widths()[0]
+                    if self.bits(pt)!=aw:P=fresh('t',aw,'lift.'+('zext' if self.bits(pt)<aw else 'trunc')+f'.i{aw} '+P,current)
+                    current += [f'lift.boundscheck {P} {w//8}',f'lift.store.i{w} {P} {V}']
                 elif op=='call':
                     c=d.parse_call(inst);cal=c['callee'];args=[operand(x[2],x[0],current) for x in c['args']]
                     if cal=='@__bennett_nz_fault':
@@ -302,13 +346,13 @@ class Mapper:
                         dest=v if v is not None else 't'+str(temps)
                         if v is None:temps+=1
                         if cal[1:] in self.arena_functions:args.append('a'+str(len(f.params)))
-                        assign(dest,bits(c['ret']),'lift.call @'+self.names[cal[1:]]+' ('+', '.join(args)+')',current)
+                        assign(dest,self.bits(c['ret']),'lift.call @'+self.names[cal[1:]]+' ('+', '.join(args)+')',current)
                     else:
                         call_count+=1;cond=operand(cal,('ptr',),current);cs=sorted(self.analysis.indirect.get(id(inst),set()),key=lambda n:self.addresses[n]);keys=[]
                         for k,n in enumerate(cs):keys.append((self.addresses[n],f'^b{i}.q{call_count}c{k}'))
                         tree(cond,64,keys,f'^b{i}.q{call_count}d',current)
                         for k,n in enumerate(cs):
-                            leaf=[];assign(v,bits(c['ret']),'lift.call @'+self.names[n]+' ('+', '.join(args)+')',leaf);leaf.append(f'qjump ^b{i}.q{call_count}r');extra.append((f'b{i}.q{call_count}c{k}',leaf))
+                            leaf=[];assign(v,self.bits(c['ret']),'lift.call @'+self.names[n]+' ('+', '.join(args)+')',leaf);leaf.append(f'qjump ^b{i}.q{call_count}r');extra.append((f'b{i}.q{call_count}c{k}',leaf))
                         extra.append((f'b{i}.q{call_count}d',['fault 4']));current=[];extra.append((f'b{i}.q{call_count}r',current))
                 elif op=='ret':
                     if body=='ret void':current.append('lift.ret r')
@@ -316,14 +360,14 @@ class Mapper:
                         ty,k=d.parse_type(body[4:]);val=body[4+k:].strip()
                         if ty[0]=='struct':
                             fields=d.split_top(val[1:-1]);scalars=[operand(d.typed_val(x),t,current) for t,x in zip(ty[1],fields)]
-                            packed=None;offset=0;w=bits(ty)
+                            packed=None;offset=0;w=self.bits(ty)
                             for t,src in zip(ty[1],scalars):
-                                part=src if bits(t)==w else fresh('t',w,f'lift.zext.i{w} {src}',current)
+                                part=src if self.bits(t)==w else fresh('t',w,f'lift.zext.i{w} {src}',current)
                                 if offset:
                                     shift=fresh('c',w,f'lift.const.i{w} {offset}',current)
                                     part=fresh('t',w,f'lift.shl {part} {shift}',current)
                                 packed=part if packed is None else fresh('t',w,f'lift.or {packed} {part}',current)
-                                offset+=bits(t)
+                                offset+=self.bits(t)
                             A=packed
                         else:A=operand(val,ty,current)
                         current.append('lift.ret '+A)
@@ -341,7 +385,7 @@ class Mapper:
                     tree(C,64,keys,f'^b{i}.d',current);extra.append((f'b{i}.d',['fault 4']))
                 elif op=='switch':
                     m=re.match(r'switch (i\d+) ([^,]+), label %([-\w.$]+) \[(.*)\]',body);ty=d.parse_type(m[1])[0];C=operand(m[2],ty,current)
-                    keys=sorted((int(k)%(1<<bits(ty)),target(t)) for k,t in re.findall(r'i\d+ (-?\d+), label %([-\w.$]+)',m[4]));tree(C,bits(ty),keys,target(m[3]),current)
+                    keys=sorted((int(k)%(1<<self.bits(ty)),target(t)) for k,t in re.findall(r'i\d+ (-?\d+), label %([-\w.$]+)',m[4]));tree(C,self.bits(ty),keys,target(m[3]),current)
                 else:raise d.Fail('checker-unimplemented: §16.4 '+inst.text)
                 j+=1
             blocks.append(('b'+str(i),rows));blocks+=extra
@@ -365,7 +409,7 @@ class Mapper:
                 if ' = ' not in row:continue
                 for n in re.findall(r'[\w.]+',row.split(' = ',1)[0]):
                     if n in widths and n not in order:order.append(n)
-        pws=[bits(x[0]) for x in f.params]+([64] if name in self.arena_functions else []);R=bits(f.ret)
+        pws=[self.bits(x[0]) for x in f.params]+([64] if name in self.arena_functions else []);R=self.bits(f.ret)
         sig={'abi':'0.8','kind':'lproc','params':pws,'result':R,'tier':'q'};self.signatures[label]=sig
         header='lproc @'+label+' ('+', '.join(f'a{k}:reg[{w}]' for k,w in enumerate(pws))+f') (r:reg[{R}]) () () ()'
         lines=[header]

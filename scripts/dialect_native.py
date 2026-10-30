@@ -30,6 +30,7 @@ def values(text):
 def cases(ident,text):
     """Return C driver, independent expected stdout records, module variants."""
     out=[];expected=[];decl='';variants=('input','output')
+    if ident in {'n-fpconv-wide','n-wide-intrinsics','n-atomic-wrap','n-atomic-usub','pointer-as270'} and not text.strip().endswith('code=0'):raise d.Fail('native witness requires code=0')
     if ident in ('n-bitcast-lanes','n-bitcast-scalar','n-vp-merge','n-vp-select','n-vp-product','n-defined-zero'):
         if ident=='n-bitcast-lanes':
             decl='extern uint16_t f(const void *);\n'
@@ -53,6 +54,30 @@ def cases(ident,text):
         out=['uint8_t p[]={'+','.join(map(str,bytes.fromhex(m[1])))+'};',
              'printf("%u\\n",f(p));uint8_t q[8];memset(q,170,8);s(q);printf("[");for(int i=0;i<8;i++)printf("%s%u",i?",":"",q[i]);puts("]");']
         expected=[int(m[2]),values(m[3])]
+    elif ident=='n-fpconv-wide':
+        decl='extern void to_double(const void*,void*);extern void from_double(double,void*);extern void sat_double(double,void*);\n'
+        m=re.fullmatch(r'to_double\((\[[^]]+\])\)=(\d+); from_double\(([^)]+)\)=(\[[^]]+\]); sat_double\(([^)]+)\)=(\[[^]]+\]); code=0',text.strip())
+        if not m:raise d.Fail('wide FP vector syntax')
+        limbs=values(m[1]);out=['uint64_t a[3]={'+','.join(str(x)+'ULL' for x in limbs)+'},r[3];double d;to_double(a,&d);uint64_t bits;memcpy(&bits,&d,8);printf("%llu\\n",(unsigned long long)bits);']
+        expected=[int(m[2])]
+        for fn,x,want in [('from_double',m[3],m[4]),('sat_double',m[5],m[6])]:
+            out.append(f'{fn}({x},r);printf("[%llu,%llu,%llu]\\n",(unsigned long long)r[0],(unsigned long long)r[1],(unsigned long long)r[2]);');expected.append(values(want))
+    elif ident=='n-wide-intrinsics':
+        decl='extern _Bool add192(const void*,const void*,void*);extern void count192(const void*,void*);\n'
+        for a,b,want in re.findall(r'add\((\[[^]]+\]),(\[[^]]+\])\)=(\[[^]]+\])',text):
+            out.append('{uint64_t a[3]={'+','.join(str(x)+'ULL' for x in values(a))+'},b[3]={'+','.join(str(x)+'ULL' for x in values(b))+'},r[3];unsigned of=add192(a,b,r);printf("[%llu,%llu,%llu,%u]\\n",(unsigned long long)r[0],(unsigned long long)r[1],(unsigned long long)r[2],of);}')
+            expected.append(values(want))
+        m=re.search(r'ctpop\((\[[^]]+\])\)=(\[[^]]+\])',text)
+        out.append('{uint64_t a[3]={'+','.join(str(x)+'ULL' for x in values(m[1]))+'},r[3];count192(a,r);printf("[%llu,%llu,%llu]\\n",(unsigned long long)r[0],(unsigned long long)r[1],(unsigned long long)r[2]);}')
+        expected.append(values(m[2]))
+    elif ident in ('n-atomic-wrap','n-atomic-usub'):
+        decl='extern uint32_t f0(uint32_t*,uint32_t);extern uint32_t f1(uint32_t*,uint32_t);\n'
+        for k,old,v,ret,new in re.findall(r'f([01])\((\d+),(\d+)\)=\[(\d+),(\d+)\]',text):
+            out.append(f'{{uint32_t p={old},r=f{k}(&p,{v});printf("[%u,%u]\\n",r,p);}}');expected.append([int(ret),int(new)])
+    elif ident=='pointer-as270':
+        decl='extern uint64_t f(uint64_t);\n';variants=('lift',)
+        for x,want in re.findall(r'f\((\d+)\)=(\d+); code=0',text):
+            out.append(f'printf("%llu\\n",(unsigned long long)f({x}ULL));');expected.append(int(want))
     elif ident=='n-gep-index':
         for j,(fn,args,want) in enumerate(re.findall(r'([fg])\(([-\d,]+)\)=(\d+); code=0',text)):
             decl+=f'extern uint64_t probe{j}(void);\n'
@@ -133,6 +158,7 @@ def check(runner,block):
     for major in ('18','23'):
         clang=runner.frontends[major]/'clang'
         for variant in variants:
+            if ident=='n-atomic-usub' and variant=='input' and major=='18':continue # not an LLVM 18 source opcode
             if variant=='seed':
                 src=SEEDS/'runtime.c'
             elif variant=='source':
@@ -155,6 +181,33 @@ def check(runner,block):
                     for j in range(len(expected)):
                         probe=re.search(r'define i64 @probe'+str(j)+r'\(\).*?^}',text,re.S|re.M)
                         if not probe or not re.search(r'ret i64 -?\d+',probe[0]):raise d.Fail('layout-sensitive native probe did not fold')
+                if ident=='n-fpconv-wide' and variant=='input':
+                    # LLVM's backend has no direct i192 conversion libcalls.
+                    # Fold the exact constant source probes in LLVM first; native
+                    # still executes each returned value on both host compilers.
+                    text=re.sub(r'\bdefine (?!internal)', 'define internal ',text)
+                    text+='\n@probe_input = internal constant [3 x i64] [i64 0, i64 0, i64 1]\n'
+                    text+='define i64 @probe0() {\n %p = alloca double\n call void @to_double(ptr @probe_input, ptr %p)\n %v = load i64, ptr %p\n ret i64 %v\n}\n'
+                    for j,(fn,value) in enumerate((('from_double','-2.5'),('sat_double','1.0e300'))):
+                        for k in range(3):
+                            text+=f'define i64 @probe{1+3*j+k}() {{\n %p = alloca i192\n call void @{fn}(double {value}, ptr %p)\n %v = load i192, ptr %p\n %s = lshr i192 %v, {64*k}\n %r = trunc i192 %s to i64\n ret i64 %r\n}}\n'
+                    src.write_text(text)
+                    text=command([runner.tc[major]/'opt','-S','-passes=cgscc(inline),function(sroa,instcombine),globaldce',src,'-o','-'])
+                    for j in range(7):
+                        if not re.search(r'define i64 @probe'+str(j)+r'\(\).*?ret i64 -?\d+',text,re.S):raise d.Fail('source wide conversion probe did not fold')
+                    (directory/('fold-'+major+'.ll')).write_text(text)
+                    probe_driver=directory/'probe-driver.c'
+                    probe_driver.write_text(PREFIX+''.join('extern uint64_t probe'+str(j)+'(void);\n' for j in range(7))+'int main(void){printf("%llu\\n",(unsigned long long)probe0());printf("[%llu,%llu,%llu]\\n",(unsigned long long)probe1(),(unsigned long long)probe2(),(unsigned long long)probe3());printf("[%llu,%llu,%llu]\\n",(unsigned long long)probe4(),(unsigned long long)probe5(),(unsigned long long)probe6());return 0;}')
+                if ident=='pointer-as270':
+                    src.write_text(d.with_decls(text))
+                    folded=command([runner.tc[major]/'opt','-S','-passes=verify,instcombine',src,'-o','-'])
+                    if not re.search(r'and i64 %x, 4294967295',folded):raise d.Fail('pointer dynamic fold lacks low-32 mask')
+                    probe=text+'\ndefine i64 @probe() {\n %r = call i64 @f(i64 4294967296)\n ret i64 %r\n}\n'
+                    src.write_text(probe)
+                    constant=command([runner.tc[major]/'opt','-S','-passes=inline,instcombine',src,'-o','-'])
+                    if not re.search(r'define i64 @probe\(\).*?ret i64 0',constant,re.S):raise d.Fail('pointer constant probe != 0')
+                    (directory/('fold-'+major+'.ll')).write_text(folded+constant)
+                    text=folded # clang overwrites custom layouts: retain the explicit conversion.
                 src.write_text(d.with_decls(text))
             # LLVM 18 verifies VP selectors but its x86 backend cannot legalise
             # them. LLVM 23 independently lowers the original VP module; both
@@ -162,6 +215,7 @@ def check(runner,block):
             if ident.startswith('n-vp-') and variant=='input':clang=runner.frontends['23']/'clang'
             else:clang=runner.frontends[major]/'clang'
             objects=[src,directory/'driver.c']
+            if ident=='n-fpconv-wide' and variant=='input':objects=[src,probe_driver]
             compiler=clang
             if ident=='n-eh' and variant=='input':
                 cpp=directory/'throw.cpp';cpp.write_text('extern "C" void may_throw(int x) { if (x&1) throw x; }\n')

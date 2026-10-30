@@ -159,12 +159,14 @@ def parse_type(s, i=0):
     if w.startswith("i") and w[1:].isdigit():
         return ("int", int(w[1:])), m.end()
     if w.startswith("ptr"):
-        return ("ptr",), m.end()
+        return (("ptr", int(re.search(r"addrspace\((\d+)\)", w)[1])) if "addrspace" in w else ("ptr",)), m.end()
     return (w,), m.end()
 
 
 def tstr(t):
     k = t[0]
+    if k == "ptr" and len(t)>1:
+        return f"ptr addrspace({t[1]})"
     if k == "int":
         return f"i{t[1]}"
     if k == "vec":
@@ -2639,7 +2641,7 @@ def with_decls(text):
     declared = set(re.findall(r"declare [^@]*@(__bennett_\w+)\(", text)) | set(re.findall(r"define [^@]*@(__bennett_\w+)\(", text))
     extra = [DECLS_TEXT[n] for n in sorted(used - declared) if n in DECLS_TEXT]
     if extra:
-        out = "\n".join(extra) + "\n\n" + text
+        out = text + "\n" + "\n".join(extra) + "\n"
     return out
 
 

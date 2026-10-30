@@ -1,6 +1,6 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.5
+# Bennett LLVM Dialect — Specification, draft 0.2.6
 
-**Date:** 2026-10-29. **Status:** draft 0.2.5 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
+**Date:** 2026-10-29. **Status:** draft 0.2.6 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
 2026-10-29 at its end), revised after council rounds 1–3. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
@@ -11,9 +11,9 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.5: markers 0.2, handles 0.2.5, regions 0.2.5, oracle-abi 0.2.4, tdl 0.2.4,
-effects 0.2.4, norm 0.2.5, map 0.2.5, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2.5`) is the compatibility unit (§23): drafts are not compatible
+**Versioning.** Dialect 0.2.6: markers 0.2, handles 0.2.6, regions 0.2.6, oracle-abi 0.2.4, tdl 0.2.4,
+effects 0.2.4, norm 0.2.6, map 0.2.6, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+The **full version string** (`0.2.6`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -106,9 +106,11 @@ its replacement is §10, §9 and §8.7 respectively.
 
 ### 1.5 Notation and checked examples
 
-LLVM IR is LLVM's textual form with opaque pointers, as accepted by LLVM 18, 20 and 23. `pw` is
-the pointer width in bits of address space 0 in the module's datalayout (64 when the module has
-no datalayout). Numbers are decimal unless written `0x…`. A(F) is the function address of §4.4.
+LLVM IR is LLVM's textual form with opaque pointers, as accepted by LLVM 18, 20 and 23. `P(a)` is
+the representation width of an integral pointer in address space a from DataLayout, falling
+back to the default pointer entry (64 with no entry). `pw=P(0)` is the ISA address width,
+not the width of every LLVM pointer. `I(a)` is its independently specified pointer-index width
+(default P(a)). Numbers are decimal unless written `0x…`. A(F) is the function address of §4.4.
 
 **Process rules** (also in `spec/README.md`):
 
@@ -137,7 +139,7 @@ bd `b-isa-spec-xam`).
 | `llvm markers-ir` | the marker list of §3.2; compared with the C view | `parse`, `header` |
 | `c markers-c` | the prototypes of the C header; byte-equal to `spec/bennett_markers.h` between its BEGIN/END PROTOTYPES lines | `header` |
 | `llvm example=ID verdict=V` | a module; it parses and verifies on LLVM 18, 20 and 23 and the reference recogniser gives verdict `V` (`accept`, `reject:<code>` or `blocked:<code>`, §1.6). Optional attributes: `candidates=f,g` (the resolved candidate set of the first region operand, §7.2), `callees=f,g` (the candidate set of the first indirect call, §14.2), `shapes=N` (the number of compiled oracle shapes, §8.4), `mode=validate` (validator only, §12.4), `rmode=@f` (compiled in the whole-program R mode with entry f, §19.2) | `parse`, `recognise` |
-| `llvm normalise-in=ID` / `llvm normalise-out=ID` | the normaliser (§12) applied to the first gives the second, lines compared after collapsing runs of blanks; both verify on the three majors; the second passes the validator | `parse`, `normalise` |
+| `llvm normalise-in=ID` / `llvm normalise-out=ID` | the normaliser (§12) applied to the first gives the second, lines compared after collapsing runs of blanks; both verify on the three majors (a source-only `majors=23` tag limits a form introduced in LLVM 23); the second passes the validator | `parse`, `normalise` |
 | `text native=ID` | inputs and outputs of the native differential of a normalisation pair or a lifted example: both modules (or the C source and the module) built natively with the seeds of `spec/seeds/` (§21.4), run on the listed inputs, outputs equal to the listed values | `native` |
 | `llvm lift=ID` | a materialised module; attribute `region=@f` names the region function and `desc=` the binding shape: the parameters' bindings in order (`IN(n,zext)`, `IN(n,sext)`, `ARG(W)`, `MEM_IN(A)`, `OUT(size)`), then `;dev=` device bindings (`ENTROPY(A)`, …) and `;tgt=` n(tgt) | `parse`, `map` |
 | `text linkmap=ID` | the comparison-link facts the map of `lift=ID` reads (§19.5): `null_size`, `heap_base`, `heap_limit_max`, the globals with their bases, the A(F) of address-taken functions, and the budget table's largest `heap` and `stack` | `map` |
@@ -1007,9 +1009,9 @@ AV(operand) lane by lane; ⊤ absorbs.
 | PT3 | `phi`, `select` (value operands), `freeze`, `bitcast`, `addrspacecast` | copies (union) |
 | PT4 | `ptrtoint`, `inttoptr`, `zext`/`sext`/`trunc` of a pointer-width integer to pointer width | copies |
 | PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | shifts each pointer atom's offset by each constant (classes and `*` stay); any other integer operation on a pointer atom gives (X, `*`) for each X; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a `range(lo, hi)` attribute or `!range` metadata (read before N3 removes it) restricts ⊤ to [lo, hi) |
-| PT6 | `load T, ptr p` | for each (X, o) ∈ AV(p): the union of AV(X, o′) over the slots o′ that overlap [o, o + size(T)); for every global X (mutable or constant), the atoms of its initialiser at those offsets (`FN(F)` for `ptr @F`, `(G, c)` for a pointer into G, `INT(c)` for integers); for X = EXT, ⊤ |
-| PT7 | `store v, ptr p` | AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
-| PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when the offsets and len are constants and [s, s + 1) lies in the copied range, AV(Z, o_d + s − o_s) ⊇ AV(Y, s); else AV(Z, `*`) ⊇ AV(Y, s). Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
+| PT6 | `load T, ptr p` | for each (X,o) ∈ AV(p): memory atoms carry their storage interval and representation width; copy a whole-value atom only for that identical interval with a compatible representation. A known immutable byte image decodes exactly the accessed bytes using DataLayout and T (including initialisers). For a partial, spanning or overlapping access whose result bits are not represented exactly, the non-handle value is ⊤, never the union of component INT values. X=EXT gives ⊤. ROOT provenance remains explicit and §6.2's partial-handle restrictions still apply |
+| PT7 | `store v, ptr p` | retain each written interval and representation width; partial writes overlapping a larger load participate in PT6's conservative fallback. AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
+| PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when offsets and len are constants and the atom's entire storage interval [s, s + size(atom)) lies in the copied range, copy its atom and representation width to (Z, o_d + s − o_s). Every partially overlapping atom instead contributes non-handle ⊤ and explicit ROOT provenance to the affected destination interval (unknown offsets/len use `*`); do not copy the whole component INT. Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
 | PT9 | direct call of G, or indirect call with candidate G (§14.2) | AV(parameter i of G) ⊇ AV(argument i); AV(result) ⊇ the union of AV over G's `ret` operands; `byval` arguments copy the pointee's slots into the callee's copy object |
 | PT10 | `insertelement`/`extractelement`/`shufflevector`/`insertvalue`/`extractvalue` | atoms move with constant lanes and index paths; a non-constant lane index moves the union of all lanes (a handle-table read, audit B-23) |
 | PT11 | a parameter of a function with a host caller, a device entry, or a function whose address host code uses | AV ⊇ {(EXT, `*`)} for `ptr` parameters, ⊤ for integer parameters, plus the atoms of the device-side arguments by PT9; for a pointer parameter i of a device entry E, also the candidate atom ROOT(E, i) of §6.6 |
@@ -1037,6 +1039,59 @@ define void @top() {
   ret void
 }
 ```
+
+**PT6 byte reconstruction witnesses.** Immutable bytes [1,1] decode as
+1+256=257 under e-p:64:64, never the union {1}. A two-byte subrange of a
+mutable four-byte store of 66049 (bytes 01 02 01 00) concretely gives 513,
+but has no exact whole-interval atom: its fixed abstract result is TOP, not {66049}.
+The fallback executes width 513 without claiming a finite reference dispatch set.
+
+```llvm example=pt6-byte-width verdict=accept
+target datalayout = "e-p:64:64"
+@width = internal constant [2 x i8] [i8 1, i8 1]
+define void @top() {
+  %w = load i16, ptr @width, align 1
+  %n = zext i16 %w to i64
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %n)
+  call void @__bennett_gate(i32 1, ptr %h, i64 256)
+  call void @__bennett_gate(i32 1, ptr %h, i64 256)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt6-byte-width
+{"value_set":[257],"width":257,"wire":256,"live_after":0,"trap":0}
+```
+
+```llvm example=pt6-subrange verdict=blocked:BD-B-ISA4
+target datalayout = "e-p:64:64"
+define void @top() {
+  %p = alloca i32
+  store i32 66049, ptr %p
+  %w = load i16, ptr %p, align 1
+  %n = zext i16 %w to i64
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %n)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text blocker=pt6-subrange
+BD-B-ISA4 %n: partial mutable load has TOP width; BLK-1 (ISA-4)
+```
+
+```text state=pt6-subrange
+{"value_set":"TOP","width":513,"live_after":0,"trap":0}
+```
+
+A constant-byte fill carries its complete filled interval and byte value; a load
+contained in that interval decodes the repeated byte at the load's width. Other
+overlapping writes still participate in PT6 (a fill does not erase them).
+PT8 copies preserve storage intervals/representation widths only for fully copied
+atoms. Partial copies and fills add overlapping affected intervals; PT6 then returns
+⊤ for any load whose whole bits are not represented exactly. These are fixed
+reference rules, not optional precision improvements.
 
 ### 5.3 Value sets
 
@@ -1091,7 +1146,7 @@ INT(3) and, through the store of `%n2`, INT(4), INT(5), … until it exceeds K a
 holds no `ROOT` atom, and the arithmetic on it is legal (audit B-27: 0.1 gave the load offset `*`
 and rejected this program).
 
-## 6. Handles (handles 0.2.5)
+## 6. Handles (handles 0.2.6)
 
 ### 6.1 Representation
 
@@ -1211,6 +1266,21 @@ entry call do not bound instances that survive return. Under §7.5(b), substitut
 reversible-invocation return and BLK-4; the same boundary test precedes hoisting.
 An internal callee's return alone is not a device-entry return: a guaranteed
 free in its caller before the entry returns can discharge this condition.
+
+**Parameter and result roots.** Apply the same boundary test to candidate handle
+parameter ROOT(E,i) (§6.6), and to a qalloc instance returned as an entry QREG
+result. Persistent memory (a global, heap object, or memory reachable from result
+or env) or the entry's QREG result may retain it. Include every reusable exit,
+including unwind/resume edges, in the augmented interprocedural graph; an exact-root
+qfree on every path from receipt/allocation discharges liveness. Otherwise E=∞:
+the host may supply or retain unboundedly many distinct live registers across calls.
+Marker uses of such roots loaded from persistent memory are BLK-1 blocker points
+(`blocked:BD-B-ISA4`), with §25.1's bounded static-file fallback and blocker trap,
+never rejection. A handle parameter used directly only within its receiving entry
+keeps the direct realisation, as does a returned QREG never stored in memory.
+The infinite bound on a returned root is relevant to its static-file realisation
+when it reaches memory; it does not impose a finite bound on direct QREG transport. Under §7.5(b), substitute reversible-invocation exit
+and BLK-4 (`blocked:BD-B-ISA12`) for receipt through env.
 
 1. s is **self-disjoint** iff the only memory its `ROOT(s)` atom reaches is allocas of F whose
    address does not escape F (it is not stored, returned, or passed to a call other than a marker
@@ -1676,6 +1746,53 @@ define i64 @top(i64 %x) {
 }
 ```
 
+
+**`handle-param-cross-entry`.** Receipt of two distinct live host QREGs followed
+by a later useall call leaves two live instances across entry boundaries; no
+per-entry loop bound limits host repetition. Under the 64-slot fallback the two
+X;X pairs and frees succeed; the general ISA-4 dependency is still reported.
+
+```llvm example=handle-param-cross-entry verdict=blocked:BD-B-ISA4
+@n = internal global i64 0
+@slots = internal global [2 x ptr] zeroinitializer
+define void @stash(ptr %h) {
+entry:
+  %i = load i64, ptr @n
+  %p = getelementptr [2 x ptr], ptr @slots, i64 0, i64 %i
+  store ptr %h, ptr %p
+  %next = add i64 %i, 1
+  store i64 %next, ptr @n
+  ret void
+}
+define void @useall() {
+entry:
+  %count = load i64, ptr @n
+  br label %test
+test:
+  %j = phi i64 [0, %entry], [%next, %body]
+  %more = icmp ult i64 %j, %count
+  br i1 %more, label %body, label %done
+body:
+  %p = getelementptr [2 x ptr], ptr @slots, i64 0, i64 %j
+  %h = load ptr, ptr %p
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  %next = add i64 %j, 1
+  br label %test
+done:
+  ret void
+}
+```
+
+```text blocker=handle-param-cross-entry
+BD-B-ISA4 @stash %h: handle parameter may outlive a device-entry return in persistent memory; BLK-1 (ISA-4)
+```
+
+```text state=handle-param-cross-entry at=0
+{"verdict":"blocked:BD-B-ISA4","entry_calls":3,"instances":2,"distinct":true,"live_after":0,"trap":0}
+```
+
 A handle table indexed by a classical value, and a dynamically indexed vector of handles
 (audit B-23):
 
@@ -1838,7 +1955,7 @@ define void @top() {
 }
 ```
 
-## 7. Regions (regions 0.2.5)
+## 7. Regions (regions 0.2.6)
 
 ### 7.1 Region-entry markers and region kinds
 
@@ -1941,7 +2058,7 @@ Only the rules the north star requires:
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). Standalone adj uses the deterministic
   latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
-  `lowered` entry with source `dialect-0.2.5:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.6:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -2488,8 +2605,8 @@ retain datalayout padding; this padding is never part of the packed return paylo
 
 | Kind | Code | Parameter type | Register | Meaning | ISA lowering (§16.2) |
 |---|---|---|---|---|---|
-| `IN` | 1 | `iW` or `ptr` (W = pw) | q with n(q) ≤ W | the parameter's value is the basis value of q, zero-extended (`mode` = ZEXT 0) or sign-extended (`mode` = SEXT 1) to W; a `ptr` parameter may be `IN` (a superposed pointer) | an `ins` bundle `x<k>:wire[n(q)]` (a pseudo-location, ISA §3.7), extended by `lift.zext`/`lift.sext` in the wrapper |
-| `ARG` | 2 | `iW` (W ≤ 128) or `ptr` | none (`q` ignored) | a classical value: bits 0–63 from `value`, bits 64–127 from `size`; a `ptr` ARG is an address in the caller's classical memory, which the oracle reads through its entry state (§8.5) | an `args` entry `a<k>:i<W>` (W = pw for `ptr`; ISA §4.7, §5.1) |
+| `IN` | 1 | `iW` or `ptr addrspace(a)` (W = P(a)) | q with n(q) ≤ W | the parameter's value is the basis value of q, zero-extended (`mode` = ZEXT 0) or sign-extended (`mode` = SEXT 1) to W; a `ptr` parameter may be `IN` (a superposed pointer) | an `ins` bundle `x<k>:wire[n(q)]` (a pseudo-location, ISA §3.7), extended by `lift.zext`/`lift.sext` in the wrapper |
+| `ARG` | 2 | `iW` (W ≤ 128) or `ptr` | none (`q` ignored) | a classical value: bits 0–63 from `value`, bits 64–127 from `size`; a `ptr` ARG is an address in the caller's classical memory, which the oracle reads through its entry state (§8.5) | an `args` entry `a<k>:i<W>` (W = P(a) for `ptr addrspace(a)`; ISA §4.7, §5.1) |
 | `MEM_IN` | 3 | `ptr` | q with n(q) = 8·2^A, `size` = 2^A | the parameter is the base address of an interface region of 2^A bytes whose cell i is byte i of q (bits [8i, 8i + 8)); its contents may be superposed; role `in` (restored on every basis configuration, ISA §5.1). This is the quantum-addressed memory of NS §8 rung 4 | a `mem` region `m<k>:region[A,8] in`; the argument is `lift.addr @m<k>` |
 | `OUT` | 4 | `ptr` | q with n(q) = 8·`size` | the parameter points to a fresh zero-filled buffer of `size` bytes in the oracle's memory; at exit its final bytes are XORed into q, byte k into wires [8k, 8k + 8) (a declared output, NS §4.2) | `lift.alloc size` in the wrapper; the bytes are part of the payload (§8.6) |
 | `INOUT` | 5 | `iW` | q with n(q) = W | `inplace` only (§8.7): the in-place register x | `qinplace … x` |
@@ -3253,7 +3370,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.5.
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.6.
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -3884,7 +4001,7 @@ hostcall: service=bennett.dev.console.write payload=6f6b0a reply=empty
 
 The ENTROPY-bound oracle of rung 8 is §16.8.
 
-## 12. Materialised normalisation (norm 0.2.5)
+## 12. Materialised normalisation (norm 0.2.6)
 
 ### 12.1 Scope, order and naming
 
@@ -3892,7 +4009,10 @@ The normaliser rewrites every device variant (§4.3) and the initialisers of eve
 device variant references; H variants are untouched. It applies the rules of §12.2 in table
 order, each to the whole module before the next, with one exception: N33 is applied immediately
 before N32, because the `fpext`/`fptrunc` pairs it creates around libm calls (§13.4) are
-floating-point instructions that N32 rewrites. The result is the **materialised module**: the
+floating-point instructions that N32 rewrites. After N27 and N32, re-apply N22
+to every instruction they created with an integer side wider than 128 bits. Only
+width legalisation repeats; no other rule re-runs. Width lowering may be fused
+with an expansion when the resulting canonical limb rows are identical. The result is the **materialised module**: the
 reference semantics (§18), the lifting map (§16) and the native comparison build (§17.7) are all
 defined on it (NS §3.2: "the native comparison binary is built from that materialised bitcode").
 
@@ -3923,7 +4043,7 @@ rules are replaced (outline §12.2); they are kept as anchors.
 | N6 | `llvm.lifetime.start`, `llvm.lifetime.end`, `llvm.invariant.start`, `llvm.invariant.end` | deleted (a frame is live for its whole activation, §17.3) |
 | N7 | `undef` and `poison` constants: whole operands, vector lanes, aggregate elements, `shufflevector` mask elements, global initialisers | the zero of the type: `0`, `+0.0`, `null`, `zeroinitializer` for a wholly undefined vector or aggregate; mask element `0` |
 | N8 | `%x = freeze T v` | deleted; every use of `%x` replaced by v |
-| N9 | `atomic` and `volatile` on loads and stores; `fence`; `atomicrmw`; `cmpxchg` | plain load/store; fence deleted; `atomicrmw op ptr p, T v` → `%nz.l.r = load T, ptr p`, `%nz.v.r = <op> T %nz.l.r, v` (for `xchg`: v; `min`/`max`/`umin`/`umax`: `icmp` + `select` named `%nz.k.r`, `%nz.v.r`; FP ops: their N32 form), `store T %nz.v.r, ptr p`, uses of `%r` → `%nz.l.r`; `cmpxchg ptr p, T c, T n` → `%nz.l.r = load`, `%nz.e.r = icmp eq T %nz.l.r, c`, `%nz.s.r = select i1 %nz.e.r, T n, T %nz.l.r`, `store T %nz.s.r, ptr p`, `%nz.a.r = insertvalue { T, i1 } zeroinitializer, T %nz.l.r, 0`, `%r = insertvalue { T, i1 } %nz.a.r, i1 %nz.e.r, 1` (single-thread assumption, recorded in the certificate, §24 D24). Volatile accesses in platform-profile code are first routed by N35 (§20.3) |
+| N9 | `atomic` and `volatile` on loads and stores; `fence`; `atomicrmw`; `cmpxchg` | plain load/store; fence deleted; `atomicrmw op ptr p, T v` → `%nz.l.r = load T, ptr p`, `%nz.v.r = <op> T %nz.l.r, v` (for `xchg`: v; `min`/`max`/`umin`/`umax`: `icmp` + `select` named `%nz.k.r`, `%nz.v.r`; FP ops: their N32 form; `uinc_wrap`: k=`icmp uge old,v`, i=`add old,1`, new=`select k,0,i`; `udec_wrap`: k=`icmp eq old,0`, g=`icmp ugt old,v`, w=`or k,g`, d=`sub old,1`, new=`select w,v,d`; `usub_cond`/`usub_sat`: k=`icmp uge old,v`, s=`sub old,v`, new=`select k,s,old` / `select k,s,0`. Names are `%nz.{k,i,v}.r`, `%nz.{k,g,w,d,v}.r` and `%nz.{k,s,v}.r` respectively, all arithmetic at T without overflow flags), `store T %nz.v.r, ptr p`, uses of `%r` → `%nz.l.r`; `cmpxchg ptr p, T c, T n` → `%nz.l.r = load`, `%nz.e.r = icmp eq T %nz.l.r, c`, `%nz.s.r = select i1 %nz.e.r, T n, T %nz.l.r`, `store T %nz.s.r, ptr p`, `%nz.a.r = insertvalue { T, i1 } zeroinitializer, T %nz.l.r, 0`, `%r = insertvalue { T, i1 } %nz.a.r, i1 %nz.e.r, 1` (single-thread assumption, recorded in the certificate, §24 D24). Volatile accesses in platform-profile code are first routed by N35 (§20.3) |
 | N10 | `llvm.is.constant.*` | `false` |
 | N10 | `llvm.objectsize.*(p, min, nullunknown, dynamic)` | `-1` (all ones) if `min` is `false`, else `0` |
 | N10 | `llvm.allow.runtime.check`, `llvm.allow.ubsan.check` | `true` (checks stay; a failing check is a fault) |
@@ -4197,6 +4317,84 @@ entry:
 }
 declare void @__bennett_rt_poll()
 declare i8 @__bennett_rt_mmio_load_i8(ptr)
+```
+
+
+**N9 wrap/subtract forms.** Compare before the wrapping arithmetic; all return
+the old value. At limit 10, increment maps 9→10 and 10/11→0; decrement maps
+0/11→10 and 9→8. Conditional subtraction preserves 9 when subtracting 10;
+saturating subtraction gives zero; both map 11→1. Source forms are verified
+on the LLVM majors that define them (`majors=`); all materialised outputs verify
+on 18/20/23 and execute on clang 18/23.
+
+```llvm normalise-in=n-atomic-wrap
+define i32 @f0(ptr %p, i32 %v) {
+  %old = atomicrmw uinc_wrap ptr %p, i32 %v seq_cst, align 4
+  ret i32 %old
+}
+define i32 @f1(ptr %p, i32 %v) {
+  %old = atomicrmw udec_wrap ptr %p, i32 %v seq_cst, align 4
+  ret i32 %old
+}
+```
+
+```llvm normalise-out=n-atomic-wrap
+define i32 @f0(ptr %p, i32 %v) {
+  %nz.l.old = load i32, ptr %p, align 4
+  %nz.k.old = icmp uge i32 %nz.l.old, %v
+  %nz.i.old = add i32 %nz.l.old, 1
+  %nz.v.old = select i1 %nz.k.old, i32 0, i32 %nz.i.old
+  store i32 %nz.v.old, ptr %p, align 4
+  ret i32 %nz.l.old
+}
+define i32 @f1(ptr %p, i32 %v) {
+  %nz.l.old = load i32, ptr %p, align 4
+  %nz.k.old = icmp eq i32 %nz.l.old, 0
+  %nz.g.old = icmp ugt i32 %nz.l.old, %v
+  %nz.w.old = or i1 %nz.k.old, %nz.g.old
+  %nz.d.old = sub i32 %nz.l.old, 1
+  %nz.v.old = select i1 %nz.w.old, i32 %v, i32 %nz.d.old
+  store i32 %nz.v.old, ptr %p, align 4
+  ret i32 %nz.l.old
+}
+```
+
+```text native=n-atomic-wrap
+f0(9,10)=[9,10]; f0(10,10)=[10,0]; f0(11,10)=[11,0]; f1(0,10)=[0,10]; f1(11,10)=[11,10]; f1(9,10)=[9,8]; code=0
+```
+
+```llvm normalise-in=n-atomic-usub majors=23
+define i32 @f0(ptr %p, i32 %v) {
+  %old = atomicrmw usub_cond ptr %p, i32 %v seq_cst, align 4
+  ret i32 %old
+}
+define i32 @f1(ptr %p, i32 %v) {
+  %old = atomicrmw usub_sat ptr %p, i32 %v seq_cst, align 4
+  ret i32 %old
+}
+```
+
+```llvm normalise-out=n-atomic-usub
+define i32 @f0(ptr %p, i32 %v) {
+  %nz.l.old = load i32, ptr %p, align 4
+  %nz.k.old = icmp uge i32 %nz.l.old, %v
+  %nz.s.old = sub i32 %nz.l.old, %v
+  %nz.v.old = select i1 %nz.k.old, i32 %nz.s.old, i32 %nz.l.old
+  store i32 %nz.v.old, ptr %p, align 4
+  ret i32 %nz.l.old
+}
+define i32 @f1(ptr %p, i32 %v) {
+  %nz.l.old = load i32, ptr %p, align 4
+  %nz.k.old = icmp uge i32 %nz.l.old, %v
+  %nz.s.old = sub i32 %nz.l.old, %v
+  %nz.v.old = select i1 %nz.k.old, i32 %nz.s.old, i32 0
+  store i32 %nz.v.old, ptr %p, align 4
+  ret i32 %nz.l.old
+}
+```
+
+```text native=n-atomic-usub
+f0(9,10)=[9,9]; f0(11,10)=[11,1]; f1(9,10)=[9,0]; f1(11,10)=[11,1]; code=0
 ```
 
 ### 12.3 Fault replacement F(C)
@@ -4941,6 +5139,23 @@ g(4294967296,4294967296)=4294967296; code=0
 
 ### 12.8 Integer intrinsics (N27)
 
+At W>128, the arithmetic expansions below (smax/smin/umax/umin, abs,
+scmp/ucmp, .with.overflow and .sat families) are emitted at width W and
+legalised by the repeated N22 (§12.1): carries/borrows, lexicographic compares,
+and per-limb select. Aggregate expansion results carry the limb tuple plus the
+flag; insertvalue/extractvalue transport these fields without a residual wide
+aggregate. Unsigned add overflow is the outgoing carry of the top limb; unsigned
+sub overflow is its outgoing borrow (retain it for the flag even though ordinary
+wrapping add/sub discards it). Signed overflow tests signs at the true top bit.
+Runtime rows bswap, bitreverse, ctpop, ctlz, cttz, fshl, fshr, sshl.sat,
+ushl.sat, smul/umul.fix[.sat], sdiv/udiv.fix[.sat], pdep, pext and clmul use
+`void @__bennett_rt_i<W>_<name>(ptr dst, ptr a[, ptr b, ptr c][, scalar flags])`
+instead of a wide call result/parameter. Each wide argument is a limb slot;
+scalar flags retain their declared types, in source order. Counts ctpop/ctlz/cttz
+write a full W-bit result slot. Slots use §13.1's push/store/call/load/pop order
+(destination first, then wide source operands in order); runtime fault rows are
+unchanged. These are the same limb-slot conventions as wide mul/div in §12.7.
+
 | Intrinsic | Expansion |
 |---|---|
 | `smax`, `smin`, `umax`, `umin` (a, b) | `%nz.c.r = icmp sgt/slt/ugt/ult a, b`; `%r = select i1 %nz.c.r, a, b` |
@@ -4968,6 +5183,221 @@ g(4294967296,4294967296)=4294967296; code=0
 | `init.trampoline`, `adjust.trampoline` | §14.2 (trampolines) |
 | `eh.typeid.for`, `eh.exceptionpointer`, `eh.exceptioncode`, `eh.return.*`, `eh.sjlj.*` | §14.4, §14.5 |
 | `callbr.landingpad` | §15.2 |
+
+
+**Wide conversion and intrinsic witnesses.** Limb [0,0,1] is 2^128, whose
+binary64 exponent is 1151 and fraction zero: carrier 0x47f0000000000000.
+The source conversion probes are folded with LLVM before native code generation
+(the x86 backend lacks direct i192 conversion libcalls); the materialised limb
+output executes dynamically. Both paths run with clang 18/23.
+Truncating −2.5 toward zero gives −2 (all upper limbs ones); positive 1e300
+saturates to 2^191−1. In addition, [all-ones,0,0]+[1,0,0] carries into
+limb 1 but not beyond limb 2, whereas all-ones×3 plus one wraps to zero with
+overflow 1. Population count of [all-ones,1,0] is 64+1=65.
+
+```llvm normalise-in=n-fpconv-wide
+define void @to_double(ptr %p, ptr %q) {
+  %a = load i192, ptr %p, align 8
+  %r = sitofp i192 %a to double
+  store double %r, ptr %q, align 8
+  ret void
+}
+define void @from_double(double %a, ptr %q) {
+  %r = fptosi double %a to i192
+  store i192 %r, ptr %q, align 8
+  ret void
+}
+declare i192 @llvm.fptosi.sat.i192.f64(double)
+define void @sat_double(double %a, ptr %q) {
+  %r = call i192 @llvm.fptosi.sat.i192.f64(double %a)
+  store i192 %r, ptr %q, align 8
+  ret void
+}
+```
+
+```llvm normalise-out=n-fpconv-wide
+define void @to_double(ptr %p, ptr %q) {
+  %nz.p0.a = getelementptr i64, ptr %p, i64 0
+  %nz.m0.a = load i64, ptr %nz.p0.a, align 8
+  %nz.p1.a = getelementptr i64, ptr %p, i64 1
+  %nz.m1.a = load i64, ptr %nz.p1.a, align 8
+  %nz.p2.a = getelementptr i64, ptr %p, i64 2
+  %nz.m2.a = load i64, ptr %nz.p2.a, align 8
+  %nz.s.r = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %nz.s0.r = getelementptr i64, ptr %nz.s.r, i64 0
+  store i64 %nz.m0.a, ptr %nz.s0.r, align 8
+  %nz.s1.r = getelementptr i64, ptr %nz.s.r, i64 1
+  store i64 %nz.m1.a, ptr %nz.s1.r, align 8
+  %nz.s2.r = getelementptr i64, ptr %nz.s.r, i64 2
+  store i64 %nz.m2.a, ptr %nz.s2.r, align 8
+  %nz.i.r = call i64 @__bennett_sf_sitofp_f64_wide(ptr %nz.s.r, i32 192)
+  call void @__bennett_rt_ss_pop(ptr %nz.s.r)
+  %r = bitcast i64 %nz.i.r to double
+  store double %r, ptr %q, align 8
+  ret void
+}
+define void @from_double(double %a, ptr %q) {
+  %nz.0.r = bitcast double %a to i64
+  %nz.d.r = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  call void @__bennett_sf_fptosi_f64_wide(ptr %nz.d.r, i64 %nz.0.r, i32 192)
+  %nz.rp0.r = getelementptr i64, ptr %nz.d.r, i64 0
+  %nz.rm0.r = load i64, ptr %nz.rp0.r, align 8
+  %nz.rp1.r = getelementptr i64, ptr %nz.d.r, i64 1
+  %nz.rm1.r = load i64, ptr %nz.rp1.r, align 8
+  %nz.rp2.r = getelementptr i64, ptr %nz.d.r, i64 2
+  %nz.rm2.r = load i64, ptr %nz.rp2.r, align 8
+  call void @__bennett_rt_ss_pop(ptr %nz.d.r)
+  %nz.q0.from_double.0 = getelementptr i64, ptr %q, i64 0
+  store i64 %nz.rm0.r, ptr %nz.q0.from_double.0, align 8
+  %nz.q1.from_double.0 = getelementptr i64, ptr %q, i64 1
+  store i64 %nz.rm1.r, ptr %nz.q1.from_double.0, align 8
+  %nz.q2.from_double.0 = getelementptr i64, ptr %q, i64 2
+  store i64 %nz.rm2.r, ptr %nz.q2.from_double.0, align 8
+  ret void
+}
+declare i192 @llvm.fptosi.sat.i192.f64(double)
+define void @sat_double(double %a, ptr %q) {
+  %nz.0.r = bitcast double %a to i64
+  %nz.d.r = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  call void @__bennett_sf_fptosi_f64_wide(ptr %nz.d.r, i64 %nz.0.r, i32 192)
+  %nz.rp0.r = getelementptr i64, ptr %nz.d.r, i64 0
+  %nz.rm0.r = load i64, ptr %nz.rp0.r, align 8
+  %nz.rp1.r = getelementptr i64, ptr %nz.d.r, i64 1
+  %nz.rm1.r = load i64, ptr %nz.rp1.r, align 8
+  %nz.rp2.r = getelementptr i64, ptr %nz.d.r, i64 2
+  %nz.rm2.r = load i64, ptr %nz.rp2.r, align 8
+  call void @__bennett_rt_ss_pop(ptr %nz.d.r)
+  %nz.q0.sat_double.0 = getelementptr i64, ptr %q, i64 0
+  store i64 %nz.rm0.r, ptr %nz.q0.sat_double.0, align 8
+  %nz.q1.sat_double.0 = getelementptr i64, ptr %q, i64 1
+  store i64 %nz.rm1.r, ptr %nz.q1.sat_double.0, align 8
+  %nz.q2.sat_double.0 = getelementptr i64, ptr %q, i64 2
+  store i64 %nz.rm2.r, ptr %nz.q2.sat_double.0, align 8
+  ret void
+}
+
+declare ptr @__bennett_rt_ss_push(i64, i64)
+
+declare void @__bennett_rt_ss_pop(ptr)
+
+declare i64 @__bennett_sf_sitofp_f64_wide(ptr, i32)
+
+declare void @__bennett_sf_fptosi_f64_wide(ptr, i64, i32)
+```
+
+```text native=n-fpconv-wide
+to_double([0,0,1])=5183643171103440896; from_double(-2.5)=[18446744073709551614,18446744073709551615,18446744073709551615]; sat_double(1e300)=[18446744073709551615,18446744073709551615,9223372036854775807]; code=0
+```
+
+```llvm normalise-in=n-wide-intrinsics
+declare { i192, i1 } @llvm.uadd.with.overflow.i192(i192, i192)
+declare i192 @llvm.ctpop.i192(i192)
+define i1 @add192(ptr %p, ptr %q, ptr %out) {
+  %a = load i192, ptr %p, align 8
+  %b = load i192, ptr %q, align 8
+  %pair = call { i192, i1 } @llvm.uadd.with.overflow.i192(i192 %a, i192 %b)
+  %v = extractvalue { i192, i1 } %pair, 0
+  %of = extractvalue { i192, i1 } %pair, 1
+  store i192 %v, ptr %out, align 8
+  ret i1 %of
+}
+define void @count192(ptr %p, ptr %out) {
+  %a = load i192, ptr %p, align 8
+  %v = call i192 @llvm.ctpop.i192(i192 %a)
+  store i192 %v, ptr %out, align 8
+  ret void
+}
+```
+
+```llvm normalise-out=n-wide-intrinsics
+declare { i192, i1 } @llvm.uadd.with.overflow.i192(i192, i192)
+declare i192 @llvm.ctpop.i192(i192)
+define i1 @add192(ptr %p, ptr %q, ptr %out) {
+  %nz.p0.a = getelementptr i64, ptr %p, i64 0
+  %nz.m0.a = load i64, ptr %nz.p0.a, align 8
+  %nz.p1.a = getelementptr i64, ptr %p, i64 1
+  %nz.m1.a = load i64, ptr %nz.p1.a, align 8
+  %nz.p2.a = getelementptr i64, ptr %p, i64 2
+  %nz.m2.a = load i64, ptr %nz.p2.a, align 8
+  %nz.p0.b = getelementptr i64, ptr %q, i64 0
+  %nz.m0.b = load i64, ptr %nz.p0.b, align 8
+  %nz.p1.b = getelementptr i64, ptr %q, i64 1
+  %nz.m1.b = load i64, ptr %nz.p1.b, align 8
+  %nz.p2.b = getelementptr i64, ptr %q, i64 2
+  %nz.m2.b = load i64, ptr %nz.p2.b, align 8
+  %nz.m0.nz.s.pair = add i64 %nz.m0.a, %nz.m0.b
+  %nz.c0.nz.s.pair = icmp ult i64 %nz.m0.nz.s.pair, %nz.m0.a
+  %nz.t1.nz.s.pair = add i64 %nz.m1.a, %nz.m1.b
+  %nz.z1.nz.s.pair = zext i1 %nz.c0.nz.s.pair to i64
+  %nz.m1.nz.s.pair = add i64 %nz.t1.nz.s.pair, %nz.z1.nz.s.pair
+  %nz.u1.nz.s.pair = icmp ult i64 %nz.t1.nz.s.pair, %nz.m1.a
+  %nz.v1.nz.s.pair = icmp ult i64 %nz.m1.nz.s.pair, %nz.t1.nz.s.pair
+  %nz.c1.nz.s.pair = or i1 %nz.u1.nz.s.pair, %nz.v1.nz.s.pair
+  %nz.t2.nz.s.pair = add i64 %nz.m2.a, %nz.m2.b
+  %nz.z2.nz.s.pair = zext i1 %nz.c1.nz.s.pair to i64
+  %nz.m2.nz.s.pair = add i64 %nz.t2.nz.s.pair, %nz.z2.nz.s.pair
+  %nz.eq0.nz.c.pair = icmp eq i64 %nz.m0.nz.s.pair, %nz.m0.a
+  %nz.cmp0.nz.c.pair = icmp ult i64 %nz.m0.nz.s.pair, %nz.m0.a
+  %nz.c0.nz.c.pair = select i1 %nz.eq0.nz.c.pair, i1 false, i1 %nz.cmp0.nz.c.pair
+  %nz.eq1.nz.c.pair = icmp eq i64 %nz.m1.nz.s.pair, %nz.m1.a
+  %nz.cmp1.nz.c.pair = icmp ult i64 %nz.m1.nz.s.pair, %nz.m1.a
+  %nz.c1.nz.c.pair = select i1 %nz.eq1.nz.c.pair, i1 %nz.c0.nz.c.pair, i1 %nz.cmp1.nz.c.pair
+  %nz.eq2.nz.c.pair = icmp eq i64 %nz.m2.nz.s.pair, %nz.m2.a
+  %nz.cmp2.nz.c.pair = icmp ult i64 %nz.m2.nz.s.pair, %nz.m2.a
+  %nz.c.pair = select i1 %nz.eq2.nz.c.pair, i1 %nz.c1.nz.c.pair, i1 %nz.cmp2.nz.c.pair
+  %nz.q0.add192.0 = getelementptr i64, ptr %out, i64 0
+  store i64 %nz.m0.nz.s.pair, ptr %nz.q0.add192.0, align 8
+  %nz.q1.add192.0 = getelementptr i64, ptr %out, i64 1
+  store i64 %nz.m1.nz.s.pair, ptr %nz.q1.add192.0, align 8
+  %nz.q2.add192.0 = getelementptr i64, ptr %out, i64 2
+  store i64 %nz.m2.nz.s.pair, ptr %nz.q2.add192.0, align 8
+  ret i1 %nz.c.pair
+}
+define void @count192(ptr %p, ptr %out) {
+  %nz.p0.a = getelementptr i64, ptr %p, i64 0
+  %nz.m0.a = load i64, ptr %nz.p0.a, align 8
+  %nz.p1.a = getelementptr i64, ptr %p, i64 1
+  %nz.m1.a = load i64, ptr %nz.p1.a, align 8
+  %nz.p2.a = getelementptr i64, ptr %p, i64 2
+  %nz.m2.a = load i64, ptr %nz.p2.a, align 8
+  %nz.d.v = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %nz.s0.v = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %nz.s00.v = getelementptr i64, ptr %nz.s0.v, i64 0
+  store i64 %nz.m0.a, ptr %nz.s00.v, align 8
+  %nz.s01.v = getelementptr i64, ptr %nz.s0.v, i64 1
+  store i64 %nz.m1.a, ptr %nz.s01.v, align 8
+  %nz.s02.v = getelementptr i64, ptr %nz.s0.v, i64 2
+  store i64 %nz.m2.a, ptr %nz.s02.v, align 8
+  call void @__bennett_rt_i192_ctpop(ptr %nz.d.v, ptr %nz.s0.v)
+  %nz.rp0.v = getelementptr i64, ptr %nz.d.v, i64 0
+  %nz.rm0.v = load i64, ptr %nz.rp0.v, align 8
+  %nz.rp1.v = getelementptr i64, ptr %nz.d.v, i64 1
+  %nz.rm1.v = load i64, ptr %nz.rp1.v, align 8
+  %nz.rp2.v = getelementptr i64, ptr %nz.d.v, i64 2
+  %nz.rm2.v = load i64, ptr %nz.rp2.v, align 8
+  call void @__bennett_rt_ss_pop(ptr %nz.s0.v)
+  call void @__bennett_rt_ss_pop(ptr %nz.d.v)
+  %nz.q0.count192.0 = getelementptr i64, ptr %out, i64 0
+  store i64 %nz.rm0.v, ptr %nz.q0.count192.0, align 8
+  %nz.q1.count192.0 = getelementptr i64, ptr %out, i64 1
+  store i64 %nz.rm1.v, ptr %nz.q1.count192.0, align 8
+  %nz.q2.count192.0 = getelementptr i64, ptr %out, i64 2
+  store i64 %nz.rm2.v, ptr %nz.q2.count192.0, align 8
+  ret void
+}
+
+declare i192 @__bennett_rt_ctpop_i192(i192)
+
+declare ptr @__bennett_rt_ss_push(i64, i64)
+
+declare void @__bennett_rt_ss_pop(ptr)
+
+declare void @__bennett_rt_i192_ctpop(ptr, ptr)
+```
+
+```text native=n-wide-intrinsics
+add([18446744073709551615,0,0],[1,0,0])=[0,1,0,0]; add([18446744073709551615,18446744073709551615,18446744073709551615],[1,0,0])=[0,0,0,1]; ctpop([18446744073709551615,1,0])=[65,0,0]; code=0
+```
 
 ### 12.9 Examples
 
@@ -5515,6 +5945,22 @@ part of its bitcode the driver links. B below is the format's suffix, C its carr
 | `llvm.convert.to.arbitrary.fp`, `llvm.convert.from.arbitrary.fp` (format named by metadata) | `@__bennett_sf_convert_to_<fmt>_B` / `@__bennett_sf_convert_from_<fmt>_B` with LLVM APFloat's semantics of the named format | bitcast |
 | `fneg`, `llvm.fabs`, `llvm.copysign`, `bitcast`, `load`, `store`, `select`, `phi` | unchanged: bit-exact operations (LangRef) | – |
 
+**Wide integer sides (M>128).** The preceding i128 conversion rows apply only
+to M≤128. For fptosi/fptoui, their .sat forms and lround/llround/lrint/llrint,
+N32 emits `void @__bennett_sf_<op>_B_wide(ptr d, C operand, i32 M)`.
+Here d is a shadow-stack slot of L=ceil(M/64) limbs at byte offsets 8k (§12.7).
+The entry writes the exact M-bit saturated result, limb 0 least significant,
+using truncation toward zero / the rounding rule above, with NaN mapped to 0;
+N22 loads each limb at width min(64,M−64k). For sitofp/uitofp from iM, store
+all limbs in slot s and call `C @__bennett_sf_<op>_B_wide(ptr s, i32 M)`,
+correctly rounded from the exact signed/unsigned M-bit integer. No i128 carrier
+intervenes. For canonical temporary slots, emit ss_push(8L,8), then limb
+GEP/store rows in increasing k; for destinations, push then call then limb
+GEP/load rows in increasing k; pop slots in reverse push order after their
+last use. Bitcast FP operands before destination push and FP results after pop.
+The usual shadow-stack checks, budget charges and linked-runtime materialisation
+apply. The helper's suffix op is fptosi/fptoui for the corresponding .sat form.
+
 **Semantics of the entry points** (the contract with `bennett-arith`): IEEE 754-2019 for
 binary16 (`half`), binary32, binary64 and binary128; `bfloat` is the IEEE-style format with 8
 exponent and 7 fraction bits; `x86_fp80` is the 80-bit x87 extended format (64-bit significand
@@ -5528,7 +5974,8 @@ observable flags or exceptions (except §13.5); **every NaN result is the format
 the f64 canonical NaN in the high double and +0 in the low); `rem` is C `fmod` (exact, the sign of
 the dividend); `cmp` is LLVM's `fcmp` for the predicate; `fptosi`/`fptoui` and the `.sat` forms
 truncate toward zero, map NaN to 0 and saturate values outside the range of iM to its bounds,
-returned sign-extended (`fptosi`) or zero-extended (`fptoui`) in i128; `sitofp`/`uitofp` round to
+returned sign-extended (`fptosi`) or zero-extended (`fptoui`) in i128 when M≤128,
+and in the full limb slot when M>128; `sitofp`/`uitofp` round to
 nearest even; `minnum`/`maxnum` are IEEE 754-2008 minNum/maxNum (one NaN operand: the other
 operand; two: the canonical NaN) with −0 < +0; `minimum`/`maximum` are IEEE 754-2019 (either NaN:
 the canonical NaN) with −0 < +0; `minimumnum`/`maximumnum` are IEEE 754-2019 minimumNumber/
@@ -6427,13 +6874,13 @@ define internal i64 @w(i64 %fd, i64 %a) {
 declare i64 @__bennett_rt_syscall(i64, i64, i64, i64, i64, i64, i64)
 ```
 
-## 16. The lifting map (map 0.2.5)
+## 16. The lifting map (map 0.2.6)
 
 The lifting map turns a materialised region function, a binding shape (§8.4) and the link
 layout (§19.5) into the **reference object** of that shape: the ISA object whose oracle `@ref`
 defines F_B and the budget unit by the reference interpreter (ISA §4.2 "Reference body and
 binding", §14.1). It is a function of its inputs alone, so two plugins on the same LLVM version
-and pipeline produce byte-identical reference objects. Its version (`map 0.2.5`) is the
+and pipeline produce byte-identical reference objects. Its version (`map 0.2.6`) is the
 certificate's `dialect_mapping_version` (ISA §12.3). The plugin's device objects (§17.4) are
 plugin-defined; they MUST be extensionally equal to the reference objects (ISA §5.7, T6; §18.7).
 
@@ -6460,7 +6907,7 @@ For a shape with region function f, the reference object is the ISA text (ISA §
   along the `lift.call` rows in text order;
 - `section data`: one line `G<n> <hex>` per global of the layout below, in `layout.globals` key
   order, with the global's initialiser bytes after §12 (function addresses encoded as A(F) in
-  pw-bit little-endian, §4.4; pointers to globals as their bases plus offsets);
+  P(a)-bit little-endian at each pointer field, §4.4; pointers to globals as their bases plus offsets);
 - `section layout`: one JCS line (§16.3).
 
 **The wrapper `@ref`.** Its header is `oracle @ref (<ins>) (tgt:wire[T]) (fault:wire[4])
@@ -6471,7 +6918,7 @@ For a shape with region function f, the reference object is the ISA text (ISA §
 - `<mems>`: first `coh:region[A,8] in` when a slice or oracle reads an arena object,
   then `m<k>:region[A,8] in` for the k-th `MEM_IN` binding in parameter order, then `e0` for
   an ENTROPY binding, `k0` for a BLOCK binding, `s0` for an entry-state snapshot (§8.5);
-- `<args>`: `a<k>:i<W>` for the k-th `ARG` binding in parameter order (W = pw for a `ptr`).
+- `<args>`: `a<k>:i<W>` for the k-th `ARG` binding in parameter order (W = P(a) for a `ptr addrspace(a)`).
 
 Its body is one block `^entry():` with, in order:
 
@@ -6514,7 +6961,7 @@ Wrapper locations are `w<i>` (arguments), `r` (the call's result), `d<k>` (prolo
 for its constants and temporaries in emission order.
 
 **lprocs.** Each lifted function g becomes `lproc @L<n> (a0:reg[W0], …) (r:reg[R]) () () ()`
-with the parameters in order (`ptr` → `reg[pw]`; an aggregate parameter flattened into one
+with the parameters in order (`ptr addrspace(a)` → `reg[P(a)]`; an aggregate parameter flattened into one
 parameter per field in field order), the result `r` of the return width (1 for `void`, whose
 `ret void` is `lift.ret r`), a `regs` line, and the blocks of §16.4.
 
@@ -6539,7 +6986,7 @@ caller byte is read. No fresh allocator reset is permitted for an allocation-onl
 
 The `regs` line lists every location of the function that is neither a parameter nor the result,
 in order of first appearance as a destination in the text, as `name:reg[W]`, separated by `, `;
-it is omitted when empty. W: a value's width (`i1` → 1, `ptr` → pw); a constant's width; a
+it is omitted when empty. W: a value's width (`i1` → 1, `ptr addrspace(a)` → P(a)); a constant's width; a
 temporary's width (1 for a compare, else its operation's width).
 
 **Layout.** The reference object's `layout` is the device link layout (§19.5) restricted to the
@@ -6559,6 +7006,14 @@ with 2^S_cells ≥ the largest `stack` of the budget table.
 
 ### 16.4 Rows
 
+Pointer constants, flattened pointer fields, parameters, results and pointer memory values
+use P(a), including their DataLayout storage size. Materialise null at P(a). Before an ISA
+memory address operand, bridge the source pointer representation to pw with the target's
+address conversion (zero-extension/truncation for the integral flat-address spaces); this
+bridge never changes the stored pointer width or the source ptrtoint/inttoptr semantics.
+Apply the same rules to constant expressions and the native comparison build. Representations
+above 128 bits use §12.7 limbs; mixed-width layouts are not rejected.
+
 Every row accessing program memory first performs TDL-4's logical validation if the
 address can be in coh, before the physical ISA boundscheck. Loads and stores, including
 slice/event producers, use the same helper and fault gating. Proved containment in a
@@ -6575,7 +7030,7 @@ the internal path of §17.3, not the program-access helper.
 Rows of an instruction are emitted in instruction order within its block. Before the rows of an
 instruction, each of its **constant operands** that is a value operand (in operand order; not an
 immediate flag; for `getelementptr`, not a constant index) is materialised: an integer constant by
-`c<j> = lift.const.iW <unsigned decimal>`; `null` by `lift.const.i<pw> 0`; a non-arena global `@G` by
+`c<j> = lift.const.iW <unsigned decimal>`; `null` by `lift.const.i<P(a)> 0`; a non-arena global `@G` by
 `c<j> = lift.addr @G<n>`; an arena global by `c<j> = lift.addr @coh`, and if its
 arena offset δ is nonzero, `c<j+1> = lift.const.i<pw> δ`, `t<j> = lift.add c<j> c<j+1>`
 (the operand reads this temporary); in an lproc the base is its hidden arena-base
@@ -6596,9 +7051,10 @@ flattened field in field order before packing. A non-constant operand reads the 
 | `icmp ugt/uge/sgt/sge a, b` | `v = lift.icmp.{ult,ule,slt,sle} B A` (operands swapped) |
 | `select c, a, b` | `v = lift.select C A B` |
 | `zext/sext/trunc a to iM` | `v = lift.<op>.iM A` |
-| `ptrtoint` to iM, `inttoptr` from iM | M = pw: `v = lift.mov A`; ptrtoint M < pw or inttoptr M > pw: `lift.trunc`; otherwise `lift.zext` (LangRef zero-extends) |
-| `bitcast` of equal-width integer/FP carriers or pointers, `addrspacecast` | `v = lift.mov A`; FP constants materialise their carrier bit pattern |
-| `getelementptr T, ptr p, idx…` | Let I be the datalayout pointer-index width for p's address space, defaulting to its pointer width when omitted. Sign-extend/truncate each sequential index to I, multiply by its datalayout allocation size modulo 2^I, and sign-extend/truncate structure offsets to I. Accumulate offsets modulo 2^I and add to the low I bits of P modulo 2^I; preserve all higher pointer bits. This also applies to constant-expression GEPs. Canonical rows for I=pw retain the index-order multiply/add sequence followed by the accumulated constant offset Δ mod 2^I (zero Δ omitted; no row gives `v = lift.mov P`). For I<pw, start with `lift.trunc.i<I> P`, use the same sequence at width I, then `lift.zext.i<pw>` the low result; AND P with the pw-bit mask having ones above I, and OR the preserved high and new low parts into v. Each constant/cast/multiply/add/mask/OR is an ordinary charged row |
+| `ptrtoint` to iM, `inttoptr` from iM | Let P=P(a) for the pointer operand/result. M = P: `v = lift.mov A`; ptrtoint M < P or inttoptr M > P: `lift.trunc` to the destination width; otherwise `lift.zext` to the destination width (LangRef zero-extends) |
+| `bitcast` of equal-width integer/FP carriers or pointers | `v = lift.mov A`; FP constants materialise their carrier bit pattern |
+| `addrspacecast` | materialise the incoming target's specified conversion between address-space representations, including any non-width conversion; `lift.mov` only for bit-preserving equal-width conversions. For integral zero-extend/truncate conversions emit `lift.zext`/`lift.trunc` to P(destination) |
+| `getelementptr T, ptr p, idx…` | Let P=P(a), I=I(a) for p's address space. Arithmetic on the low I bits is modulo 2^I; only representation bits above I are preserved, also for constant expressions. Canonical rows: acc is the pointer operand (when I<P, first `t = lift.trunc.i<I> P_operand` and acc is t). For each non-constant sequential index in index order: sign-extend/truncate to I (omit the cast when already I wide); if its element allocation size s≠1 emit `c = lift.const.i<I> (s mod 2^I)` then `t = lift.mul index c`, else use the index directly; emit `acc′ = lift.add acc t`. Constant sequential indices, interpreted signed at their source width then scaled by s, and constant structure field offsets accumulate into Δ mod 2^I, with no per-index rows. After the dynamic sequence, if Δ≠0 emit `c = lift.const.i<I> Δ` then `acc′ = lift.add acc c`. For I=P the last acc′ row writes v; with no dynamic index and Δ=0 the only row is `v = lift.mov P_operand`. For I<P always emit recombination, even when acc equals trunc(P_operand), in this order: `lo = lift.zext.i<P> acc`; `c = lift.const.i<P> <ones above I>`; `hi = lift.and P_operand c`; `v = lift.or hi lo`. Every emitted row is charged normally |
 | `load T, ptr p` (T = iN with N a multiple of 8, or `ptr`; N ≤ 128 after §12; FP uses its carrier) | `lift.boundscheck P <N/8>`; `v = lift.load.iN P` |
 | `store v, ptr p` | `lift.boundscheck P <N/8>`; `lift.store.iN P V` |
 | `insertvalue`, `extractvalue` | `lift.mov` of the depth-first flattened field locations (one per scalar field); unchanged fields remain their input locations |
@@ -6627,6 +7083,168 @@ targets T_j and default D, emitted into the current block X by node(lo, hi, X):
 - otherwise, with mid = ⌊(lo + hi)/2⌋: in X: `c = lift.const.iW k_mid`; `t = lift.icmp.ult C
   c`; new blocks L then R; `qbranch t ^L ^R`; node(lo, mid − 1, L); node(mid, hi, R);
 - with no key: `qjump ^D`.
+
+
+**Round-5 pointer and canonical-row witnesses.** For pointer-as270, truncation at
+P(270)=32 followed by zero-extension gives 0 and 1. For gep-index-obj, I=32
+makes index 2^32 zero, while −1 makes low bits all ones: high 0x1 plus low
+0xffffffff gives 8589934591. The constant index 2^32 accumulates Δ=0, so the
+constant-expression GEP emits exactly trunc/zext/const/and/or, with no add or
+multiply. Counts include constant-expression operands, casts, return and wrapper.
+
+```llvm lift=pointer-as270 region=@f desc=ARG(64);tgt=64
+target datalayout = "e-p:64:64-p270:32:32-p271:32:32-p272:64:64"
+target triple = "x86_64-unknown-linux-gnu"
+define i64 @f(i64 %x) {
+  %p = inttoptr i64 %x to ptr addrspace(270)
+  %r = ptrtoint ptr addrspace(270) %p to i64
+  ret i64 %r
+}
+```
+
+```text linkmap=pointer-as270
+null_size=4096 heap_base=4096 heap_limit_max=0 stack max 32
+```
+
+```isa object=pointer-as270
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"62693b6dfefab4480cce6de8257132bcc9fead16250518602c354083332dd16a","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":["i64"],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":64,"tier":"q"}},"1":{"interface_hash":"e4cf50635b3e40980e54b7dce05a39f7811c436b3d52b6288604cf85fdc34362","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":64,"tier":"q"}}}
+
+section functions
+oracle @ref () (tgt:wire[64]) (fault:wire[4]) () (a0:i64)
+regs { r:reg[64] }
+^entry():
+r = lift.call @L1 (a0)
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[64]) () () ()
+regs { v0:reg[32], v1:reg[64] }
+^b0():
+v0 = lift.trunc.i32 a0
+v1 = lift.zext.i64 v0
+lift.ret v1
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=pointer-as270
+L1 e4cf50635b3e40980e54b7dce05a39f7811c436b3d52b6288604cf85fdc34362
+ref 62693b6dfefab4480cce6de8257132bcc9fead16250518602c354083332dd16a
+```
+
+```text run=pointer-as270
+input= arg=4294967296 budget=100,0,32,8 -> code=0 payload=0 steps=5
+input= arg=4294967297 budget=100,0,32,8 -> code=0 payload=1 steps=5
+```
+
+```text native=pointer-as270
+f(4294967296)=0; code=0
+f(4294967297)=1; code=0
+```
+
+```llvm lift=gep-index-obj region=@f desc=ARG(64);tgt=64
+target datalayout = "e-p:64:64:64:32"
+define i64 @f(i64 %i) {
+  %p = inttoptr i64 4294967296 to ptr
+  %q = getelementptr i8, ptr %p, i64 %i
+  %r = ptrtoint ptr %q to i64
+  ret i64 %r
+}
+```
+
+```text linkmap=gep-index-obj
+null_size=4096 heap_base=4096 heap_limit_max=0 stack max 32
+```
+
+```isa object=gep-index-obj
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"5b3c7d1f368fcc8c24286cc303a71c12b5b615f467149f29928099befd3de534","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":["i64"],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":64,"tier":"q"}},"1":{"interface_hash":"20ccf8632651eb6effb4b23865120948a42513b5b757a5bc822d230101e0697f","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[64],"result":64,"tier":"q"}}}
+
+section functions
+oracle @ref () (tgt:wire[64]) (fault:wire[4]) () (a0:i64)
+regs { r:reg[64] }
+^entry():
+r = lift.call @L1 (a0)
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[64]) () () ()
+regs { c0:reg[64], v0:reg[64], t0:reg[32], t1:reg[32], t2:reg[32], t3:reg[64], c1:reg[64], t4:reg[64], v1:reg[64], v2:reg[64] }
+^b0():
+c0 = lift.const.i64 4294967296
+v0 = lift.mov c0
+t0 = lift.trunc.i32 v0
+t1 = lift.trunc.i32 a0
+t2 = lift.add t0 t1
+t3 = lift.zext.i64 t2
+c1 = lift.const.i64 18446744069414584320
+t4 = lift.and v0 c1
+v1 = lift.or t4 t3
+v2 = lift.mov v1
+lift.ret v2
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=gep-index-obj
+L1 20ccf8632651eb6effb4b23865120948a42513b5b757a5bc822d230101e0697f
+ref 5b3c7d1f368fcc8c24286cc303a71c12b5b615f467149f29928099befd3de534
+```
+
+```text run=gep-index-obj
+input= arg=4294967296 budget=100,0,32,8 -> code=0 payload=4294967296 steps=13
+input= arg=18446744073709551615 budget=100,0,32,8 -> code=0 payload=8589934591 steps=13
+```
+
+```llvm lift=gep-index-const region=@c desc=;tgt=64
+target datalayout = "e-p:64:64:64:32"
+define i64 @c() {
+  ret i64 ptrtoint (ptr getelementptr (i8, ptr inttoptr (i64 4294967296 to ptr), i64 4294967296) to i64)
+}
+```
+
+```text linkmap=gep-index-const
+null_size=4096 heap_base=4096 heap_limit_max=0 stack max 32
+```
+
+```isa object=gep-index-const
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"591f1b48288e000c626c349165ead9ff9158c05c472c9c569bfec3dac42de091","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":64,"tier":"q"}},"1":{"interface_hash":"78ac77e0893585c119f90dc6ff7f2c9c65ba82d7593c770fa8c4a91996e360a1","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":64,"tier":"q"}}}
+
+section functions
+oracle @ref () (tgt:wire[64]) (fault:wire[4]) () ()
+regs { r:reg[64] }
+^entry():
+r = lift.call @L1 ()
+lift.retval r
+lproc @L1 () (r:reg[64]) () () ()
+regs { c0:reg[64], t0:reg[32], t1:reg[64], c1:reg[64], t2:reg[64], expr0:reg[64] }
+^b0():
+c0 = lift.const.i64 4294967296
+t0 = lift.trunc.i32 c0
+t1 = lift.zext.i64 t0
+c1 = lift.const.i64 18446744069414584320
+t2 = lift.and c0 c1
+expr0 = lift.or t2 t1
+lift.ret expr0
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=gep-index-const
+L1 78ac77e0893585c119f90dc6ff7f2c9c65ba82d7593c770fa8c4a91996e360a1
+ref 591f1b48288e000c626c349165ead9ff9158c05c472c9c569bfec3dac42de091
+```
+
+```text run=gep-index-const
+input= budget=100,0,32,8 -> code=0 payload=4294967296 steps=9
+```
 
 **Edge moves** (B → S), S with phis φ_1 … φ_r in S's order and incoming values a_1 … a_r for B:
 the constant materialisations of the a_k that are constants (in order), then `(v_φ1, …, v_φr) =
@@ -8328,12 +8946,14 @@ the parent's frame address; `llvm.structured.alloca` is an alloca.
 
 ### 17.4 CC and R lowering
 
+All pointer conversions, carriers, memory widths and address bridges use P(a) and the
+incoming target conversion exactly as in §16.4, in CC/R and the native build alike.
 Every GEP, including constant expressions, uses §16.4's datalayout pointer-index
 width and preserves higher pointer bits. CC/R express its truncations, scaled
 modular offsets and high/low recombination with ordinary ISA integer operations.
 This follows [LangRef GEP semantics](https://llvm.org/docs/LangRef.html#getelementptr-instruction)
 and [datalayout pointer indices](https://llvm.org/docs/LangRef.html#data-layout),
-not full-width pointer addition when I<pw; differing widths do not reject a layout.
+not full-width pointer addition when I<P(a); differing widths do not reject a layout.
 
 The lowering of device CC and R variants to ISA CC and R (ISA §4.1) is plugin-defined and
 constrained by §18.7, with these dialect rules: LLVM integer and memory instructions map to the
@@ -8461,7 +9081,8 @@ whole-program entry on the materialised module over a state Σ = (C, Q, H, G, K,
 - **C**, the classical state: LLVM's semantics of the materialised module (LangRef), with every
   remaining choice fixed by §12–§14 and the fault outcomes of §17.5; it includes the shadows of
   the arena (TDL-4). In particular GEP uses the pointer-index width, as fixed
-  in §16.4 and §17.4, also in constant expressions;
+  in §16.4 and §17.4, also in constant expressions; pointer representations and
+  conversions use P(a), not an implicit pw-bit move;
 - **Q**, the quantum state of the ISA formal model (ISA §14.2): a unit vector over the live wires
   in allocation order, including the arena's wires (TDL-4);
 - **H**, the handle table: for each handle, its wires, whether it is live, and the
@@ -9399,7 +10020,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.5 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.6 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -9515,14 +10136,14 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.5;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.6;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
-pipeline, normaliser_version: "0.2.5"}` and `bindings.dialect_mapping_version = "0.2.5"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.5:<rule id>` (e.g. `dialect-0.2.5:N33`); the
+pipeline, normaliser_version: "0.2.6"}` and `bindings.dialect_mapping_version = "0.2.6"`; the coverage
+report (ISA §13), whose `source` field is `dialect-0.2.6:<rule id>` (e.g. `dialect-0.2.6:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
 hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
@@ -9535,7 +10156,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.5"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.6"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`):
 
@@ -9937,11 +10558,11 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.5`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.6`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
 - Round-4 semantic corrections revise `norm`, `handles`, `regions` and `map` to
-  `0.2.5`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
+  `0.2.6`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
   asm and corpus remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
   again; unchanged ISA-0.8 interface signatures retain their hashes. The map version
   is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
@@ -9987,7 +10608,7 @@ The maintainer ruled
 
 | Id | Code | NS capability | Affected case | ISA 0.8 realisation that exists | Exact ISA change |
 |---|---|---|---|---|---|
-| **BLK-1** = ISA-4 | `BD-B-ISA4` | NS §3.1 handle tables; §4.1, §4.2 dynamic allocation ("real allocation"); Bennett.jl vectors of qubits; adjoints of generations whose register set is known only at run time | allocation sites whose handles reach memory with no finite instance bound (§6.5); register widths with value set ⊤ (§3.4); a Co width with an unbounded value set (TDL-10) | direct `qreg` values for handles that stay out of memory; static register files with dispatch for bounded sites (§6.5) | (i) a dynamic-width type `qreg[*]`; `q = qreg.new cls n` with n an `i64` value yields `qreg[*]`; `w = qreg.width q`. (ii) Binding a `qreg[*]` to a `wire[n]` or `region[A,W]` slot checks the width at the call: CC trap, R fault `FAULT_UB_TRAP`, on a mismatch. (iii) `id = qreg.id q` (non-consuming; the §10 launch id) and `q = qreg.from_id id` (yields `qreg[*]`; a trap if the id is not live, is viewed or is consumed). History frames: `qreg.id` is pure; `qreg.from_id` records the handle reference |
+| **BLK-1** = ISA-4 | `BD-B-ISA4` | NS §3.1 handle tables; §4.1, §4.2 dynamic allocation ("real allocation"); Bennett.jl vectors of qubits; adjoints of generations whose register set is known only at run time | allocation sites or entry parameter/result roots whose handles persist across entries without a finite instance bound (§6.5); register widths with value set ⊤ (§3.4); a Co width with an unbounded value set (TDL-10) | direct `qreg` values for handles that stay out of memory; static register files with dispatch for bounded sites (§6.5) | (i) a dynamic-width type `qreg[*]`; `q = qreg.new cls n` with n an `i64` value yields `qreg[*]`; `w = qreg.width q`. (ii) Binding a `qreg[*]` to a `wire[n]` or `region[A,W]` slot checks the width at the call: CC trap, R fault `FAULT_UB_TRAP`, on a mismatch. (iii) `id = qreg.id q` (non-consuming; the §10 launch id) and `q = qreg.from_id id` (yields `qreg[*]`; a trap if the id is not live, is viewed or is consumed). History frames: `qreg.id` is pure; `qreg.from_id` records the handle reference |
 | **BLK-2** = ISA-1 | `BD-B-ISA1` | NS §4.2 "run-time budgets come from the host or from measurement results" | budget fields computed on the device (§9.5 case 3) | pre-minted finite sets; stub-minted copies of launch arguments (§9.5) | a CC instruction `tk = budget.mint @region s h st d` (`i64` operands) with the ISA §5.4 validation of `bennett_budget` as a CC trap; the token is scoped to the run; an impure history frame recording the token |
 | **BLK-5** = ISA-7 | `BD-B-ISA7` | NS §4.2 named fault outcomes and R reversible prefixes | every R entry (§11.5), including mandatory budget codes 1/2/3 and explicit __bennett_nz_fault(C); direct calls under §7.4 excluded | CC hostcall reports C; generic R trap stops execution but does not satisfy typed reporting | R `fault C`: terminate with fault record code C, no later source effect, retain reversible prefix history; specify the implicit trap-cause-to-code table (div0 5, overflow 6, memory 7, trap 4, allocation failure 2) |
 | **BLK-4** = new ISA-12 (audit B-38) | `BD-B-ISA12` | NS §4.2 quantum allocation inside reversible-tier code | `qalloc`/`qborrow`/`qfree` in an R closure with no finite instance bound (§7.5b); entry-state transfer from R code (§8.5) | hoisting to the CC caller with a static count (§7.5b) | permit `qreg.new`, `qreg.free`, `qreg.slice` and `qreg.concat` in R; the R history records them; the reversal of `qreg.new` is `qreg.free` with the cleanliness obligation (simulator check; hardware per ISA §17 item 14); the reversal of `qreg.free` is `qreg.new` (clean); `measure` stays CC-only |
@@ -10109,6 +10730,7 @@ compute expected artefacts only (P-3).
 | `attr-*` (4) | §3.6 | parse, recognise | LLVM; Python |
 | `unwind-invoke` | §3.7 | parse, recognise | LLVM; Python |
 | `julia-jlplt`, `effect-lie` | §3.8 | parse, recognise | LLVM; Python |
+| `pt6-byte-width`, `pt6-subrange` (+ `state=`, `blocker=`) | PT6–PT8 byte/interval load rule | parse, recognise, state, blocker | LLVM; native 257/513-wire fallback |
 | `pt-variable-index` | §5.1, PT1, PT2, PT6, PT7 | parse, recognise | LLVM; Python |
 | `handle-*` (20, incl. 1 blocker) | §6.2–§6.6, PT3, PT4, PT8–PT11, BLK-1 | parse, recognise | LLVM; Python |
 | `qstore-twice` | §6.7 | parse, recognise | LLVM; Python |
@@ -10120,11 +10742,15 @@ compute expected artefacts only (P-3).
 | `tdl`, `tdl-overwrite`, `tdl-effect`, `tdl-angle` with `tdl=` and `state=` blocks | TDL-1–TDL-12, §18.2–§18.4 | parse, recognise, tdl, run-action | LLVM; Python TDL; isa-ref `run-action` (requested) |
 | `effect-console-r`, `effect-console-cc` | §11.1, §11.2 | parse, recognise, run-cc, reverse | isa-ref `run-cc`, `reverse` (requested) |
 | `n-flags`, `n-shift`, `n-undef`, `n-query`, `n-trap` | N1–N8, N10, N11, N14 | parse, normalise | LLVM; Python normaliser |
+| `handle-param-cross-entry` (+ `blocker=`, `state=`) | §6.5 parameter/result boundary liveness | parse, recognise, blocker, state | LLVM; native clang 18/23 64-slot fallback |
 | `handle-cross-entry` (+ `blocker=`, `state=`) | §6.5 entry-boundary liveness | parse, recognise, blocker, state | LLVM; native clang 18/23 64-slot fallback |
 | `n-narrow-lane` (+ `native=`) | N15/N21 narrow index | parse, normalise, native | LLVM; clang 18/23 |
 | `n-vector-i24` (+ `native=`) | N21 vector memory spacing | parse, normalise, native | LLVM; clang 18/23 |
+| `pointer-as270`, `gep-index-obj`, `gep-index-const` | §1.5, §16.4, §17.4 | parse, map, check, hash, run-oracle; pointer native | LLVM; Rust; clang 18/23 |
 | `n-gep-index` (+ `native=`, `state=`) | §16.4 pointer-index widths | parse, normalise, native, state | LLVM; clang 18/23; Rust mapped run-oracle |
 | `n-wide-sub` (+ `native=`) | N22 subtraction borrows | parse, normalise, native | LLVM; clang 18/23 |
+| `n-fpconv-wide`, `n-wide-intrinsics` (+ `native=`) | N22 repeated after N27/N32; §13.1 wide integer sides | parse, normalise, native | LLVM; clang 18/23 source/output |
+| `n-atomic-wrap`, `n-atomic-usub` (+ `native=`) | N9 wrap/conditional/saturating arithmetic | parse, normalise, native | LLVM; clang source/output |
 | `n-vector`, `n-wideint`, `n-shadow-stack`, `n-memintrinsics`, `n-intrinsics`, `n-atomic` with `native=` | N9, N21, N22, N24, N26, N27 | parse, normalise, native | LLVM; Python; clang + seeds |
 | `residual-nsw`, `residual-clean` | §12.4 V1 | validate | Python |
 | `n-fmuladd` (+ `native=`), `n-fp80`, `n-libm` | N16, N32, N33, §13 | parse, normalise, native | LLVM; Python; clang + seeds |
