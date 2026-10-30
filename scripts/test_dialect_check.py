@@ -16,15 +16,85 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
-    def test_round8_bitcast_execution(self):
+    def test_round8_zero_execution(self):
         import json
-        from dialect_round8 import check_state, STATES
+        from dialect_round8 import check_state, ZEROS
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
-            for name in sorted(STATES):
+            for name in sorted(ZEROS):
+                b=self.block('state',name);check_state(runner,b)
+                wrong=json.loads(b['body']);wrong['widths'][0]=3
+                with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
+
+    def test_round8_zero_images(self):
+        from dialect_flow import TOP
+        src='''@external_image = internal global i64 9
+declare ptr @malloc(i64)
+declare ptr @custom(i64) allocsize(0)
+define void @top(i64 %n) {
+ %fixed = alloca [16 x i8]
+ %dynamic = alloca i8, i64 %n
+ %heap = call ptr @malloc(i64 16)
+ %custom = call ptr @custom(i64 %n)
+ ret void
+}
+'''
+        a=v.Analysis02(d.Module(src));a.analyse()
+        for obj in ('top%fixed','top%dynamic','top%heap','top%custom'):
+            self.assertEqual(a.getmem({(obj,1)},2,16),frozenset({('I',0)}))
+        self.assertEqual(a.getmem({('top%fixed',16)},1),frozenset())
+        self.assertEqual(a.getmem({('top%fixed',15)},2),frozenset())
+        self.assertNotIn(('I',0),a.getmem({('external_image',0)},8))
+        self.assertNotIn(('I',0),a.getmem({('EXT',0)},8))
+        a.slot('top%fixed',0,1,{('I',1)})
+        self.assertEqual(a.getmem({('top%fixed',0)},2),frozenset({('I',0),TOP}))
+        # Stores do not erase initial zero; copies propagate subranges as bytes.
+        a.copy_zero({('top%fixed',2)},{('copied',10)},{4})
+        self.assertEqual(a.getmem({('copied',11)},2),frozenset({('I',0)}))
+        self.assertEqual(a.getmem({('copied',13)},2),frozenset())
+        self.assertFalse(any(x[0]=='R' for x in a.getmem({('copied',10)},4)))
+
+    def test_round8_zero_descriptor_shapes(self):
+        # Kind zero stays in the AV, but has the existing T-IFACE outcome;
+        # it is outside the five-kind table, never a compiled valid shape.
+        for name,count in [('oracle-inc8',1),('oracle-two-in',1),('oracle-two-shapes',2),('oracle-wide-out',1),('budget-launch-arg',1)]:
+            with self.subTest(name=name):
+                verdict,a=v.recognise(d.with_decls(self.block('example',name)['body']))
+                self.assertEqual(verdict,'accept');self.assertEqual(a.shapes,count)
+
+    def test_round8_zero_domains(self):
+        import json
+        for name in ('pt6-zero-stack','pt6-zero-heap','pt8-zero-copy'):
+            for major in ('18','23'):
+                with self.subTest(name=name,major=major):
+                    p=v.SCRATCH/('r8-red-'+name+'-'+major+'.ll');p.write_text(self.block('example',name)['body'])
+                    ir=v.command([d.toolchains()[major]/'opt','-S','-passes=default<O0>',p,'-o','-'])
+                    verdict,a=v.recognise(ir);f=a.m.funcs['top']
+                    self.assertEqual(verdict,'accept')
+                    for val,want in json.loads(self.block('state',name)['body'])['domains'].items():
+                        self.assertEqual(a.av(f,val),{0:frozenset(('I',x) for x in want)})
+
+    def test_round8_bitcast_execution(self):
+        import json
+        from dialect_round8 import check_state, BITCASTS
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            for name in sorted(BITCASTS):
                 b=self.block('state',name);check_state(runner,b)
                 wrong=json.loads(b['body']);wrong['widths'][0]+=1
                 with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
+
+    def test_round8_bitcast_arithmetic(self):
+        src='''define i64 @top() {
+ %a = insertelement <2 x i8> zeroinitializer, i8 1, i32 1
+ %b = bitcast <2 x i8> %a to i16
+ %n = zext i16 %b to i64
+ %width = add i64 %n, 1
+ ret i64 %width
+}
+'''
+        a=v.Analysis02(d.Module(src));a.analyse()
+        self.assertEqual(a.ints(a.m.funcs['top'],'%width'),{257})
 
     def test_round8_bitcast_transfer(self):
         from dialect_flow import TOP
@@ -41,6 +111,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn(TOP,result);self.assertIn(('R','root'),result);self.assertIn(('P','obj','*'),result)
         # K is per resulting lane, not the full packed Cartesian product.
         a.put(f,'%wide',{0:{('I',x) for x in range(256)},1:{('I',x) for x in range(256)}})
+        self.assertEqual(a.bitcast(f,'<2 x i8> %wide to i16'),{0:frozenset({TOP})})
         result=a.bitcast(f,'<2 x i8> %wide to <4 x i4>')
         self.assertEqual(result,{k:frozenset(('I',x) for x in range(16)) for k in range(4)})
 
@@ -685,13 +756,13 @@ entry:
             with self.subTest(format=ty):
                 ir=f'define {ty} @f({ty} %x) {{\n %n = fneg {ty} %x\n ret {ty} %n\n}}\n'
                 self.assertEqual(v.validate(ir),'accept')
-        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.9"}\n'
+        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.10"}\n'
         self.assertEqual(v.recognise(good)[0],'accept')
-        for stale in ('0.2.8','0.2.7','0.2.6','0.2.5','0.2.4','0.2.3','0.2.1'):
-            self.assertEqual(v.recognise(good.replace('0.2.9',stale))[0],'reject:BD-E-VERSION')
+        for stale in ('0.2.9','0.2.8','0.2.7','0.2.6','0.2.5','0.2.4','0.2.3','0.2.1'):
+            self.assertEqual(v.recognise(good.replace('0.2.10',stale))[0],'reject:BD-E-VERSION')
         import tomllib
-        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.9')
-        self.assertIn('**full version string** (`0.2.9`)',self.spec)
+        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.10')
+        self.assertIn('**full version string** (`0.2.10`)',self.spec)
 
     def test_v4_v12_residues_and_clean(self):
         for rule in ('v4','v12'):

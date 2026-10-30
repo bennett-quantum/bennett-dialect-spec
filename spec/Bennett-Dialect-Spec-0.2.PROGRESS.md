@@ -11,7 +11,24 @@ then green after Flow.bitcast. Native source/O0/instcombine/materialised O0/O3
 checks observe widths 257/256/3, two gates at 256 in sol, clean frees/code 0.
 SOL-R8-01 ≡ R8-CODEX-02 resolved; checker dialect_round8.check_state.
 Next: R8-CODEX-01 zero initial images; version/final receipts after both groups.
-PT3 commit: this green group commit (record hash in next progress update).
+PT3 commit: 4fecd06. R8-CODEX-01 stack/heap/copy examples added; running
+red test_round8_zero_domains failed six subtests (missing INT(0)); now green.
+Stack/heap/PT8-copy native materialised 18/23 O0/O3 observe 1/3, clean free/code0.
+Zero images are byte intervals with symbolic unknown ends, independent of slots;
+loads union decoded zero and stores/copies, and copies carry image subranges.
+Additional gate-discovered bug: five descriptor-shape counts counted kind0 as
+valid after zero seeding. A five-subtest red regression reproduces it; filter
+only the valid-shape count to the existing 1..5 table, retaining full AV and
+T-IFACE. No expectation was weakened. The development gate with those five
+failures is not a freeze receipt. Rerun full gate after the repair.
+Full version bumped to 0.2.10; map stays0.2.9 and norm0.2.8 (unchanged algorithms).
+Arithmetic through a finite bitcast also now retains PT5 finite values (red→green).
+Final gate green: 2767/2767, 0 failed, 0 blocked/unavailable (2732→2767).
+84 checker units and 7 legacy runtime tests pass. All 105 normative/checker/
+harness/corpus manifest files remained unchanged through final validation.
+R8-CODEX-01 resolved; committing zero-image/version group, then writing both
+full final receipts bound to that code commit. Optional PT12 atomic suggestion
+is tracked separately as open b-dialect-spec-0y2; not an S0 repair claim.
 Owned paths only; headless; no push; no source narrowing or ISA change planned.
 
 ## Plugin-relay final freeze — 0.2.9 — 2026-10-30

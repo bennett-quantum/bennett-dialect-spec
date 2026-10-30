@@ -5,7 +5,9 @@ import dialect_check as d
 from dialect_check_v02 import command, equal, recognise, normalise
 from dialect_native import PREFIX, SEEDS
 
-STATES={'pt3-pack257','pt3-pack256','pt3-unpack'}
+BITCASTS={'pt3-pack257','pt3-pack256','pt3-unpack'}
+ZEROS={'pt6-zero-stack','pt6-zero-heap','pt8-zero-copy'}
+STATES=BITCASTS|ZEROS
 
 
 def domains(name,ir,want,exact=True):
@@ -22,24 +24,31 @@ def check_state(runner,block):
     name=block['attrs']['state'];want=json.loads(block['body'])
     src=d.with_decls(runner.block('example',name)['body']);domains(name,src,want)
     allowed='&&'.join('n!='+str(x) for x in want['value_set'])
-    calls='top();'
+    report='printf("[%llu,%u,%llu,%u,%u,%u,0]\\n",(unsigned long long)width,gates,(unsigned long long)gate_index,frees,bit,live);'
+    calls='top();'+report
+    params='void'
+    if name in ZEROS:
+        params='_Bool'
+        calls=''.join('top('+str(x)+');'+report+'width=gate_index=live=gates=frees=bit=0;' for x in want['inputs'])
     driver=PREFIX+"""#include <stdlib.h>
 static uint64_t width,gate_index;static unsigned live,gates,frees,bit;
 void *__bennett_qalloc(uint64_t cls,uint64_t n){if(cls||live||(ALLOWED))abort();width=n;live=1;return (void*)1;}
 void __bennett_gate(uint32_t op,void*h,uint64_t i){if(op!=1||h!=(void*)1||!live||i>=width)abort();gate_index=i;++gates;bit^=1;}
 void __bennett_qfree(void*h){if(h!=(void*)1||!live||bit)abort();live=0;++frees;}
-extern void top(void);
-int main(void){CALLS printf("[%llu,%u,%llu,%u,%u,%u,0]\\n",(unsigned long long)width,gates,(unsigned long long)gate_index,frees,bit,live);return 0;}
-""".replace('ALLOWED',allowed).replace('CALLS',calls)
-    expected=[[want['widths'][0],want['gates'],want['index'],want['frees'],want['final_bit'],want['live_after'],want['code']]]
+""".replace('ALLOWED',allowed)+f'extern void top({params});\nint main(void){{{calls}return 0;}}\n'
+    expected=[[width,want['gates'],want['index'],want['frees'],want['final_bit'],want['live_after'],want['code']] for width in want['widths']]
     for major in ('18','23'):
         directory=runner.tmp/(name+'-'+major);directory.mkdir(exist_ok=True)
         p=directory/'source.ll';p.write_text(src)
         o0=command([runner.tc[major]/'opt','-S','-passes=default<O0>',p,'-o','-']);domains(name,o0,want)
-        folded=command([runner.tc[major]/'opt','-S','-passes=instcombine',p,'-o','-']);domains(name,folded,want,False)
         materialised=normalise(o0,major=major)
+        if name in BITCASTS:
+            folded=command([runner.tc[major]/'opt','-S','-passes=instcombine',p,'-o','-']);domains(name,folded,want,False)
+            stages=[('source',o0),('instcombine',folded),('materialised',materialised)]
+        else:
+            stages=[('materialised',materialised)]
         main=directory/'driver.c';main.write_text(driver)
-        for stage,ir in [('source',o0),('instcombine',folded),('materialised',materialised)]:
+        for stage,ir in stages:
             p=directory/(stage+'.ll');p.write_text(ir)
             command([runner.tc[major]/'opt','-passes=verify',p,'-disable-output'])
             for level in ('0','3'):

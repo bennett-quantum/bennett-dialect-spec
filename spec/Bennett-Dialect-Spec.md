@@ -1,6 +1,6 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.9
+# Bennett LLVM Dialect — Specification, draft 0.2.10
 
-**Date:** 2026-10-29. **Status:** draft 0.2.9 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
+**Date:** 2026-10-29. **Status:** draft 0.2.10 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
 2026-10-29 at its end), revised after council rounds 1–3. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
@@ -11,9 +11,9 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.9: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4,
+**Versioning.** Dialect 0.2.10: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4,
 effects 0.2.4, norm 0.2.8, map 0.2.9, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2.9`) is the compatibility unit (§23): drafts are not compatible
+The **full version string** (`0.2.10`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -998,7 +998,11 @@ set; unions and inclusions are taken component-wise.
 ### 5.2 Rules
 
 Before the fixpoint, seed the initialiser atoms of every global, mutable or constant,
-into its slots. Subsequent stores union additional atoms; they never erase initial contents.
+into its slots. For each alloca and allocation-site object, also represent every extent
+whose initial contents are zero under §§17.1/17.3 as a zero-byte initial image; represent a
+nonconstant extent symbolically over its possible allocated bytes. Subsequent stores union
+additional possibilities and never erase these initial possibilities. This is an initial
+image, not a claim that the object remains immutable.
 The analysis is the least fixpoint of the following rules over AV. "Copies" means AV(result) ⊇
 AV(operand) lane by lane; ⊤ absorbs. S2 models the value effects of the specified
 normalisation before verdicts and dispatch domains freeze; pre-normalisation syntax does
@@ -1006,14 +1010,14 @@ not permit omitting a value produced by the materialised execution.
 
 | Rule | Instruction or source | Effect |
 |---|---|---|
-| PT1 | `alloca`, global `@G`, allocation-site call | AV ∋ (X, 0) |
+| PT1 | `alloca`, global `@G`, allocation-site call | AV ∋ (X, 0); zero-filled initial extents are seeded as above |
 | PT2 | `getelementptr T, ptr p, idx…` | uses P(a), I(a) and the complete finite-width computation of §16.4, also for constant expressions: sequential indices are sign-extended/truncated to I(a), scaling and offset accumulation wrap modulo 2^I(a), and addition preserves pointer bits above I(a). Zero accumulated offset copies AV(p). For every (X,o), include the image of all represented base addresses and index values (unknown base bits range over patterns consistent with DataLayout and X's alignment), using integer/residue-class/`*` offset unions. Unbounded mathematical addition is not a substitute. If an address may leave X, include (EXT, `*`) and the non-handle top flag; PT6 propagates this unknown-address alternative. The unknown-address alternative does not by itself establish host escape (§6.4): retain the original base provenance for that test; actual host/unknown origins keep their restrictions. ROOT provenance and §6.2 restrictions remain explicit. Array dimensions determine stride, never an index bound |
 | PT3 | `phi`, `select` (value operands), `freeze`, `addrspacecast`; `bitcast` | the first four copy (union). A bitcast copies lane by lane only when source and destination have identical lane counts and per-lane representation widths, treating a scalar as one lane. Otherwise use the virtual N21 bitcast expansion of §12.6: pack source-lane bit patterns into its prescribed bit string in DataLayout order, then resegment at the destination representation width. Compute output AV through PT4/PT5 transfers of that expansion; finite INT lane sets denote their full Cartesian product, and K applies per resulting lane. Never copy a source-lane INT atom as the value of a packed destination scalar. Unknown bits propagate non-handle top through those transfers. Explicit object and ROOT provenance follows the same expansion and remains subject to §6.2; top never substitutes for ROOT. Apply also to constant expressions and fixed-vscale forms during S2 before verdicts, candidate sets, shapes and dispatch domains freeze. Direct finite bit-string evaluation is equivalent; no LLVM optimisation is required |
 | PT4 | `ptrtoint`, `inttoptr`, `zext`/`sext`/`trunc` | copy only bit-preserving conversions. Otherwise apply the actual source/destination-width bit-vector conversion (§16.4): ptrtoint/inttoptr zero-extend or truncate at P(a), sext sign-extends. Use PT2’s represented-address image construction, retaining originating object and ROOT provenance. A narrowed representation that cannot be reassociated with its original object adds (EXT, `*`) and non-handle ⊤; numerical uncertainty is not host escape. Apply also to constant expressions |
 | PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | computes address bits modulo 2^W at the integer operation’s width W, never unbounded offset addition. Relative displacements from the originating base are modular too: zero net displacement represents that base again, including after an inttoptr truncation to P(a). Use PT2’s represented-address image construction at W bits (full-width arithmetic, no preserved high GEP bits), retaining original object and ROOT provenance. Keep modular displacement alternatives even outside the allocation, and additionally include (EXT, `*`) and non-handle ⊤ when an image may leave it. Residue classes and `*` take the same finite-width image; an unrepresentable image retains (X, `*`) for each originating X plus (EXT, `*`) and non-handle ⊤. Other integer operations on pointer atoms use that conservative image. Widening a pointer-derived integer by zext/sext uses that conservative image too (fixed reference fallback); ptrtoint zero-extension retains its base representation. Numerical uncertainty does not itself establish host escape (PT2). The rules apply also to constant expressions, before candidate/dispatch domains freeze; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a range attribute or `!range` metadata removed by N3/N4 is not a bound on materialised execution and MUST NOT restrict any verdict, candidate set, descriptor shape or dispatch domain. Only bounds independently established by materialised instructions restrict the set; otherwise retain ⊤ and apply the ordinary operation rules, including finite masks/remainders |
-| PT6 | `load T, ptr p` | for each (X,o) ∈ AV(p): memory atoms carry their storage interval and representation width; copy a whole-value atom only for that identical interval with a compatible representation. A known immutable byte image decodes exactly the accessed bytes using DataLayout and T (including initialisers). For a partial, spanning or overlapping access whose result bits are not represented exactly, the non-handle value is ⊤, never the union of component INT values. X=EXT gives ⊤. A non-handle top flag on p contributes the same unknown-address load alternative even when explicit object offsets overlap no known slot; it MUST NOT be dropped. ROOT provenance remains explicit and §6.2's partial-handle restrictions still apply |
+| PT6 | `load T, ptr p` | for each (X,o) ∈ AV(p): memory atoms carry their storage interval and representation width; copy a whole-value atom only for that identical interval with a compatible representation. A known immutable byte image decodes exactly the accessed bytes using DataLayout and T (including initialisers). For a partial, spanning or overlapping access whose result bits are not represented exactly, the non-handle value is ⊤, never the union of component INT values. X=EXT gives ⊤. A non-handle top flag on p contributes the same unknown-address load alternative even when explicit object offsets overlap no known slot; it MUST NOT be dropped. ROOT provenance remains explicit and §6.2's partial-handle restrictions still apply. For a possibly valid load wholly contained in a zero-filled initial extent, include the all-zero value of the load’s representation and width, unioned with values from every overlapping store or copy under these interval rules. PT8 propagates these initial byte possibilities when copying memory. Zero contributes no ROOT. Region inputs, replayed caller bytes and other nonzero-initialised contents retain their specified sources; this rule does not replace them with zeros |
 | PT7 | `store v, ptr p` | retain each written interval and representation width; partial writes overlapping a larger load participate in PT6's conservative fallback. AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
-| PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when offsets and len are constants and the atom's entire storage interval [s, s + size(atom)) lies in the copied range, copy its atom and representation width to (Z, o_d + s − o_s). Every partially overlapping atom instead contributes non-handle ⊤ and explicit ROOT provenance to the affected destination interval (unknown offsets/len use `*`); do not copy the whole component INT. Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
+| PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: propagate zero-byte initial images over the copied byte ranges, including their symbolic extents; for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when offsets and len are constants and the atom's entire storage interval [s, s + size(atom)) lies in the copied range, copy its atom and representation width to (Z, o_d + s − o_s). Every partially overlapping atom instead contributes non-handle ⊤ and explicit ROOT provenance to the affected destination interval (unknown offsets/len use `*`); do not copy the whole component INT. Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
 | PT9 | direct call of G, or indirect call with candidate G (§14.2) | AV(parameter i of G) ⊇ AV(argument i); AV(result) ⊇ the union of AV over G's `ret` operands; `byval` arguments copy the pointee's slots into the callee's copy object |
 | PT10 | `insertelement`/`extractelement`/`shufflevector`/`insertvalue`/`extractvalue` | extraction/insertion use N15’s total unsigned index semantics. Constant in-range extraction copies its lane; constant out-of-range extraction gives the element type’s zero. Dynamic extraction unions every source lane selected by a represented index, plus zero iff the index set includes an unsigned value >= L (including top when 2^K > L). No zero is added if every represented index is in range; zero adds no ROOT. In-range insertion replaces the selected lane; out-of-range insertion preserves the vector. Dynamic insertion includes each old lane unless it is certainly replaced, and the inserted value whenever that lane can be selected. Valid shuffle indices and aggregate paths move atoms unchanged (handle-table reads, audit B-23) |
 | PT11 | a parameter of a function with a host caller, a device entry, or a function whose address host code uses | AV ⊇ {(EXT, `*`)} for `ptr` parameters, ⊤ for integer parameters, plus the atoms of the device-side arguments by PT9; for a pointer parameter i of a device entry E, also the candidate atom ROOT(E, i) of §6.6 |
@@ -1040,6 +1044,98 @@ define void @top() {
   call void @__bennett_qfree(ptr %h)
   ret void
 }
+```
+
+**Zero initial images (DB/DN/DS).** Before any conditional store, the stack
+allocation's eight bytes are zero under N24. The path storing 1 adds a second
+possibility, so AV(raw)=AV(idx)={INT(0),INT(1)} and VS(width)={1,3}.
+The heap companion uses a zero-filled calloc allocation-site object with the
+same derivation. The PT8 companion copies the stack image to a mutable global
+whose initial value is 1: zero must come from the source, not the destination.
+All accept. LLVM 18/23 verify source O0; N24/N8/N15/N21 materialisation and
+native O0/O3 runs for false/true observe widths 1/3, one clean free each,
+live_after=0 and code 0. Source uninitialised LLVM loads are not execution oracles;
+the comparison executes the specified zero-filled materialised program.
+
+```llvm example=pt6-zero-stack verdict=accept
+target datalayout = "e-p:64:64-i64:64-n8:16:32:64"
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+define void @top(i1 %set) {
+entry:
+ %p = alloca i64
+ br i1 %set, label %store, label %read
+store:
+ store i64 1, ptr %p
+ br label %read
+read:
+ %raw = load i64, ptr %p
+ %idx = freeze i64 %raw
+ %width = extractelement <2 x i64> <i64 1, i64 3>, i64 %idx
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt6-zero-stack at=0
+{"domains":{"%raw":[0,1],"%idx":[0,1],"%width":[1,3]},"value_set":[1,3],"inputs":[0,1],"widths":[1,3],"gates":0,"index":0,"frees":1,"final_bit":0,"live_after":0,"code":0}
+```
+
+```llvm example=pt6-zero-heap verdict=accept
+target datalayout = "e-p:64:64-i64:64-n8:16:32:64"
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+declare ptr @calloc(i64, i64)
+declare void @free(ptr)
+define void @top(i1 %set) {
+entry:
+ %p = call ptr @calloc(i64 1, i64 8)
+ br i1 %set, label %store, label %read
+store:
+ store i64 1, ptr %p
+ br label %read
+read:
+ %raw = load i64, ptr %p
+ %idx = freeze i64 %raw
+ %width = extractelement <2 x i64> <i64 1, i64 3>, i64 %idx
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ call void @free(ptr %p)
+ ret void
+}
+```
+
+```text state=pt6-zero-heap at=0
+{"domains":{"%raw":[0,1],"%idx":[0,1],"%width":[1,3]},"value_set":[1,3],"inputs":[0,1],"widths":[1,3],"gates":0,"index":0,"frees":1,"final_bit":0,"live_after":0,"code":0}
+```
+
+```llvm example=pt8-zero-copy verdict=accept
+target datalayout = "e-p:64:64-i64:64-n8:16:32:64"
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+@copy = internal global i64 1
+declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
+define void @top(i1 %set) {
+entry:
+ %p = alloca i64
+ br i1 %set, label %store, label %read
+store:
+ store i64 1, ptr %p
+ br label %read
+read:
+ call void @llvm.memcpy.p0.p0.i64(ptr @copy, ptr %p, i64 8, i1 false)
+ %raw = load i64, ptr @copy
+ %idx = freeze i64 %raw
+ %width = extractelement <2 x i64> <i64 1, i64 3>, i64 %idx
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt8-zero-copy at=0
+{"domains":{"%raw":[0,1],"%idx":[0,1],"%width":[1,3]},"value_set":[1,3],"inputs":[0,1],"widths":[1,3],"gates":0,"index":0,"frees":1,"final_bit":0,"live_after":0,"code":0}
 ```
 
 **PT3 geometry-changing bitcast witnesses (DB/DN/DS).** On this little-endian
@@ -2288,7 +2384,7 @@ Only the rules the north star requires:
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). Standalone adj uses the deterministic
   latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
-  `lowered` entry with source `dialect-0.2.9:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.10:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item).
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -2878,8 +2974,9 @@ domain (5 kinds, 2 modes, 4 models), so the number of shapes is always bounded. 
 caller's tier reads the descriptor and selects the compiled shape with the compare tree of
 §14.2; a descriptor that matches no compiled shape traps (`T-IFACE`), which happens only for a
 field outside its table. `value` and `size` of `ARG` bindings are the oracle's classical
-arguments and are not part of the shape. *(non-normative)* With constant stores every field has
-a singleton value set and there is one shape per candidate.
+arguments and are not part of the shape. *(non-normative)* With one valid value per shape field there is one shape per
+candidate. Initial zero possibilities still participate in §5; kind 0 is outside the
+five-kind table and takes T-IFACE rather than creating an additional valid shape.
 
 The marker then issues, in the caller's tier, one **oracle invocation** (§8.6) whose operands are
 the static registers the descriptor's handles denote (§6.5), the budget token (§9.5) and the
@@ -3600,7 +3697,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.9.
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.10.
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -4377,8 +4474,8 @@ The ENTROPY-bound oracle of rung 8 is §16.8.
 The normaliser rewrites every device variant (§4.3) and the initialisers of every global a
 device variant references; H variants are untouched. It applies the rules of §12.2 in table
 order, each to the whole module before the next, with one exception: N33 is applied immediately
-before N32, because the `fpext`/`fptrunc` pairs it creates around libm calls (§13.4) are
-floating-point instructions that N32 rewrites. After N27 and N32, re-apply N22
+before N32 so any floating-point instructions introduced by its expansions are processed
+by N32; own-format carrier calls and bit-exact reconstruction remain as specified in §13.4. After N27 and N32, re-apply N22
 to every instruction they created with an integer side wider than 128 bits. Only
 width legalisation repeats; no other rule re-runs. Width lowering may be fused
 with an expansion when the resulting canonical limb rows are identical. The result is the **materialised module**: the
@@ -10751,7 +10848,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.9 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.10 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -10867,14 +10964,14 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.9;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.10;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
 pipeline, normaliser_version: "0.2.8"}` and `bindings.dialect_mapping_version = "0.2.9"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.9:<rule id>` (e.g. `dialect-0.2.9:N33`); the
+report (ISA §13), whose `source` field is `dialect-0.2.10:<rule id>` (e.g. `dialect-0.2.10:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved, including each shape's selection_identity, final semantic identity,
 resolved components and frozen layout capacities under §9.2) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
@@ -10888,7 +10985,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.9"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.10"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`):
 
@@ -11292,10 +11389,11 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.9`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.10`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
-- The global-numbering correction revises `map` to `0.2.9`; `norm`, `handles` and
+- The S2 bitcast/initial-image repairs revise the full dialect to `0.2.10`.
+  The lifting map remains `0.2.9` (global-numbering correction); `norm`, `handles` and
   `regions` remain `0.2.8`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
   asm and corpus remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
   again; unchanged ISA-0.8 interface signatures retain their hashes. The map version
@@ -11446,7 +11544,7 @@ every departure keeps or widens the capability the outline gives.
 | A20 | §25: wording items | adds certificate fields (build record, budget table, deferred measurement) and ISA §12.2 domains with a fixed classical region | NS §0, §5.1 require them in the certificate; NS §8 rung 4(a) is such a domain |
 | A21 | §20.1 `__bennett_platform_ram` | `__bennett_rt_platform_ram` | the reserved-prefix rule of §3.1 |
 | A22 | §21: corpus cases for the changed signatures | `spec-sem2-*` added beside the 0.1-ABI `spec-sem-*` | harness selects ABI 0.2 for `spec-sem2-*` and ABI v0 for the unchanged historical cases (bd `-566` resolved) |
-| A23 | §12.1: rules in table order | table order except that N33 runs immediately before N32 (§12.1) | the `fpext`/`fptrunc` pairs N33 creates around libm calls are floating point that N32 must rewrite |
+| A23 | §12.1: rules in table order | table order except that N33 runs immediately before N32 (§12.1) | any floating-point instructions introduced by N33 expansions are processed by N32; own-format carrier calls and bit-exact reconstruction remain as specified in §13.4 |
 
 ## Appendix B. Example index
 
@@ -11505,6 +11603,7 @@ compute expected artefacts only (P-3).
 
 | `n-lower-widenable` | N0 | parse, normalise | LLVM 18/20/23; Python normaliser |
 | `n-defined-zero` | N12 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `pt6-zero-stack`, `pt6-zero-heap`, `pt8-zero-copy` | PT1/PT6/PT8/PT10, N24; DB/DN/DS | parse, recognise, state | LLVM 18/23 source O0 and materialised verification; clang O0/O3 widths 1/3, clean frees |
 | `pt3-pack257`, `pt3-pack256`, `pt3-unpack` | PT3/PT4/PT5, N21; DB/DN/DS | parse, recognise, state | LLVM 18/23 O0/instcombine/materialised; clang O0/O3 width guards, gates and clean free |
 | `pt10-lane-zero`, `n-constant-lane` | PT10, N15/N21 | parse, recognise, normalise, native, state | LLVM O0; clang 18/23 materialised widths and constant lanes |
 | `n-dynamic-lane` | N15 | parse, normalise | LLVM 18/20/23; Python normaliser |

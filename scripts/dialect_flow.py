@@ -78,6 +78,80 @@ class Flow:
             return True
         return new_width
 
+    def zero_image(self,obj,start,end):
+        """A byte image, independent of typed storage slots; None = symbolic end."""
+        if end is not None and end<=start:return False
+        images=self.zero_images.setdefault(obj,set())
+        if (start,end) in images:return False
+        images.add((start,end));return True
+
+    def zero_contains(self,obj,off,size):
+        for start,end in self.zero_images.get(obj,()):
+            if isinstance(off,int):
+                if off>=start and (end is None or off+size<=end):return True
+            elif off=='*':
+                if end is None or end-start>=size:return True
+            else:
+                stride,residue,lo,hi=off
+                first=max(start,lo);first+=(residue-first)%stride
+                if first<hi and (end is None or first+size<=end):return True
+        return False
+
+    def copy_zero(self,srcs,dsts,lengths):
+        changed=False
+        limit=None if lengths=='TOP' else max(lengths,default=0)
+        for obj,off in srcs:
+            for start,end in list(self.zero_images.get(obj,())):
+                if not isinstance(off,int):
+                    # An unknown copy interval retains the initial byte
+                    # possibility; its placement cannot be represented exactly.
+                    for dst,z in dsts:changed|=self.slot(dst,'*',1,{('B',0),TOP})
+                    continue
+                lo=max(off,start);hi=end
+                if limit is not None:hi=off+limit if hi is None else min(hi,off+limit)
+                if hi is not None and hi<=lo:continue
+                for dst,z in dsts:
+                    if isinstance(z,int):changed|=self.zero_image(dst,z+lo-off,None if hi is None else z+hi-off)
+                    else:changed|=self.slot(dst,'*',1,{('B',0),TOP})
+        return changed
+
+    def copy_memory(self,srcs,dsts,length):
+        changed=self.copy_zero(srcs,dsts,length)
+        for so,s in srcs:
+            for (o,k,n),ats in list(self.memory.items()):
+                if o!=so:continue
+                if length!='TOP' and isinstance(s,int) and isinstance(k,int) and not any(overlap(s,ln,k,n) for ln in length):continue
+                exact=length!='TOP' and isinstance(s,int) and isinstance(k,int) and all(s<=k and k+n<=s+ln for ln in length)
+                for do,z in dsts:
+                    if exact:
+                        for rw in self.memory_widths.get((o,k,n),{8*n}):changed|=self.slot(do,z+k-s if all(isinstance(x,int) for x in (z,k,s)) else '*',n,ats,rw)
+                    else:changed|=self.slot(do,'*',1,union({x for x in ats if x[0] in ('R','C')},{TOP}))
+        return changed
+
+    def allocation(self,c):
+        name=c['callee'][1:];decl=self.m.funcs.get(name)
+        names=d.HEAP_FNS|{'realloc','posix_memalign','memalign','strdup','strndup',
+            '_ZnwmRKSt9nothrow_t','_ZnamRKSt9nothrow_t','_ZnwmSt11align_val_t','_ZnamSt11align_val_t',
+            '__rust_realloc','julia.gc_alloc_obj','ijl_gc_alloc_typed','jl_gc_alloc',
+            'ijl_gc_small_alloc','ijl_gc_big_alloc','__bennett_nz_alloc'}
+        return name in names or bool(decl and re.search(r'allockind\("[^\"]*alloc|allocsize\(',decl.header))
+
+    def allocation_extent(self,f,c):
+        name=c['callee'][1:];decl=self.m.funcs.get(name)
+        attr=re.search(r'allocsize\((\d+)(?:,\s*(\d+))?\)',decl.header if decl else '')
+        indices=[int(x) for x in attr.groups() if x is not None] if attr else (
+            [0,1] if name=='calloc' else [2] if name=='posix_memalign' else
+            [1] if name in ('realloc','aligned_alloc','memalign') else
+            [3] if name=='__rust_realloc' else [0])
+        if name in ('strdup','strndup','julia.gc_alloc_obj','ijl_gc_alloc_typed','jl_gc_alloc','ijl_gc_small_alloc','ijl_gc_big_alloc') and not attr:return None
+        sizes={1}
+        for i in indices:
+            if i>=len(c['args']):return None
+            values=self.ints(f,c['args'][i][2])
+            if values=='TOP':return None
+            sizes={a*b for a in sizes for b in values}
+        return max(sizes,default=0)
+
     def immutable_image(self,obj):
         g=self.m.globals.get(obj)
         if not g or not re.search(r'\bconstant\b',g['text']):return None
@@ -93,6 +167,7 @@ class Flow:
     def getmem(self,ptrs,size,width=None):
         result=frozenset()
         for obj,off in ptrs:
+            if self.zero_contains(obj,off,size):result=union(result,{('I',0)})
             image=self.immutable_image(obj)
             if image is not None and isinstance(off,int) and 0<=off and off+size<=len(image):
                 result=union(result,{('I',int.from_bytes(image[off:off+size],self.byteorder)%(1<<(width or 8*size)))})
@@ -242,8 +317,8 @@ class Flow:
                 pieces={((x[1]%(1<<sw)>>(lo-start))&mask)<<(lo-shift) for x in ats if x[0]=='I'}
                 # These bit fields are disjoint, so an intermediate projected
                 # set >K cannot shrink on subsequent field concatenation.
-                result=union({('I',a[1]|b) for a in result if a[0]=='I' for b in pieces},
-                             {TOP} if TOP in result else {})
+                if TOP in result or len(result)*len(pieces)>4096:result=frozenset({TOP})
+                else:result=union({('I',a[1]|b) for a in result for b in pieces})
             if ready:out[k]=union(result if not unknown else {TOP},provenance)
         return out
 
@@ -285,7 +360,7 @@ class Flow:
         if v in seen:return False
         seen.add(v);ins=next((i for i in f.instrs() if i.res==v),None)
         if not ins:return False
-        if ins.op=='extractelement':return True
+        if ins.op in ('extractelement','bitcast'):return True
         if ins.op in d.BINOPS|{'freeze','zext','sext','trunc'}:
             return any(self.lane_expression(f,x,seen) for x in re.findall(r'%[-\w.$]+',ins.text.split(' = ',1)[-1]))
         return False
@@ -344,7 +419,7 @@ class Flow:
     def analyse(self):
         layout=re.search(r'target datalayout = "([^"]+)"',self.m.text)
         self.byteorder='big' if layout and layout[1].startswith('E') else 'little'
-        self.values={};self.memory={};self.memory_widths={};self.indirect={};self.cands={}; self.blockers=[]
+        self.values={};self.memory={};self.memory_widths={};self.zero_images={};self.indirect={};self.cands={}; self.blockers=[]
         self.object_sizes={n:d.tsize(g['type']) for n,g in self.m.globals.items()}
         for f in self.funcs():
             for i in f.instrs():
@@ -352,7 +427,9 @@ class Flow:
                     ps=d.split_top(i.text.split('alloca ',1)[1]);ty=d.parse_type(ps[0])[0];count=1
                     if len(ps)>1 and ps[1].startswith('i'):
                         c=d.typed_val(ps[1]);count=int(c) if c.isdigit() else None
-                    if count is not None:self.object_sizes[f.name+i.res]=d.tsize(ty)*count
+                    extent=None if count is None else d.tsize(ty)*count
+                    if extent is not None:self.object_sizes[f.name+i.res]=extent
+                    self.zero_image(f.name+i.res,0,extent)
         self.pw=int(re.search(r'(?:^|-)p:(\d+)',self.m.text)[1]) if re.search(r'(?:^|-)p:(\d+)',self.m.text) else 64
         for name,g in self.m.globals.items():
             t=g['type']; init=g['init'] or 'undef'
@@ -456,7 +533,20 @@ class Flow:
             if ' asm ' in body:return False
             c=d.parse_call(ins);cal=c['callee'];nm=cal[11:] if cal.startswith('@__bennett_') else None
             if nm in ('qalloc','qborrow'):lanes={0:{('R',f.name+ins.res)}}
-            elif cal.startswith('@') and cal[1:] in d.HEAP_FNS:lanes={0:{('P',f.name+ins.res,0)}}
+            elif cal.startswith('@') and self.allocation(c):
+                obj=f.name+(ins.res or ':alloc:'+str(id(ins)))
+                extent=self.allocation_extent(f,c)
+                changed|=self.zero_image(obj,0,extent)
+                if extent is not None:self.object_sizes[obj]=max(extent,self.object_sizes.get(obj,0))
+                if cal=='@posix_memalign':
+                    for target,off in self.ptrs(f,c['args'][0][2]):changed|=self.slot(target,off,self.pw//8,{('P',obj,0)},self.pw)
+                    lanes={0:{('I',0)}}
+                else:lanes={0:{('P',obj,0)}}
+                # Fresh backing is zero, but replay/copy sources of wrapper
+                # allocators are additional possibilities, never replaced.
+                if cal in ('@realloc','@__rust_realloc','@strdup','@strndup'):
+                    src=c['args'][0][2];lengths='TOP' if extent is None else {extent}
+                    changed|=self.copy_memory(self.ptrs(f,src),{(obj,0)},lengths)
             elif cal.startswith('@llvm.memset'):
                 dst,byte,length=[x[2] for x in c['args'][:3]]
                 n=self.ints(f,length);bs=self.ints(f,byte)
@@ -465,17 +555,10 @@ class Flow:
                 else:
                     for obj,off in self.ptrs(f,dst):
                         for length in n:changed|=self.slot(obj,off,length,{TOP} if bs=='TOP' else {('B',x&255) for x in bs})
-            elif cal.startswith(('@llvm.memcpy','@llvm.memmove')):
+            elif cal.startswith(('@llvm.memcpy','@llvm.memmove')) or cal=='@__bennett_rt_memmove':
+
                 dst,src=c['args'][0][2],c['args'][1][2];length=self.ints(f,c['args'][2][2])
-                for so,s in self.ptrs(f,src):
-                    for (o,k,n),ats in list(self.memory.items()):
-                        if o!=so:continue
-                        if length!='TOP' and isinstance(s,int) and isinstance(k,int) and not any(overlap(s,ln,k,n) for ln in length):continue
-                        exact=length!='TOP' and isinstance(s,int) and isinstance(k,int) and all(s<=k and k+n<=s+ln for ln in length)
-                        for do,z in self.ptrs(f,dst):
-                            if exact:
-                                for rw in self.memory_widths.get((o,k,n),{8*n}):changed|=self.slot(do,z+k-s if all(isinstance(x,int) for x in (z,k,s)) else '*',n,ats,rw)
-                            else:changed|=self.slot(do,'*',1,union({x for x in ats if x[0] in ('R','C')},{TOP}))
+                changed|=self.copy_memory(self.ptrs(f,src),self.ptrs(f,dst),length)
             elif nm in d.REGION_OPS:
                 for k,kind in d.REGION_OPS[nm].items():
                     cs=self.candidates(f,c['args'][k][2],kind);self.cands[id(ins),k]=cs
@@ -734,6 +817,7 @@ class Flow:
                 for j in range(nparam):
                     kinds=self.field_ints(f,desc,32+32*j,4)
                     if kinds=='TOP':kinds={1,2,3,4,5}
+                    else:kinds=kinds&{1,2,3,4,5} # §8.4 out-of-table values trap T-IFACE
                     count*=len(kinds)
                     vals=self.field_ints(f,desc,48+32*j,8)
                     args.append(vals)
