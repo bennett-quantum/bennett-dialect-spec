@@ -1,3 +1,81 @@
+## Round-8 final freeze — 0.2.10 — 2026-10-30
+
+**2767/2767 passed; 0 failed; 0 blocked/unavailable. Baseline 2732 → 2767.**
+Full compatibility `0.2.10` (`dialect-0.2.10;isa-0.8`); ISA grading target 0.8.
+Code/spec/checker snapshot: `023f5a771a814270634db3be9cfde88ded69f975`.
+Spec SHA-256: `d4f3c1a88391cc147f8c8fa4f80f82852e3ebe6f880610fc16cd5151f33d7206`.
+Checker/harness/source manifest SHA-256: `74372f9f2a7077e5eba1063ed687115e4ed0854b9732abb061b236b69efe16ff` (105 files).
+Independent interpreter: `697c9a8d64690f0f467a8677a445f4db283a73fc`; immutable source fingerprint
+`ddc1a303cd52bd828744e7aa4f85b17127a2869d6ad59da39934f7a6e5bf6c3e`.
+The normative/checker/harness/corpus file manifest matched before and after the
+final freeze and at receipt writing. Interpreter HEAD and source files matched
+the immutable executed snapshot at receipt writing. No ISA source was edited.
+Machine receipt: `scripts/dialect_check.LAST-RUN.json`; all executed rows:
+`scripts/.tmp/round5-fixes-freeze.json` (inherited exact gate filename).
+
+| Blocker | Status | Witness / checker | Green implementation commit |
+|---|---|---|---|
+| SOL-R8-01 ≡ R8-CODEX-02 | resolved | pt3-pack257/pack256/unpack; Flow.bitcast + dialect_round8.check_state | 4fecd06 (arithmetic/K supplement 023f5a7) |
+| R8-CODEX-01 | resolved | pt6-zero-stack/heap, pt8-zero-copy; zero_images + dialect_round8.check_state | 023f5a7 |
+
+Hand derivations: little-endian <1,1> → 257; <0,1> → 256;
+769 → <1,3> → lane1=3. Exact finite scalar domains/dispatch retain all
+three. LLVM18/23 verify O0/instcombine/materialised forms; native clang18/23
+O0/O3 widths are 257/256/3, including two X gates at index256, final bit0.
+Conditional zero-filled stack/heap store gives raw/idx={0,1}, widths={1,3};
+false/true execute1/3 and free cleanly/code0. PT8 copies zero into an initially
+nonzero global. Native execution for these uses materialised semantics, never
+source LLVM uninitialised-load behaviour. No finite bitcast became BLK-1.
+
+Red→green: six bitcast-domain subtests; six zero-domain subtests; bitcast+1
+arithmetic; and five existing descriptor counts. Kind0 stays in AV with the
+existing T-IFACE outcome, but is not counted as a valid kind1..5 shape.
+No existing expectation was weakened. The development five-failure gate is
+archived at scripts/.tmp/round8-development-shape-failures.json and is not a receipt.
+**84 checker units and 7 legacy runtime tests pass.** No LLVM viewer pass ran.
+
+Version rules follow spec/README.md: full dialect0.2.10, map0.2.9 and norm0.2.8
+retain their unchanged mapping/normalisation algorithms and ISA signatures.
+Applied sol's S1 N33/N32 wording clarification without changing rule order.
+No S0 declines or partials, no narrowing, no new ISA0.8 gap or requested ISA
+change. Existing §25.1 dependencies and their blocked verdicts remain unchanged.
+Codex's nonblocking PT12 atomic update suggestion is open as b-dialect-spec-0y2;
+not claimed resolved by the two S0 fixes. Main implementation bead jip is closed.
+No worklog/HANDOFF/brief/ISA/corpus-program edits; nothing pushed.
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 19 | 0 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 22 | 0 | 0 |
+| coverage | 125 | 0 | 0 |
+| driver | 2 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 21 | 0 | 0 |
+| hash | 9 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 21 | 0 | 0 |
+| native | 31 | 0 | 0 |
+| normalise | 46 | 0 | 0 |
+| parse | 788 | 0 | 0 |
+| recognise | 148 | 0 | 0 |
+| run-oracle | 22 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 76 | 0 | 0 |
+| step-check | 6 | 0 | 0 |
+| tdl | 10 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1399 | 0 | 0 |
+| **Total** | **2767** | **0** | **0** |
+
+Exact inherited freeze command (scripts/.tmp existed):
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/round5-fixes-freeze.json
+```
+
 ## Round-8 fixes — in progress — 2026-10-30
 
 Owner: implementation sub-agent; bead b-dialect-spec-jip. Baseline 2732/2732.

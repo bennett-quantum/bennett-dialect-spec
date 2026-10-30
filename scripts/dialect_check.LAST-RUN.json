@@ -1,20 +1,20 @@
 {
-  "spec_commit": "2c718bd6e1931a8ac02eaa8d9e0d82a5842feab9",
-  "checker_commit": "2c718bd6e1931a8ac02eaa8d9e0d82a5842feab9",
-  "spec_sha256": "9cb4cb9e7a2480b5acfb06da1b744a3d7b1379b8adde1f0ae5b00d7739eb45d9",
-  "dialect_version": "0.2.9",
+  "spec_commit": "023f5a771a814270634db3be9cfde88ded69f975",
+  "checker_commit": "023f5a771a814270634db3be9cfde88ded69f975",
+  "spec_sha256": "d4f3c1a88391cc147f8c8fa4f80f82852e3ebe6f880610fc16cd5151f33d7206",
+  "dialect_version": "0.2.10",
   "isa_grading_target": "0.8",
-  "interpreter_commit": "8d49944066a9c776c28447f8fcd5619ee7238b63",
-  "interpreter_source_sha256": "a4f8dd9e8ab8bbcf6723a0899a463b4eae04abcde06d9b365b8cf2080f4708be",
+  "interpreter_commit": "697c9a8d64690f0f467a8677a445f4db283a73fc",
+  "interpreter_source_sha256": "ddc1a303cd52bd828744e7aa4f85b17127a2869d6ad59da39934f7a6e5bf6c3e",
   "interpreter_snapshots": [
     {
-      "commit": "8d49944066a9c776c28447f8fcd5619ee7238b63",
-      "source_sha256": "a4f8dd9e8ab8bbcf6723a0899a463b4eae04abcde06d9b365b8cf2080f4708be"
+      "commit": "697c9a8d64690f0f467a8677a445f4db283a73fc",
+      "source_sha256": "ddc1a303cd52bd828744e7aa4f85b17127a2869d6ad59da39934f7a6e5bf6c3e"
     }
   ],
-  "checker_source_snapshot_sha256": "79c4f568f3ad0d29c8aa30e18e7680a7e11a8cdf54534b2a95c546bb4636c4d7",
+  "checker_source_snapshot_sha256": "74372f9f2a7077e5eba1063ed687115e4ed0854b9732abb061b236b69efe16ff",
   "source_files": {
-    "SPEC_VERSIONS.toml": "f2b7284a6c393c4956c6f6ca0ce3269801126ea96e2b2a4c6a152d73ae37153f",
+    "SPEC_VERSIONS.toml": "9c54560a9df47fdcb72b71167282075504519128ba8d6351dc1fab6e6971f67a",
     "corpus/legality/cases/README.md": "71a49a6cf62ac5ccd08aa8e4ba6f55cb5b3c78c1b24f7d7f6f85e4189337b75d",
     "corpus/legality/cases/c-is-constant-budget.c": "b06e6daecd7b5a8d5c52147e52b57e8e0fec8a20b52ed710b3acd655ac5ba201",
     "corpus/legality/cases/c-memcpy-handle-int.c": "06f874c33463a39a35617b14a52286c7006c08f08cebd5066e9e04282c7d29e5",
@@ -94,9 +94,9 @@
     "scripts/dialect_bounds.py": "169972367a433bc845558214f7d55bba2a09decd3d5c539eb5e01dbcc2234d83",
     "scripts/dialect_cc.py": "802fa64ef42cc0bcec5d2837bdf0ab52c44cbd7301b87a6fe9cc1a13451e5bc8",
     "scripts/dialect_check.py": "bc5ca75a72cbcb1cb4cfd7bba15024ff49bdce86717b0c61ae95ab6cd6757974",
-    "scripts/dialect_check_v02.py": "a1ccc62bec914414fe79a3588f32812f70168716561abad05e5cb6ff119b5066",
+    "scripts/dialect_check_v02.py": "f47dbada7b7c9447be55ffe014cd9ed8bd2223420badcb6625ed4b0a06957d25",
     "scripts/dialect_driver.py": "87512f14f6936a2d71643bbbcba26b1e4dcd45bec9f86c2000d59d4ec7326465",
-    "scripts/dialect_flow.py": "d1e13ed1fd17be0722c89b3b7bdee313479459a2129c20eb62bb239a4a01144e",
+    "scripts/dialect_flow.py": "5a66e95c68cfa334527ccd828b441d9da137f4b10fb8a55c2cb5dbc6b81e0d07",
     "scripts/dialect_map.py": "5640ce581f8da26279e3f0ada8e28a24cc12126d721026c53aeeb5a08d607bcb",
     "scripts/dialect_meta.py": "2f7cd48779ce49b99a50e0e0b25098a78f6fa268c550cd5cc9592391d66432c6",
     "scripts/dialect_native.py": "7d4dbc806c060c3c48378323f07da70b5ca2941c6c1f0316be73ca010c573189",
@@ -107,11 +107,12 @@
     "scripts/dialect_round5.py": "7b023195bb9225d2e768f13e899e50a9bb3dd86cb68c6ad41f015aba2af1ec34",
     "scripts/dialect_round6.py": "10b84143cb5e22eab329eb5b41b6d5234b14232e001456db9f70012134f01292",
     "scripts/dialect_round7.py": "b799f10f9454e5a5a850385662ecee31b221ddbeef64760523bfe768cea86b95",
+    "scripts/dialect_round8.py": "7e6fdd698929b31ff2c6950a916991eb74d353611b187c8d2991a0812f45ed58",
     "scripts/dialect_state.py": "af1a99288b761833db91c6e4634074d3290bb6628bca5d11affa22c387a90eef",
     "scripts/dialect_tdl.py": "e4d5b4cdf85658799c9ed762d8c4aa2d6e8c65241c36c137c44a70084783a854",
     "scripts/dialect_wide.py": "1e776972c918c1e810746f465abe5aeac2db7e171be8ab126b30e9ee573083bf",
-    "scripts/test_dialect_check.py": "0c242e0ae0efc39cd8f44c0219b00b8b7767c696cb29885ec34635df9f4c3de2",
-    "spec/Bennett-Dialect-Spec.md": "9cb4cb9e7a2480b5acfb06da1b744a3d7b1379b8adde1f0ae5b00d7739eb45d9",
+    "scripts/test_dialect_check.py": "334951d4c3bcf086dc19f9e3419087f0c8e9ca7892707dc996264852e7c5abf1",
+    "spec/Bennett-Dialect-Spec.md": "d4f3c1a88391cc147f8c8fa4f80f82852e3ebe6f880610fc16cd5151f33d7206",
     "spec/bennett_markers.h": "b5735e6f5bdfad08cf2f05afdd685f801a7c40aa94062e4d67ca18009a9781fd",
     "spec/seeds/coherence.c": "c61990e95a2308157d25d15f0a91a8fe1091e43fbe842f07a777f8a2bf7462af",
     "spec/seeds/contexts.c": "17346e9d66ebdabe7987fb15a26cf37bf6d90daab60e35d0c798b948c3a6aaf2",
@@ -119,7 +120,7 @@
     "spec/seeds/runtime.c": "0a66e5e7fca7948338c5a20121537c07886072868882c92060a203e1a03661b5",
     "spec/seeds/softfloat.c": "de3f03231c39b2286568f6e913ea8f7aa8c7f64bae3af37db5b0f172c38d9ed3"
   },
-  "source_manifest_note": "SHA-256 of sorted-key JSON mapping paths to SHA-256 values; includes normative spec, checker and harness Python sources, headers, runtimes, seeds and corpus cases. Unchanged across the final freeze.",
+  "source_manifest_note": "105 files; before/after final freeze equality verified. Progress logs, receipts and beads are excluded to avoid circular hashes. Interpreter HEAD/source manifest matched at receipt writing. Source-file manifest rather than the prior working-tree HEAD identifies final uncommitted source during the gate; committed unchanged as spec_commit.",
   "counts": {
     "asm": {
       "passed": 1,
@@ -187,12 +188,12 @@
       "blocked": 0
     },
     "parse": {
-      "passed": 770,
+      "passed": 788,
       "failed": 0,
       "blocked": 0
     },
     "recognise": {
-      "passed": 142,
+      "passed": 148,
       "failed": 0,
       "blocked": 0
     },
@@ -212,7 +213,7 @@
       "blocked": 0
     },
     "state": {
-      "passed": 70,
+      "passed": 76,
       "failed": 0,
       "blocked": 0
     },
@@ -232,20 +233,28 @@
       "blocked": 0
     },
     "xrefs": {
-      "passed": 1394,
+      "passed": 1399,
       "failed": 0,
       "blocked": 0
     }
   },
-  "total": 2732,
+  "total": 2767,
   "failed": 0,
   "blocked": 0,
-  "checker_unit_tests": 76,
-  "harness_tests_without_viewer_pass": 49,
-  "corpus_receipt": "corpus/legality/results/abi-0.2-relays.json",
-  "corpus_cases": 69,
-  "unchanged_other_cases": 67,
-  "stored_p2_compared": 1386,
-  "stored_p2_differences": 0,
-  "full_results": "scripts/.tmp/round5-fixes-freeze.json"
+  "checker_unit_tests": 84,
+  "legacy_runtime_tests": 7,
+  "full_results": "scripts/.tmp/round5-fixes-freeze.json",
+  "blocker_commits": {
+    "SOL-R8-01 / R8-CODEX-02": "4fecd06",
+    "R8-CODEX-01": "023f5a771a814270634db3be9cfde88ded69f975"
+  },
+  "new_native_witnesses": [
+    "pt3-pack257",
+    "pt3-pack256",
+    "pt3-unpack",
+    "pt6-zero-stack",
+    "pt6-zero-heap",
+    "pt8-zero-copy"
+  ],
+  "nonblocking_followup": "b-dialect-spec-0y2"
 }
