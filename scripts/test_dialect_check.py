@@ -122,6 +122,39 @@ entry:
             value['stale_code']=0
             with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(value)))
 
+    def test_round3_empty_oracle(self):
+        from dialect_map import Mapper
+        link='null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 32, heap max 0'
+        for ret,body in (('void','ret void'),('void','call void @__bennett_nz_fault(i64 4)\n unreachable'),('i8','ret i8 255')):
+            mapper=Mapper(d.with_decls('define '+ret+' @f() {\n '+body+'\n}\n'),'@f','tgt=null',link)
+            wrapper=mapper.wrapper()
+            self.assertIn('p0 = lift.const.i1 0\nlift.retval p0',wrapper)
+            self.assertEqual(mapper.signatures['ref']['tgt'],1)
+            self.assertEqual(mapper.signatures['ref']['fault'],4)
+        from dialect_round3 import check_state
+        import json
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            value={'success':[0,0],'fault':[0,4],'zero_budget':[0,1],'hidden_clean':True,'oracle_calls':1}
+            b={'attrs':{'state':'oracle-empty-output','at':'0'},'body':json.dumps(value)}
+            check_state(runner,b)
+            for field,wrong in (('fault',[0,0]),('zero_budget',[0,0]),('hidden_clean',False),('oracle_calls',2)):
+                with self.subTest(field=field),self.assertRaises(d.Fail):
+                    check_state(runner,dict(b,body=json.dumps(dict(value,**{field:wrong}))))
+
+    def test_native_fault_probe_disables_core_dump(self):
+        from dialect_native import fault_probe
+        import signal
+        import sys
+        from pathlib import Path
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            probe=Path(tmp)/'fault-probe'
+            probe.write_text('#!'+sys.executable+'\nimport os, resource, signal\n'
+                             'assert resource.getrlimit(resource.RLIMIT_CORE) == (0, 0)\n'
+                             'os.kill(os.getpid(), signal.SIGILL)\n')
+            probe.chmod(0o700)
+            self.assertEqual(fault_probe(probe).returncode,-signal.SIGILL)
+
     def test_round2_r_entry_classification(self):
         for name in ('region-reversible-marker','region-reversible-qalloc-static','effect-console-r'):
             with self.subTest(example=name):self.assertEqual(v.recognise(d.with_decls(self.block('example',name)['body']),rmode=self.block('example',name)['attrs'].get('rmode'))[0],'blocked:BD-B-ISA7')
@@ -217,9 +250,13 @@ entry:
             with self.subTest(format=ty):
                 ir=f'define {ty} @f({ty} %x) {{\n %n = fneg {ty} %x\n ret {ty} %n\n}}\n'
                 self.assertEqual(v.validate(ir),'accept')
-        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.3"}\n'
+        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.4"}\n'
         self.assertEqual(v.recognise(good)[0],'accept')
-        self.assertEqual(v.recognise(good.replace('0.2.3','0.2.1'))[0],'reject:BD-E-VERSION')
+        for stale in ('0.2.3','0.2.1'):
+            self.assertEqual(v.recognise(good.replace('0.2.4',stale))[0],'reject:BD-E-VERSION')
+        import tomllib
+        self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],'0.2.4')
+        self.assertIn('**full version string** (`0.2.4`)',self.spec)
 
     def test_v4_v12_residues_and_clean(self):
         for rule in ('v4','v12'):

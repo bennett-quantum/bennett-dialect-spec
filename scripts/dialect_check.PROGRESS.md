@@ -547,3 +547,22 @@ Theme F resolved SOL-R3-03: physical slots and generation identities separated;
 N(s)=1 accepted stale-generation module traps 4 before changing the replacement,
 equality false. Native original LLVM witness passes clang 18/23 and mutation test.
 Theme E 90fa101 / response 9cc0bff.
+
+
+Theme G resolved R3-CODEX-03: k=0 has one synthetic W_empty call using
+one hidden target bit and the required four-wire fault register. The successful
+terminal is charged const-zero/retval; the hidden bit is freed unconditionally.
+Source-mapped Rust vectors verify void success (4 steps), budget-3 failure,
+explicit fault 4, zero budget 1, and discarded non-void returns. A real CC
+caller verifies clean free, exactly one call and controls 0/1. The inherited
+null-target regression failed red before mapping support; result, budget,
+cleanliness and call-count mutations are rejected. New marker descriptor stays
+accepted. Full dialect/manifest/parser remain 0.2.4, ISA target 0.8.
+
+Resumption findings: fixed the stale unittest's 0.2.3 positive flag and an
+ambiguous ISA-draft section cross-reference. A native intentional SIGILL probe
+could time out in systemd core-dump handling; a red-green child-process test
+now verifies core dumps are disabled for deliberate fault probes only, retaining
+the exact expected -4/132 statuses. A concurrent ISA HEAD change triggered the
+existing fail-fast snapshot guard; verification is rerun on the latest snapshot.
+Final freeze receipt follows after the full rerun; no final-green claim yet.

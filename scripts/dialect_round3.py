@@ -6,7 +6,7 @@ from dialect_check_v02 import equal
 from dialect_state import run_native
 from dialect_tdl import Session, assert_view, add_constant, object_text
 
-STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place', 'co-observe-write-observe', 'handle-setjmp-interproc', 'shadow-stack-liveness', 'handle-stale-generation'}
+STATES = {'co-loop-identity', 'co-loop-adj-overwritten', 'deferred-channel-adj-place', 'co-observe-write-observe', 'handle-setjmp-interproc', 'shadow-stack-liveness', 'handle-stale-generation', 'oracle-empty-output'}
 
 
 def stack_probe(runner, name, width):
@@ -184,4 +184,36 @@ int main(void){if(!setjmp(fault))stale_generation();unsigned second=value;
 if(live)__bennett_qfree((void*)current);
 printf("[%u,%u,%u,%u]\\n",generation_equal,code,second,live);return 0;}'''
         run_native(runner,name,ir,src,[[int(v['equal']),v['stale_code'],v['second_value'],v['live_after']]])
+    elif name == 'oracle-empty-output':
+        from dialect_map import Mapper
+        from dialect_cc import signature
+        # Map source, not expected object text; then exercise both the oracle
+        # outcome and the caller's real hidden-register allocation/free.
+        cases=[('success','oracle-empty-output',100),('fault','oracle-empty-fault',100),
+               ('zero_budget','oracle-empty-output',0)]
+        for key,ident,budget in cases:
+            source=runner.block('lift',ident)
+            mapper=Mapper(d.with_decls(source['body']),source['attrs']['region'],source['attrs']['desc'],runner.block('linkmap',ident)['body'])
+            path=runner.tmp/(ident+'-mapped.bisa')
+            mapped=mapper.run(runner.isa,path);path.write_text(mapped)
+            runner.isa.call('check',path)
+            got=runner.isa.call('run-oracle',path,'ref','--input','','--budget',f'{budget},0,32,1')
+            equal(name,key,v[key],[int(got['payload']),int(got['code'])])
+            functions=mapped.split('\nsection functions\n',1)[1].split('\nsection layout\n',1)[0].strip()
+            layout=json.loads(mapped.split('\nsection layout\n',1)[1])
+            rows='hidden = qreg.new any 1\nf = qreg.new any 4\n{call}\nqreg.free hidden\nr = measure f\nret r'
+            main='fn cc @invoke (tk:token) (r:i4) () () ()\n^entry():\n'+rows.format(call='oracle_call @ref tk () hidden f () ()')
+            controlled='fn cc @controlled (tk:token, c:qreg[1]) (r:i4) () () ()\n^entry():\n'+rows.format(call='ctl c oracle_call @ref tk () hidden f () ()')
+            sigs=dict(mapper.signatures,invoke=signature(['token'],['i4'],'cc'),controlled=signature(['token','qreg[1]'],['i4'],'cc'))
+            caller=object_text(runner.isa,runner.tmp/(key+'-empty-caller.bisa'),[functions,main,controlled],sigs,layout)
+            observed=runner.isa.call('run-cc',caller,'invoke','--arg',f'token:{budget},0,32,1')
+            equal(name,key+' CC status','COMPLETED',observed['status'])
+            equal(name,key+' CC faults',[],observed['faults'])
+            equal(name,key+' fault delivered once',str(v[key][1]),observed['results'][0]['value'])
+            equal(name,key+' call count',v['oracle_calls'],sum(row['op']=='oracle_call' for row in observed['trace']))
+            equal(name,key+' clean hidden free',v['hidden_clean'],sum(row['op']=='qreg.free' for row in observed['trace'])==1)
+            for control in (0,1):
+                observed=runner.isa.call('run-cc',caller,'controlled','--arg',f'token:{budget},0,32,1','--arg',f'qreg:{control}')
+                equal(name,key+' controlled status','COMPLETED',observed['status'])
+                equal(name,key+' controlled fault',str(v[key][1] if control else 0),observed['results'][0]['value'])
     else:raise d.Fail('unimplemented round-3 state '+name)

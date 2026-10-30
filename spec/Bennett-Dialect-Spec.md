@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-29. **Status:** draft 0.2.4 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
 §3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
-2026-10-29 at its end) revised after council round 1 on 0.2; awaiting round 2. It replaces draft
+2026-10-29 at its end), revised after council rounds 1–3. It replaces draft
 0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
 to narrow north-star scope in 40 distinct places. Nothing is implemented. It targets the
 Bennett virtual ISA **draft 0.8** (`bennett-isa-spec/spec/Bennett-ISA-Spec.md`, council
@@ -1196,7 +1196,7 @@ interprocedural call edges. The reference default remains conservative: if a set
 continuation in any may-ancestor A of F (A=F included) can reach s through these CFG
 and call edges, s is not self-disjoint and E(s)=∞. Apply this rule to §7.5(b) R
 hoisting as well. Such a site uses BLK-1 (R hoisting: BLK-4), with the bounded
-static-file fallback, never rejection. The read-only ISA 0.9 draft §0.2 K1 supplies
+static-file fallback, never rejection. The read-only ISA 0.9 draft's K1 supplies
 the exact missing dynamic qreg.width/id/from_id and run-time-width register capability;
 K2 supplies R allocation for BLK-4. Neither witness claims a finite reference bound.
 
@@ -2440,6 +2440,9 @@ checked and an execution on which they are nonzero faults with code 4 (`FAULT_UB
 retained bits are the low n(tgt). A null `tgt` discards the return value. For `oracle`, the
 **fault register** `fault` MUST be a register of exactly 4 wires (ISA §5.4: F = 4) and MUST NOT
 be null (`T-IFACE`).
+Null `tgt` remains valid for a `void` function or a discarded non-void return.
+If there is no `OUT` or non-null `CONSOLE` output either, the shape has zero payload
+outputs; it still executes once and delivers its fault through §8.6's synthetic variant.
 Every register named by the descriptor MUST be live and pairwise distinct (`T-DEAD`, `T-ALIAS`).
 A width mismatch in the table above is `T-SIZE`.
 
@@ -2550,7 +2553,7 @@ Efficiency: G-12 (§25.3).
 ### 8.6 Oracle invocations and wide outputs
 
 The **outputs** of a shape are, in order: `tgt` (if non-null), each `OUT` parameter in parameter
-order, and the `CONSOLE` register (if bound). Each output register is split into **slices** of
+order, and the `CONSOLE` register (if bound and non-null). Each output register is split into **slices** of
 at most 128 bits from its low end (ISA §3.3: payloads are `iN` with N ≤ 128); the slices of all
 outputs are numbered 0, 1, …, k − 1 in that order. Every slice j has an oracle **variant** W_j:
 the same reference body (§16.2) whose `lift.retval` delivers slice j of the payload. Every W_j executes an identical ordered computation and validation of every projection,
@@ -2559,6 +2562,16 @@ Thus all variants compute the same fault code, even when budget expires in deliv
 all copy-outs are zero on any common failure. For a single slice, retain its existing rows
 and return directly without an extra projection move.
 
+- **k = 0** (no payload outputs): there is one synthetic variant **W_empty**, with
+  T = 1. It executes the same prologue, region body and unwind check as other variants;
+  on success its terminal rows are `p0 = lift.const.i1 0` and `lift.retval p0` (§16.2),
+  charged normally. The caller allocates one clean hidden target bit, invokes
+  `oracle_call @W_empty tk (ins..) hidden fault (mem..) (args..)` exactly once using
+  the caller's required four-wire fault register, then frees the hidden target. The
+  hidden bit remains zero on success and fault; it is workspace, not a payload output.
+  Under invocation controls, predicate the call on all of them; allocation and free
+  remain unconditional. Do not issue a second call to clean the hidden target: that
+  would XOR away the delivered fault code.
 - **k = 1** (every output fits 128 bits in one register): the invocation is `oracle_call @W_0
   tk (ins..) tgt fault (mem..) (args..)`.
 - **k > 1** (the `wide` event, §18.2): the caller's tier issues, for j = k − 1, …, 1, with
@@ -2640,6 +2653,151 @@ bijection, so g∘ginv = id and ginv is fault-free on every input, as ISA `qinpl
 0.1's `BD-E-INPLACE-UNVERIFIED` is deleted.
 
 ### 8.8 Examples
+
+**Zero payload outputs (round 3).** With no payload slices, success still runs
+four charged rows: call, void return, zero constant, retval. Budget 3 therefore
+faults 1; budget 4 succeeds. Explicit fault 4 exits before delivery, but still
+reaches the caller's fault register. A discarded non-void result is not a hidden
+payload or a dropped-bit check. The caller witness executes one call and a real
+clean hidden-target free on success, fault and zero budget; basis controls 0/1
+respectively suppress/preserve fault delivery. It never cleans by calling twice.
+
+The marker form has null `tgt`, zero parameter bindings and a live four-wire
+fault register; it remains accepted:
+
+```llvm example=oracle-empty-marker verdict=accept candidates=empty_region shapes=1
+define internal void @empty_region() {
+  ret void
+}
+define void @top() {
+  %d = alloca [32 x i8], align 8
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store <4 x i32> <i32 2, i32 0, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr null, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  call void @__bennett_oracle(ptr @empty_region, ptr null, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  ret void
+}
+```
+
+```text linkmap=oracle-empty-output
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 32, heap max 0
+```
+
+```llvm lift=oracle-empty-output region=@empty desc=tgt=null
+define void @empty() {
+ ret void
+}
+```
+
+```isa object=oracle-empty-output
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"358a1b87139653df3c5a82465215f8af96a12d0e8ad02610e04696c2d588a91c","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":1,"tier":"q"}},"1":{"interface_hash":"d74988a3bf5c3b43886ffbb7281e0af07cef1289e88f8eb878e5ea02cf3218ab","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":1,"tier":"q"}}}
+
+section functions
+oracle @ref () (tgt:wire[1]) (fault:wire[4]) () ()
+regs { r:reg[1], p0:reg[1] }
+^entry():
+r = lift.call @L1 ()
+p0 = lift.const.i1 0
+lift.retval p0
+lproc @L1 () (r:reg[1]) () () ()
+^b0():
+lift.ret r
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=oracle-empty-output
+input= budget=0,0,32,1 -> code=1 payload=0 steps=0
+input= budget=3,0,32,1 -> code=1 payload=0 steps=3
+input= budget=4,0,32,1 -> code=0 payload=0 steps=4
+input= budget=100,0,32,1 -> code=0 payload=0 steps=4
+```
+
+```text linkmap=oracle-empty-fault
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 32, heap max 0
+```
+
+```llvm lift=oracle-empty-fault region=@empty_fault desc=tgt=null
+define void @empty_fault() {
+ call void @__bennett_nz_fault(i64 4)
+ unreachable
+}
+```
+
+```isa object=oracle-empty-fault
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"863fd42e300d5bba79d561ceca8c8b72ee1ad384d60f770d961cf25a8e258181","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":1,"tier":"q"}},"1":{"interface_hash":"4f9849a1cfa5faa00eb1247f3d3e3b7b43f5bf7f357eb3dd49d2904a613a2734","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":1,"tier":"q"}}}
+
+section functions
+oracle @ref () (tgt:wire[1]) (fault:wire[4]) () ()
+regs { r:reg[1], p0:reg[1] }
+^entry():
+r = lift.call @L1 ()
+p0 = lift.const.i1 0
+lift.retval p0
+lproc @L1 () (r:reg[1]) () () ()
+^b0():
+fault 4
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=oracle-empty-fault
+input= budget=0,0,32,1 -> code=1 payload=0 steps=0
+input= budget=100,0,32,1 -> code=4 payload=0 steps=2
+```
+
+```text linkmap=oracle-discard-return
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 32, heap max 0
+```
+
+```llvm lift=oracle-discard-return region=@discard desc=tgt=null
+define i8 @discard() {
+ ret i8 255
+}
+```
+
+```isa object=oracle-discard-return
+bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"622ca26e17519d6e64af5f64f8e0f9c3d9af6c5d36a97740de5d6cbc2b2f62f3","kind":"oracle","name":"ref","signature":{"abi":"0.8","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":1,"tier":"q"}},"1":{"interface_hash":"93148924fea7849935c56ab70a77664be9218db8f9b1e501b9353e1e86fd1ee2","kind":"lproc","name":"L1","signature":{"abi":"0.8","kind":"lproc","params":[],"result":8,"tier":"q"}}}
+
+section functions
+oracle @ref () (tgt:wire[1]) (fault:wire[4]) () ()
+regs { r:reg[8], p0:reg[1] }
+^entry():
+r = lift.call @L1 ()
+p0 = lift.const.i1 0
+lift.retval p0
+lproc @L1 () (r:reg[8]) () () ()
+regs { c0:reg[8] }
+^b0():
+c0 = lift.const.i8 255
+lift.ret c0
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=oracle-discard-return
+input= budget=100,0,32,1 -> code=0 payload=0 steps=5
+```
+
+```text state=oracle-empty-output at=0
+{"success":[0,0],"fault":[0,4],"zero_budget":[0,1],"hidden_clean":true,"oracle_calls":1}
+```
 
 Round-1 wrapper boundary vectors. The common delivery prefix includes every projection
 before any selected return; a low budget therefore zeros *all* variants.
@@ -6017,7 +6175,11 @@ Its body is one block `^entry():` with, in order:
    slice in output/slice order (§8.6), including all address offsets, bounds checks, loads,
    casts, dropped-bit checks and console slices. Store each projection in `p<j>:reg[w_j]`.
    Only after this identical sequence does `lift.retval p<j>` select this variant's result.
-   For k=1 retain the original direct result without a projection move.
+   For k=0 there are no projections or dropped-return-bit checks: discard r and emit
+   `p0 = lift.const.i1 0` followed by `lift.retval p0`, with `p0:reg[1]`.
+   These two terminal rows are part of the charged reference body, after the call and
+   any unwind check. A fault still delivers code through the four-wire fault interface
+   and zero payload to the hidden bit. For k=1 retain the original direct result without a projection move.
    Every variant has the same location list and row charges, including unused projections.
    The per-slice computation is: for the `tgt` output with n(tgt) < R: `c = lift.const.iR
    <n(tgt)>`, `t = lift.lshr r c`, `z = lift.const.iR 0`, `u = lift.icmp.ne t z`, `lift.faultif
@@ -6026,8 +6188,9 @@ Its body is one block `^entry():` with, in order:
    widths differ); from an `OUT` buffer `w<i>` by `p = lift.add w<i> <offset>` (when nonzero),
    `lift.boundscheck p <T/8>`, `v = lift.load.i<T> p`; then `p<j> = lift.mov <value>`; after all slices, `lift.retval p<selected>`.
 
-Wrapper locations are `w<i>` (arguments), `r` (the call's result), `d<k>` (prologue), and `c<j>`,
-`t<j>` for its constants and temporaries in emission order.
+Wrapper locations are `w<i>` (arguments), `r` (the call's result), `d<k>` (prologue),
+`p<j>` (delivery projections, including synthetic `p0` for k=0), and `c<j>`, `t<j>`
+for its constants and temporaries in emission order.
 
 **lprocs.** Each lifted function g becomes `lproc @L<n> (a0:reg[W0], …) (r:reg[R]) () () ()`
 with the parameters in order (`ptr` → `reg[pw]`; an aggregate parameter flattened into one
@@ -9622,6 +9785,7 @@ compute expected artefacts only (P-3).
 | `qstore-twice` | §6.7 | parse, recognise | LLVM; Python |
 | `region-*` (18, incl. 1 blocker) | §7.1–§7.5, BLK-4 | parse, recognise | LLVM; Python |
 | `oracle-inc8`, `oracle-two-in`, `oracle-two-shapes`, `oracle-wide-out`, `budget-launch-arg`, `budget-device-computed` (+ blocker) | §8.1–§8.6, §9.1, §9.5, BLK-2 | parse, recognise | LLVM; Python |
+| `oracle-empty-marker`, `oracle-empty-output`, `oracle-empty-fault`, `oracle-discard-return` | §8.2, §8.6, §16.2 | parse, recognise, map, check, run-oracle, state | LLVM; Rust run-oracle and CC hidden-target free/control |
 | `inplace-*` (4) | §8.7 | parse, recognise, run-oracle | LLVM; Python; isa-ref `run-oracle` (verification) |
 | `budget-table=rung4-mini` | §9.2 | driver | Python |
 | `tdl`, `tdl-overwrite`, `tdl-effect`, `tdl-angle` with `tdl=` and `state=` blocks | TDL-1–TDL-12, §18.2–§18.4 | parse, recognise, tdl, run-action | LLVM; Python TDL; isa-ref `run-action` (requested) |
@@ -9683,10 +9847,10 @@ compute expected artefacts only (P-3).
 | `r-budget-prefix`, `r-fault-code` (+ blocker and state) | N34, BLK-5, §17.6 | parse, recognise, blocker, state | ISA-0.8 dependency verdict; ISA-0.9 result specified alongside |
 
 **Execution status of the former 35 omissions.** The historical frozen-checker
-failures are superseded by the 2311/2311 round-2 receipt (spec 976e4bb, checker
-642e265; scripts/dialect_check.LAST-RUN.json identifies the dependency). All
-normalisation, binding/indirectbr and driver/platform adapters execute. The current
-round-2-fixes receipt and family counts are in the progress files and response.
+failures are superseded by the round-3-fixes freeze receipt in the progress files
+and round-3 response, which identify the spec and independent interpreter snapshots
+and give per-family counts. All normalisation, binding/indirectbr and driver/platform
+adapters execute; the round-3 receipt also names every A–G witness executed in the gate.
 Index discovery alone is not P-2 execution. A green example count establishes the
 checks identified by its receipt, not equivalence of every hand-written object to
 every source rule. R budget/fault dependencies are passing BLK-5 verdict checks,

@@ -12,6 +12,16 @@ SEEDS=d.ROOT/'spec'/'seeds'
 PREFIX='#include <stdint.h>\n#include <stdio.h>\n#include <string.h>\n'
 
 
+def fault_probe(exe):
+    """Observe an intentional native trap without invoking core-dump storage."""
+    import resource
+    from dialect_check_v02 import headless_env
+    def no_core():
+        resource.setrlimit(resource.RLIMIT_CORE,(0,0))
+    return subprocess.run([exe],capture_output=True,text=True,env=headless_env(),
+                          timeout=10,preexec_fn=no_core)
+
+
 def values(text):
     text=text.replace('all ones x 4',', '.join(['18446744073709551615']*4))
     return ast.literal_eval(text)
@@ -145,8 +155,7 @@ def check(runner,block):
                 fault_driver.write_text(PREFIX+'extern uint8_t q(const uint8_t *,uint64_t,uint32_t);\nint main(void){uint8_t img[16]={0,7};return q(img,15,0);}\n')
                 fault_exe=directory/('fault-'+variant+'-'+major)
                 command([clang,'-O2',src,fault_driver,SEEDS/'runtime.c',SEEDS/'softfloat.c','-o',fault_exe])
-                from dialect_check_v02 import headless_env
-                result=subprocess.run([fault_exe],capture_output=True,text=True,env=headless_env(),timeout=10)
+                result=fault_probe(fault_exe)
                 want=-4 if variant=='source' else 132
                 equal(ident+'/'+variant+'/fault','§17.5 native fault',want,result.returncode)
 

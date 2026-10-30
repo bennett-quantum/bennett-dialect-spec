@@ -133,9 +133,17 @@ class Mapper:
             elif kind=='OUT':
                 size=const(64,int(value));buf=dest(name,w,'lift.alloc '+size);actual.append(buf);outputs.insert(i,(buf,int(value)))
         if self.entry in self.arena_functions:actual.append('d0')
-        R=bits(f.ret);T=int(re.search(r'tgt=(\d+)',desc)[1]);dest('r',R,'lift.call @L1 ('+', '.join(actual)+')')
+        target=re.search(r'\btgt=(null|\d+)\b',desc)
+        if not target:raise d.Fail('§16.2 missing tgt width or null')
+        empty=target[1]=='null' and not outputs
+        R=bits(f.ret);T=1 if empty else (8*outputs[0][1] if target[1]=='null' else int(target[1]))
+        dest('r',R,'lift.call @L1 ('+', '.join(actual)+')')
         result='r'
-        if outputs:
+        if empty:
+            # A discarded return contributes no payload, even when non-void.
+            # The synthetic bit is always zero; the one call still delivers fault.
+            result=dest('p0',1,'lift.const.i1 0')
+        elif outputs:
             if len(outputs)!=1 or f.ret[0]!='void':raise d.Fail('§16.2 multiple payloads need an explicit slice selection')
             buf,size=outputs[0]
             if T>8*size or T>128:raise d.Fail('§16.2 payload slice width exceeds buffer/carrier')
