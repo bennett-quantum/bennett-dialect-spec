@@ -1,3 +1,62 @@
+## Round-5 final freeze — 2026-10-30
+
+**2598/2598 passed; 0 failed; 0 blocked/unavailable. Baseline 2514 → 2598.**
+Draft/full version `0.2.6` (`dialect-0.2.6;isa-0.8`); ISA grading target 0.8.
+59 checker unit tests and 4 legacy runtime tests pass headless.
+Code/spec/checker snapshot: `5b01a51ac216fa36a2c7d1cbb5f92aa73b491798`.
+Spec SHA-256: `4bbf697dd39e43c5c815864bcb27b502b47a047b18092a67ade466c858a05adc`.
+Checker/source file-set SHA-256: `19192e6ba7b92cd3f023091dc103a634739dc692f68315711375645407944fec`.
+Independent interpreter: `0b913dace5d69082dda28c85ce5dbb1aefb52cd2`; immutable source fingerprint:
+`c65b7590fd21e8de29ea81851ffdbef919a3bc91ba200de5b2ede348ae993c4e`. Dependency HEAD matched when the green gate ended.
+Machine receipt: `scripts/dialect_check.LAST-RUN.json`; full executed rows:
+`scripts/.tmp/round5-fixes-freeze.json`.
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 19 | 0 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 21 | 0 | 0 |
+| coverage | 125 | 0 | 0 |
+| driver | 1 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 21 | 0 | 0 |
+| hash | 8 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 20 | 0 | 0 |
+| native | 29 | 0 | 0 |
+| normalise | 37 | 0 | 0 |
+| parse | 691 | 0 | 0 |
+| recognise | 134 | 0 | 0 |
+| run-oracle | 21 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 57 | 0 | 0 |
+| step-check | 6 | 0 | 0 |
+| tdl | 10 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1376 | 0 | 0 |
+| **Total** | **2598** | **0** | **0** |
+
+All eight S0 findings and the GEP wording regression are resolved. No declines,
+partials, weakened expectations, removed examples, ISA edits or push. The checked
+ISA-4/ISA-12 dependency verdicts do not claim those capabilities landed in 0.8;
+newly exposed parameter/result accumulation is tracked by **b-dialect-spec-cbe**.
+
+The prior `scripts/.tmp/round5-isa-head-race.json` preserves the 2597/2598 run
+whose sole failure was an ISA HEAD-moved snapshot guard. Earlier development
+receipts retain the red witness/adapter failures; the green receipt above supersedes
+them. The guard was retained. The aborted intervening freeze used superseded
+text; final SHA above includes PT2 restored and the canonical GEP algorithm
+placed in §16.4. No normative source or checker file changed during the final
+successful freeze (source file hashes are in the machine receipt).
+
+Exact final command (scripts/.tmp existed):
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/round5-fixes-freeze.json
+```
+
 # Dialect 0.2 pre-flight checker progress
 
 ## Round-2 final freeze — 2026-10-29
