@@ -40,6 +40,16 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(d.collapse(v.normalise(self.block('normalise-in','n-narrow-lane')['body'])),
                          d.collapse(self.block('normalise-out','n-narrow-lane')['body']))
 
+    def test_round4_packed_store(self):
+        # Exercise the shared store path at a sub-byte boundary as well as i24.
+        source='define void @s(ptr %p) {\n store <8 x i1> <i1 1,i1 0,i1 0,i1 0,i1 0,i1 0,i1 0,i1 1>, ptr %p, align 1\n ret void\n}\n'
+        from dialect_state import run_native
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            driver='extern void s(void*);int main(void){uint8_t p[8]={0,170};s(p);printf("[%u,%u]\\n",p[0],p[1]);return 0;}'
+            for name,ir in (('source',source),('materialised',v.normalise(source))):
+                run_native(runner,'packed-store-'+name,ir,driver,[[129,170]])
+
     def test_round4_vector_memory(self):
         self.assertEqual(d.collapse(v.normalise(self.block('normalise-in','n-vector-i24')['body'])),
                          d.collapse(self.block('normalise-out','n-vector-i24')['body']))

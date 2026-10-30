@@ -220,6 +220,16 @@ class Normaliser:
             if i.op=='store' and re.search(r'<\d+ x ',b):
                 ps=d.split_top(b[6:]);t=d.parse_type(ps[0])[0];n=t[1];e=d.tstr(t[2]);p=d.typed_val(ps[1]);vals=get(d.typed_val(ps[0]),n,t[2])
                 al=re.search(r', align (\d+)',b);original=int(al[1]) if al else d.talign(t);out=[]
+                if t[2][0]=='int' and t[2][1]%8:
+                    ew=t[2][1];mw=(n*ew+7)//8*8;acc=None
+                    for k,value in enumerate(vals):
+                        lane=f'%nz.pack{k}.{r}';out.append(f'{lane} = zext {e} {value} to i{mw}')
+                        if k:
+                            shift=f'%nz.shift{k}.{r}';out.append(f'{shift} = shl i{mw} {lane}, {k*ew}');lane=shift
+                        if acc is not None:
+                            joined=f'%nz.or{k}.{r}';out.append(f'{joined} = or i{mw} {acc}, {lane}');lane=joined
+                        acc=lane
+                    out.append(f'store i{mw} {acc}, ptr {p}, align 1');return out
                 for k,value in enumerate(vals):
                     gt,off,align=memory_lane(t[2],p,k,original);q=f'%nz.p{k}.{r}'
                     out += [f'{q} = getelementptr {gt}, ptr {p}, i64 {off}',f'store {e} {value}, ptr {q}, align {align}']

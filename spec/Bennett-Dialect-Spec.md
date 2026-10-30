@@ -11,8 +11,8 @@ MAY are normative; *(non-normative)* explains. Mechanics this draft does not set
 **default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
 §25, each with the exact ISA change.
 
-**Versioning.** Dialect 0.2.5: markers 0.2, handles 0.2.5, regions 0.2.5, oracle-abi 0.2.5, tdl 0.2.5,
-effects 0.2.5, norm 0.2.5, map 0.2.5, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
+**Versioning.** Dialect 0.2.5: markers 0.2, handles 0.2.5, regions 0.2.5, oracle-abi 0.2.4, tdl 0.2.4,
+effects 0.2.4, norm 0.2.5, map 0.2.5, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
 The **full version string** (`0.2.5`) is the compatibility unit (§23): drafts are not compatible
 with each other.
 
@@ -2447,7 +2447,7 @@ define void @top(i64 %n) {
 BD-B-ISA12 @rec %h: qalloc in a reversible closure with no instance bound (recursive, live across the recursive call: E = infinity); cannot be hoisted to the CC caller; ISA 0.8 qreg.new is CC only; BLK-4 (new ISA-12) qreg.* in R
 ```
 
-## 8. The oracle interface (oracle-abi 0.2.5)
+## 8. The oracle interface (oracle-abi 0.2.4)
 
 `__bennett_oracle(f, budget, desc)` applies the lifted oracle of region function f, under the
 budget of §9, to the registers and classical values that the **descriptor** `desc` binds to f's
@@ -3443,7 +3443,7 @@ it is neither static nor a bitwise copy of a launch argument, and no launch-time
 covers it. Each wire of `%c` measured 1 is reset by an `x`, so `%c` is clean at its `qfree`
 (ISA §3.3).
 
-## 10. Taint-driven lifting under control (tdl 0.2.5)
+## 10. Taint-driven lifting under control (tdl 0.2.4)
 
 NS §0: "a way to condition a region on a qubit. Everything else is inferred"; NS §3.1 taint row:
 a context-sensitive interprocedural analysis "over data dependence, control dependence and
@@ -3750,7 +3750,7 @@ genuine host calls have `fault 8` and a trapped coverage line. Release of outliv
 requires clean/restored state, not unconditional fault 8. Oracle device state stays private
 under §11.3, with declared outputs under §8.6.
 
-## 11. Effects and device models per tier (effects 0.2.5)
+## 11. Effects and device models per tier (effects 0.2.4)
 
 ### 11.1 Tier table
 
@@ -9940,9 +9940,9 @@ warning never changes a verdict.
 - The **full version string** of this document (`0.2.5`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other.
-- Round-4 semantic corrections revise `norm`, `handles`, `regions`, `oracle-abi`,
-  `tdl`, `effects` and `map` to `0.2.5`; unchanged marker/header, asm and corpus ABIs
-  remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
+- Round-4 semantic corrections revise `norm`, `handles`, `regions` and `map` to
+  `0.2.5`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
+  asm and corpus remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
   again; unchanged ISA-0.8 interface signatures retain their hashes. The map version
   is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
 - Every semantic change bumps the version; the reference objects and hashes of §16 depend on the
