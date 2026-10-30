@@ -706,6 +706,8 @@ def action_object(isa,path,name,widths,rows):
 
 def state_check(runner,block):
     a=block['attrs'];ident=a['state'];at=int(a['at'])
+    from dialect_round4 import STATES as ROUND4, check_state as check_round4
+    if ident in ROUND4:return check_round4(runner,block)
     from dialect_round3 import STATES as ROUND3, check_state as check_round3
     if ident in ROUND3:return check_round3(runner,block)
     from dialect_round2 import STATES, check_state

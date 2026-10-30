@@ -169,10 +169,60 @@ class Mapper:
             if prefix=='c':n='c'+str(constants);constants+=1
             else:n='t'+str(temps);temps+=1
             return assign(n,w,row,rows)
+        def gep(body,v,current):
+            ps=d.split_top(body[len("getelementptr"): ].strip());ty=d.parse_type(ps[0])[0];P=operand(d.typed_val(ps[1]),('ptr',),current);acc=P;delta=0;dynamic=[];ct=ty
+            for k,p in enumerate(ps[2:]):
+                idx=d.typed_val(p);ity=d.parse_type(p)[0]
+                if k==0:sz=d.tsize(ct)
+                elif ct[0] in ('arr','vec'):ct=ct[2];sz=d.tsize(ct)
+                elif ct[0]=='struct':delta+=d.gep_offset(ct,[0,int(idx)]);ct=ct[1][int(idx)];continue
+                else:raise d.Fail('§16.4 GEP scalar indexing')
+                if re.fullmatch(r'-?\d+',idx):
+                    raw=int(idx)%(1<<bits(ity));signed=raw-(1<<bits(ity)) if raw>>(bits(ity)-1) else raw;delta+=signed*sz
+                else:dynamic.append((idx,ity,sz))
+            # GEP's arithmetic width is distinct from its pointer carrier.
+            space=re.search(r'addrspace\((\d+)\)',ps[1]);space=space[1] if space else '0'
+            layout=re.search(r'target datalayout = "([^"]+)"',self.m.text)
+            widths_by_space={}
+            for match in re.finditer(r'(?:^|-)p(\d*):(\d+):(\d+)(?::(\d+))?(?::(\d+))?(?=-|$)',layout[1] if layout else ''):
+                widths_by_space[match[1] or '0']=(int(match[2]),int(match[5] or match[2]))
+            pw,iw=widths_by_space.get(space,widths_by_space.get('0',(64,64)))
+            if iw<pw:
+                acc=fresh('t',iw,f'lift.trunc.i{iw} '+P,current)
+                for idx,ity,sz in dynamic:
+                    I=operand(idx,ity,current)
+                    if bits(ity)!=iw:I=fresh('t',iw,'lift.'+('sext' if bits(ity)<iw else 'trunc')+f'.i{iw} '+I,current)
+                    if sz!=1:
+                        c=fresh('c',iw,f'lift.const.i{iw} {sz%(1<<iw)}',current);I=fresh('t',iw,f'lift.mul {I} {c}',current)
+                    acc=fresh('t',iw,f'lift.add {acc} {I}',current)
+                if delta%(1<<iw):
+                    c=fresh('c',iw,f'lift.const.i{iw} {delta%(1<<iw)}',current);acc=fresh('t',iw,f'lift.add {acc} {c}',current)
+                low=fresh('t',pw,f'lift.zext.i{pw} '+acc,current)
+                mask=fresh('c',pw,f'lift.const.i{pw} {((1<<pw)-1)^((1<<iw)-1)}',current)
+                high=fresh('t',pw,f'lift.and {P} {mask}',current)
+                assign(v,pw,f'lift.or {high} {low}',current)
+                return
+            for k,(idx,ity,sz) in enumerate(dynamic):
+                I=operand(idx,ity,current)
+                if bits(ity)!=64:I=fresh('t',64,'lift.'+('sext' if bits(ity)<64 else 'trunc')+'.i64 '+I,current)
+                if sz!=1:
+                    c=fresh('c',64,f'lift.const.i64 {sz}',current);I=fresh('t',64,f'lift.mul {I} {c}',current)
+                last=k==len(dynamic)-1 and delta==0
+                acc=assign(v,64,f'lift.add {acc} {I}',current) if last else fresh('t',64,f'lift.add {acc} {I}',current)
+            if delta:
+                C=fresh('c',64,'lift.const.i64 '+str(delta%(1<<64)),current);assign(v,64,f'lift.add {acc} {C}',current)
+            elif not dynamic:assign(v,64,'lift.mov '+P,current)
         def operand(v,ty,rows):
             if v in params:return params[v]
             if v in values:return values[v]
             w=bits(ty)
+            for cast in ('inttoptr','ptrtoint'):
+                if v.startswith(cast+' ('):
+                    src,dst=v[len(cast)+2:-1].rsplit(' to ',1);st=d.parse_type(src)[0]
+                    x=operand(d.typed_val(src),st,rows)
+                    return x if bits(st)==w else fresh('t',w,'lift.'+('zext' if bits(st)<w else 'trunc')+f'.i{w} '+x,rows)
+            if v.startswith('getelementptr ('):
+                n='expr'+str(len(widths));gep('getelementptr '+v[len('getelementptr ('):-1],n,rows);return n
             if v.startswith('@'):
                 n=v[1:]
                 if n in self.arena:
@@ -234,25 +284,7 @@ class Mapper:
                     if op in ('ptrtoint','inttoptr','bitcast','addrspacecast'):operation='mov' if bits(ty)==bits(dt) else 'trunc' if bits(ty)>bits(dt) else 'zext'
                     assign(v,bits(dt),'lift.'+operation+('' if operation=='mov' else '.i'+str(bits(dt)))+' '+A,current)
                 elif op=='getelementptr':
-                    ps=d.split_top(body[len(op):].strip());ty=d.parse_type(ps[0])[0];P=operand(d.typed_val(ps[1]),('ptr',),current);acc=P;delta=0;dynamic=[];ct=ty
-                    for k,p in enumerate(ps[2:]):
-                        idx=d.typed_val(p);ity=d.parse_type(p)[0]
-                        if k==0:sz=d.tsize(ct)
-                        elif ct[0] in ('arr','vec'):ct=ct[2];sz=d.tsize(ct)
-                        elif ct[0]=='struct':delta+=d.gep_offset(ct,[0,int(idx)]);ct=ct[1][int(idx)];continue
-                        else:raise d.Fail('§16.4 GEP scalar indexing')
-                        if re.fullmatch(r'-?\d+',idx):delta+=int(idx)*sz
-                        else:dynamic.append((idx,ity,sz))
-                    for k,(idx,ity,sz) in enumerate(dynamic):
-                        I=operand(idx,ity,current)
-                        if bits(ity)!=64:I=fresh('t',64,'lift.'+('sext' if bits(ity)<64 else 'trunc')+'.i64 '+I,current)
-                        if sz!=1:
-                            c=fresh('c',64,f'lift.const.i64 {sz}',current);I=fresh('t',64,f'lift.mul {I} {c}',current)
-                        last=k==len(dynamic)-1 and delta==0
-                        acc=assign(v,64,f'lift.add {acc} {I}',current) if last else fresh('t',64,f'lift.add {acc} {I}',current)
-                    if delta:
-                        C=fresh('c',64,'lift.const.i64 '+str(delta%(1<<64)),current);assign(v,64,f'lift.add {acc} {C}',current)
-                    elif not dynamic:assign(v,64,'lift.mov '+P,current)
+                    gep(body,v,current)
                 elif op=='load':
                     ps=d.split_top(body[5:]);ty=d.parse_type(ps[0])[0];P=operand(d.typed_val(ps[1]),('ptr',),current);w=bits(ty);current.append(f'lift.boundscheck {P} {w//8}');assign(v,w,f'lift.load.i{w} {P}',current)
                 elif op=='store':

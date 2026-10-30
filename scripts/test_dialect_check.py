@@ -16,6 +16,14 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    def test_round4_gep_index(self):
+        from dialect_round4 import check_state
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
+            check_state(runner,self.block('state','n-gep-index'))
+            b=self.block('state','n-gep-index')
+            with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body'].replace('8589934591,1,4294967296','8589934591,1,8589934592')))
+
     def test_round4_subtraction(self):
         self.assertEqual(d.collapse(v.normalise(self.block('normalise-in','n-wide-sub')['body'])),
                          d.collapse(self.block('normalise-out','n-wide-sub')['body']))

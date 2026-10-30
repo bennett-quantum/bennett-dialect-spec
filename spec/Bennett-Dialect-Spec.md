@@ -4682,6 +4682,64 @@ when widths agree (in particular an i1 carry into an i1 top limb needs no zext):
 - a wide parameter or result of an internal device function becomes L limb parameters or an
   aggregate of limbs.
 
+**Pointer-index width witness.** With I=32 and pw=64, index 2^32 becomes
+zero. Adding one to low 0xffffffff wraps to zero without carrying into the
+high pointer bits. These materialised pairs are unchanged by normalisation;
+the state witness executes their §16.4 mapped objects, and native executes LLVM.
+
+```llvm normalise-in=n-gep-index
+target datalayout = "e-p:64:64:64:32"
+define i64 @f(i64 %i) {
+entry:
+  %p = inttoptr i64 4294967296 to ptr
+  %q = getelementptr i8, ptr %p, i64 %i
+  %r = ptrtoint ptr %q to i64
+  ret i64 %r
+}
+define i64 @g(i64 %base, i64 %i) {
+entry:
+  %p = inttoptr i64 %base to ptr
+  %q = getelementptr i8, ptr %p, i64 %i
+  %r = ptrtoint ptr %q to i64
+  ret i64 %r
+}
+define i64 @h() {
+entry:
+  ret i64 ptrtoint (ptr getelementptr (i8, ptr inttoptr (i64 8589934591 to ptr), i64 1) to i64)
+}
+```
+
+```llvm normalise-out=n-gep-index
+target datalayout = "e-p:64:64:64:32"
+define i64 @f(i64 %i) {
+entry:
+  %p = inttoptr i64 4294967296 to ptr
+  %q = getelementptr i8, ptr %p, i64 %i
+  %r = ptrtoint ptr %q to i64
+  ret i64 %r
+}
+define i64 @g(i64 %base, i64 %i) {
+entry:
+  %p = inttoptr i64 %base to ptr
+  %q = getelementptr i8, ptr %p, i64 %i
+  %r = ptrtoint ptr %q to i64
+  ret i64 %r
+}
+define i64 @h() {
+entry:
+  ret i64 ptrtoint (ptr getelementptr (i8, ptr inttoptr (i64 8589934591 to ptr), i64 1) to i64)
+}
+```
+
+```text native=n-gep-index
+f(4294967296)=4294967296; code=0
+g(4294967296,4294967296)=4294967296; code=0
+```
+
+```text state=n-gep-index at=0
+{"f":[[4294967296,4294967296,0],[-1,8589934591,0]],"g":[[8589934591,1,4294967296,0],[4294967296,4294967296,4294967296,0]],"h":[[4294967296,0]]}
+```
+
 ### 12.8 Integer intrinsics (N27)
 
 | Intrinsic | Expansion |
@@ -6339,7 +6397,7 @@ flattened field in field order before packing. A non-constant operand reads the 
 | `zext/sext/trunc a to iM` | `v = lift.<op>.iM A` |
 | `ptrtoint` to iM, `inttoptr` from iM | M = pw: `v = lift.mov A`; ptrtoint M < pw or inttoptr M > pw: `lift.trunc`; otherwise `lift.zext` (LangRef zero-extends) |
 | `bitcast` of equal-width integer/FP carriers or pointers, `addrspacecast` | `v = lift.mov A`; FP constants materialise their carrier bit pattern |
-| `getelementptr T, ptr p, idx…` | acc := P; for each non-constant index in order: `t = lift.sext.i<pw> I` (or `lift.trunc`, omitted when the index is pw wide); if its element size s ≠ 1, `c = lift.const.i<pw> s` and `t′ = lift.mul t c`; `acc′ = lift.add acc t′`; then, if the constant byte offset Δ of the constant indices (mod 2^pw) ≠ 0, `c = lift.const.i<pw> Δ` and `lift.add acc c`. The last row writes v; with no row at all, `v = lift.mov P` |
+| `getelementptr T, ptr p, idx…` | Let I be the datalayout pointer-index width for p's address space, defaulting to its pointer width when omitted. Sign-extend/truncate each sequential index to I, multiply by its datalayout allocation size modulo 2^I, and sign-extend/truncate structure offsets to I. Accumulate offsets modulo 2^I and add to the low I bits of P modulo 2^I; preserve all higher pointer bits. This also applies to constant-expression GEPs. Canonical rows for I=pw retain the index-order multiply/add sequence followed by the accumulated constant offset Δ mod 2^I (zero Δ omitted; no row gives `v = lift.mov P`). For I<pw, start with `lift.trunc.i<I> P`, use the same sequence at width I, then `lift.zext.i<pw>` the low result; AND P with the pw-bit mask having ones above I, and OR the preserved high and new low parts into v. Each constant/cast/multiply/add/mask/OR is an ordinary charged row |
 | `load T, ptr p` (T = iN with N a multiple of 8, or `ptr`; N ≤ 128 after §12; FP uses its carrier) | `lift.boundscheck P <N/8>`; `v = lift.load.iN P` |
 | `store v, ptr p` | `lift.boundscheck P <N/8>`; `lift.store.iN P V` |
 | `insertvalue`, `extractvalue` | `lift.mov` of the depth-first flattened field locations (one per scalar field); unchanged fields remain their input locations |
@@ -8069,6 +8127,13 @@ the parent's frame address; `llvm.structured.alloca` is an alloca.
 
 ### 17.4 CC and R lowering
 
+Every GEP, including constant expressions, uses §16.4's datalayout pointer-index
+width and preserves higher pointer bits. CC/R express its truncations, scaled
+modular offsets and high/low recombination with ordinary ISA integer operations.
+This follows [LangRef GEP semantics](https://llvm.org/docs/LangRef.html#getelementptr-instruction)
+and [datalayout pointer indices](https://llvm.org/docs/LangRef.html#data-layout),
+not full-width pointer addition when I<pw; differing widths do not reject a layout.
+
 The lowering of device CC and R variants to ISA CC and R (ISA §4.1) is plugin-defined and
 constrained by §18.7, with these dialect rules: LLVM integer and memory instructions map to the
 ISA instructions of the same name (phis to block parameters, ISA §3.4); the primitives to `alloc`,
@@ -8194,7 +8259,8 @@ whole-program entry on the materialised module over a state Σ = (C, Q, H, G, K,
 
 - **C**, the classical state: LLVM's semantics of the materialised module (LangRef), with every
   remaining choice fixed by §12–§14 and the fault outcomes of §17.5; it includes the shadows of
-  the arena (TDL-4);
+  the arena (TDL-4). In particular GEP uses the pointer-index width, as fixed
+  in §16.4 and §17.4, also in constant expressions;
 - **Q**, the quantum state of the ISA formal model (ISA §14.2): a unit vector over the live wires
   in allocation order, including the arena's wires (TDL-4);
 - **H**, the handle table: for each handle, its wires, whether it is live, and the
@@ -9853,6 +9919,7 @@ compute expected artefacts only (P-3).
 | `tdl`, `tdl-overwrite`, `tdl-effect`, `tdl-angle` with `tdl=` and `state=` blocks | TDL-1–TDL-12, §18.2–§18.4 | parse, recognise, tdl, run-action | LLVM; Python TDL; isa-ref `run-action` (requested) |
 | `effect-console-r`, `effect-console-cc` | §11.1, §11.2 | parse, recognise, run-cc, reverse | isa-ref `run-cc`, `reverse` (requested) |
 | `n-flags`, `n-shift`, `n-undef`, `n-query`, `n-trap` | N1–N8, N10, N11, N14 | parse, normalise | LLVM; Python normaliser |
+| `n-gep-index` (+ `native=`, `state=`) | §16.4 pointer-index widths | parse, normalise, native, state | LLVM; clang 18/23; Rust mapped run-oracle |
 | `n-wide-sub` (+ `native=`) | N22 subtraction borrows | parse, normalise, native | LLVM; clang 18/23 |
 | `n-vector`, `n-wideint`, `n-shadow-stack`, `n-memintrinsics`, `n-intrinsics`, `n-atomic` with `native=` | N9, N21, N22, N24, N26, N27 | parse, normalise, native | LLVM; Python; clang + seeds |
 | `residual-nsw`, `residual-clean` | §12.4 V1 | validate | Python |

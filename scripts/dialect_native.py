@@ -41,6 +41,10 @@ def cases(ident,text):
                 out.append(f'printf("%u\\n",f({x}));');expected.append(int(want))
         else:
             decl='extern uint32_t f(void);\n';out=['printf("%u\\n",f());'];expected=[int(re.fullmatch(r'f=(\d+)',text.strip())[1])]
+    elif ident=='n-gep-index':
+        for j,(fn,args,want) in enumerate(re.findall(r'([fg])\(([-\d,]+)\)=(\d+); code=0',text)):
+            decl+=f'extern uint64_t probe{j}(void);\n'
+            out.append(f'printf("%llu\\n",(unsigned long long)probe{j}());');expected.append(int(want))
     elif ident in ('n-shadow-stack' ,'n-varargs','n-intrinsics','n-eh'):
         name={'n-shadow-stack':'a','n-varargs':'top','n-intrinsics':'k','n-eh':'eh'}[ident]
         ret='int64_t' if ident=='n-shadow-stack' else 'int32_t'
@@ -129,6 +133,16 @@ def check(runner,block):
                 text=re.sub(r'\bdefine internal\b','define',text)
                 if ident=='fp-aggregate':
                     text += '\ndefine i64 @packed(double %x) {\n %r = call {i8, i32} @p(double %x)\n %a = extractvalue {i8, i32} %r, 0\n %b = extractvalue {i8, i32} %r, 1\n %aa = zext i8 %a to i64\n %bb = zext i32 %b to i64\n %hi = shl i64 %bb, 8\n %v = or i64 %aa, %hi\n ret i64 %v\n}\n'
+                if ident=='n-gep-index':
+                    # clang replaces custom layouts with its target's layout. Fold
+                    # constant calls with opt first, while the declared layout holds.
+                    for j,(fn,args,_) in enumerate(re.findall(r'([fg])\(([-\d,]+)\)=(\d+); code=0',body)):
+                        text+=f'\ndefine i64 @probe{j}() {{\n %v = call i64 @{fn}('+', '.join('i64 '+x for x in args.split(','))+')\n ret i64 %v\n}\n'
+                    src.write_text(d.with_decls(text))
+                    text=command([runner.tc[major]/'opt','-S','-passes=inline,instcombine',src,'-o','-'])
+                    for j in range(len(expected)):
+                        probe=re.search(r'define i64 @probe'+str(j)+r'\(\).*?^}',text,re.S|re.M)
+                        if not probe or not re.search(r'ret i64 -?\d+',probe[0]):raise d.Fail('layout-sensitive native probe did not fold')
                 src.write_text(d.with_decls(text))
             # LLVM 18 verifies VP selectors but its x86 backend cannot legalise
             # them. LLVM 23 independently lowers the original VP module; both

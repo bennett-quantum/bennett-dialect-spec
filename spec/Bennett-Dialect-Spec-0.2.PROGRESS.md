@@ -659,3 +659,5 @@ No decline, partial resolution, scope narrowing or push.
 ## Round-4 fixes — b-dialect-spec-5t7
 
 SOL-R4-01 resolved: explicit two-stage borrow; n-wide-sub exact pair and clang 18/23 native vectors. Red unsupported sub → green exact unit regression. Full version/parser/manifest 0.2.5; final freeze follows after all five blockers.
+
+SOL-R4-02 resolved: index-width GEP rows and CC/R/C agreement; n-gep-index Rust mapping executes truncation, negative offset, low wrap and constant-expression wrap. Native LLVM-fold/clang 18/23 checks the council truncation vector (clang overwrites custom layouts; LLVM18 constant folding does not correctly fold wrap). Red old-map 8589934592 vs 4294967296; green source-mapped interpreter regression with mutation. SOL-R4-01 commit bec39eb / response fc97aa7.
