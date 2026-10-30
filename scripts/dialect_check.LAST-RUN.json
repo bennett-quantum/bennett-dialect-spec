@@ -1,12 +1,12 @@
 {
-  "spec_commit": "5b01a51ac216fa36a2c7d1cbb5f92aa73b491798",
-  "checker_commit": "5b01a51ac216fa36a2c7d1cbb5f92aa73b491798",
-  "spec_sha256": "4bbf697dd39e43c5c815864bcb27b502b47a047b18092a67ade466c858a05adc",
-  "dialect_version": "0.2.6",
+  "spec_commit": "8c7fb5264384c53e8659b101aa30c4416ef4d4ee",
+  "checker_commit": "8c7fb5264384c53e8659b101aa30c4416ef4d4ee",
+  "spec_sha256": "d183190bd4d8f924e617b2de570beda317175cb388b2bead635bcd847275e09c",
+  "dialect_version": "0.2.7",
   "isa_grading_target": "0.8",
-  "interpreter_commit": "0b913dace5d69082dda28c85ce5dbb1aefb52cd2",
-  "interpreter_source_sha256": "c65b7590fd21e8de29ea81851ffdbef919a3bc91ba200de5b2ede348ae993c4e",
-  "checker_source_snapshot_sha256": "19192e6ba7b92cd3f023091dc103a634739dc692f68315711375645407944fec",
+  "interpreter_commit": "0bc842653c2cbf860fec90a79ac2115d3d5e11fa",
+  "interpreter_source_sha256": "1d4920cd86333b6902202e1472245b917dd1340a62c7166aaadc35a03784743d",
+  "checker_source_snapshot_sha256": "90c2c9374896f2ef8ed3abd796348ad6b2afedaf21179ad29b01d3ab5857e875",
   "counts": {
     "asm": {
       "passed": 1,
@@ -24,7 +24,7 @@
       "blocked": 0
     },
     "check": {
-      "passed": 21,
+      "passed": 22,
       "failed": 0,
       "blocked": 0
     },
@@ -34,7 +34,7 @@
       "blocked": 0
     },
     "driver": {
-      "passed": 1,
+      "passed": 2,
       "failed": 0,
       "blocked": 0
     },
@@ -49,7 +49,7 @@
       "blocked": 0
     },
     "hash": {
-      "passed": 8,
+      "passed": 9,
       "failed": 0,
       "blocked": 0
     },
@@ -59,32 +59,32 @@
       "blocked": 0
     },
     "map": {
-      "passed": 20,
+      "passed": 21,
       "failed": 0,
       "blocked": 0
     },
     "native": {
-      "passed": 29,
+      "passed": 30,
       "failed": 0,
       "blocked": 0
     },
     "normalise": {
-      "passed": 37,
+      "passed": 39,
       "failed": 0,
       "blocked": 0
     },
     "parse": {
-      "passed": 691,
+      "passed": 716,
       "failed": 0,
       "blocked": 0
     },
     "recognise": {
-      "passed": 134,
+      "passed": 138,
       "failed": 0,
       "blocked": 0
     },
     "run-oracle": {
-      "passed": 21,
+      "passed": 22,
       "failed": 0,
       "blocked": 0
     },
@@ -99,7 +99,7 @@
       "blocked": 0
     },
     "state": {
-      "passed": 57,
+      "passed": 61,
       "failed": 0,
       "blocked": 0
     },
@@ -119,43 +119,47 @@
       "blocked": 0
     },
     "xrefs": {
-      "passed": 1376,
+      "passed": 1388,
       "failed": 0,
       "blocked": 0
     }
   },
-  "total": 2598,
-  "passed": 2598,
+  "baseline_total": 2598,
+  "total": 2651,
+  "passed": 2651,
   "failed": 0,
   "blocked": 0,
-  "checker_unit_tests": 59,
+  "checker_unit_tests": 67,
   "runtime_unit_tests": 4,
   "rows": "scripts/.tmp/round5-fixes-freeze.json",
   "source_files": {
-    "spec/Bennett-Dialect-Spec.md": "4bbf697dd39e43c5c815864bcb27b502b47a047b18092a67ade466c858a05adc",
-    "SPEC_VERSIONS.toml": "fb2ab267ec1e02b02bf3ba2c0032985ba954e487d6c25706b04f8632ba6dc576",
+    "SPEC_VERSIONS.toml": "e077001817f78cb6fa31a8ee968bfcf9cd0ddb276ba8676ff00472bcc0f43331",
     "scripts/dialect_bounds.py": "169972367a433bc845558214f7d55bba2a09decd3d5c539eb5e01dbcc2234d83",
     "scripts/dialect_cc.py": "802fa64ef42cc0bcec5d2837bdf0ab52c44cbd7301b87a6fe9cc1a13451e5bc8",
     "scripts/dialect_check.py": "bc5ca75a72cbcb1cb4cfd7bba15024ff49bdce86717b0c61ae95ab6cd6757974",
-    "scripts/dialect_check_v02.py": "76b5f70fb942ac0844fcf7c492307054ea83a32daf267188bcae2e33ace545f0",
+    "scripts/dialect_check_v02.py": "d5d995bd3a79c39e00420cc3a6950b39f0fcc0c18d4dcb9076a3c9d670b9f705",
     "scripts/dialect_driver.py": "af83d67b92b7064a9e0e2bfe9c55a045b59cffdef5388fff038350627fd14f55",
-    "scripts/dialect_flow.py": "21f737edec881e47ce9df8350fa20c10fdf0a943c3a4f9f446ff0aa94de7e79b",
-    "scripts/dialect_map.py": "df2653712332b7bc14c2dba91d4ecf1be42d2d58b667166602e31398a9762bd0",
-    "scripts/dialect_meta.py": "d4e6d3b8bf7b0ef967d66f862054b0aaa456cc879e50d550ec77f593338351eb",
-    "scripts/dialect_native.py": "c377d11ccd42daaa3522b04bc96327987f71d851574591c9f21eab54bdfe9d76",
-    "scripts/dialect_normalise.py": "d6af6bc9ac2d2f347329b86b12d61a7929bc25e4cf24585c802bc7ea6d391239",
+    "scripts/dialect_flow.py": "93b6a5e69d73409d422e9313d10b20a730d2c7cd3eab30de3626e687031f330a",
+    "scripts/dialect_map.py": "76d1b10ffddbf7b51cd62466c6e8a00e4b5c1c31c4946235322bfc49c67e8f55",
+    "scripts/dialect_meta.py": "2f7cd48779ce49b99a50e0e0b25098a78f6fa268c550cd5cc9592391d66432c6",
+    "scripts/dialect_native.py": "5e5aa93e189a0aa98be7e50e3fc71ed29547f5b40566664f29e071190e458841",
+    "scripts/dialect_normalise.py": "342f52ae75d560b3870c9e3934e4afe59518dd290986cab632219c3c97a7e37e",
     "scripts/dialect_round2.py": "ee01a9a8c9bbba071f3a90f47c05444397fe584721d9f561b9ab997e550d0d1f",
     "scripts/dialect_round3.py": "b2ac14dedab5e3659085c3ad669aa1e60abd3b2cf41d10c9def0533eb77d0387",
     "scripts/dialect_round4.py": "8371fa5212b9f3556ce21e6f3b8e5700a85763653d8716d59db0b7743977ff61",
     "scripts/dialect_round5.py": "7b023195bb9225d2e768f13e899e50a9bb3dd86cb68c6ad41f015aba2af1ec34",
+    "scripts/dialect_round6.py": "e1063f20c4e0df4b32e2474c4aad61aacbf00f908b827af4b39f55b6176460a3",
     "scripts/dialect_state.py": "af1a99288b761833db91c6e4634074d3290bb6628bca5d11affa22c387a90eef",
     "scripts/dialect_tdl.py": "e4d5b4cdf85658799c9ed762d8c4aa2d6e8c65241c36c137c44a70084783a854",
     "scripts/dialect_wide.py": "1e776972c918c1e810746f465abe5aeac2db7e171be8ab126b30e9ee573083bf",
-    "scripts/test_dialect_check.py": "22bcb758534b3e9c023f571f3d12e976b51dfb6b3f8602225f02fb9b4c797bb7",
+    "scripts/test_dialect_check.py": "539c4eed7c0058a6d6962bcf12bf0196b0d3dbc1f7e70f071115392211843a4a",
+    "spec/Bennett-Dialect-Spec.md": "d183190bd4d8f924e617b2de570beda317175cb388b2bead635bcd847275e09c",
     "spec/seeds/coherence.c": "c61990e95a2308157d25d15f0a91a8fe1091e43fbe842f07a777f8a2bf7462af",
     "spec/seeds/contexts.c": "17346e9d66ebdabe7987fb15a26cf37bf6d90daab60e35d0c798b948c3a6aaf2",
     "spec/seeds/devices.c": "ebab3802d530c993a35ae50b5eb296a84c512b0882fe0345e9c95b8dfbb9f203",
     "spec/seeds/runtime.c": "0a66e5e7fca7948338c5a20121537c07886072868882c92060a203e1a03661b5",
     "spec/seeds/softfloat.c": "de3f03231c39b2286568f6e913ea8f7aa8c7f64bae3af37db5b0f172c38d9ed3"
-  }
+  },
+  "source_manifest_unchanged_during_freeze": true,
+  "dependency_head_matched_at_validation_end": true
 }

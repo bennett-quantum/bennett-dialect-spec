@@ -1,3 +1,56 @@
+## Round-6 final freeze — 2026-10-30
+
+**2651/2651 passed; 0 failed; 0 blocked/unavailable. Baseline 2598 → 2651.**
+Draft/full version `0.2.7` (`dialect-0.2.7;isa-0.8`); ISA grading target 0.8.
+67 checker unit tests and 4 legacy runtime tests pass headless.
+Code/spec/checker snapshot: `8c7fb5264384c53e8659b101aa30c4416ef4d4ee`.
+Spec SHA-256: `d183190bd4d8f924e617b2de570beda317175cb388b2bead635bcd847275e09c`.
+Checker/source file-set SHA-256: `90c2c9374896f2ef8ed3abd796348ad6b2afedaf21179ad29b01d3ab5857e875`.
+Independent interpreter: `0bc842653c2cbf860fec90a79ac2115d3d5e11fa`; immutable source fingerprint:
+`1d4920cd86333b6902202e1472245b917dd1340a62c7166aaadc35a03784743d`. Final dependency HEAD matched when validation ended.
+Normative/checker source manifest was unchanged during the final freeze.
+Machine receipt: `scripts/dialect_check.LAST-RUN.json`; full executed rows:
+`scripts/.tmp/round5-fixes-freeze.json` (the inherited command's historical filename).
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 19 | 0 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 22 | 0 | 0 |
+| coverage | 125 | 0 | 0 |
+| driver | 2 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 21 | 0 | 0 |
+| hash | 9 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 21 | 0 | 0 |
+| native | 30 | 0 | 0 |
+| normalise | 39 | 0 | 0 |
+| parse | 716 | 0 | 0 |
+| recognise | 138 | 0 | 0 |
+| run-oracle | 22 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 61 | 0 | 0 |
+| step-check | 6 | 0 | 0 |
+| tdl | 10 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1388 | 0 | 0 |
+| **Total** | **2651** | **0** | **0** |
+
+All four round-6 blockers resolved; no declines, partials, weakened expectations,
+removed examples, ISA edits or push. Existing §25.1 ISA-4/ISA-1/ISA-12/ISA-7
+blocked-verdict checks remain explicit dependency checks, not claims that ISA 0.8
+implements those capabilities. No new ISA change is needed for this round.
+Development runs and their superseded snapshots are not freeze receipts.
+
+Exact final command (scripts/.tmp existed):
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/round5-fixes-freeze.json
+```
+
 ## Round-5 final freeze — 2026-10-30
 
 **2598/2598 passed; 0 failed; 0 blocked/unavailable. Baseline 2514 → 2598.**
