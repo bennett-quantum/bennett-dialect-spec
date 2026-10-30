@@ -1,11 +1,11 @@
 {
-  "spec_commit": "8d1517a6586a506488c4af7a9c35800c7053b508",
-  "checker_commit": "8d1517a6586a506488c4af7a9c35800c7053b508",
-  "spec_sha256": "2ba040956ac8e22d11ff2bd4655d908b08de9d44564913a8b4f12c8a522fa156",
-  "dialect_version": "0.2.4",
+  "spec_commit": "3e4c27e7fcdd21b59f32bde83b3d5f1e9441568f",
+  "checker_commit": "3e4c27e7fcdd21b59f32bde83b3d5f1e9441568f",
+  "spec_sha256": "c19dc84c476fe9a3c6ebb9cb621efd540a04aad05dd675a8ca78f3fd7f452d9a",
+  "dialect_version": "0.2.5",
   "isa_grading_target": "0.8",
-  "interpreter_commit": "92c26af045b816f5ef1e283a7b734aa244d8f320",
-  "interpreter_source_sha256": "2dd454deeb8352a0b0e64ac1e61ddcc346ae5e2bdea59bd60440d35654946050",
+  "interpreter_commit": "9e4984fc47587aa2dd501038b011dfc137449aae",
+  "interpreter_source_sha256": "320982f83c264f805f06d2dc9730d87ba19e247d3485a40e11e8c4efc8b544cc",
   "counts": {
     "asm": {
       "passed": 1,
@@ -13,7 +13,7 @@
       "blocked": 0
     },
     "blocker": {
-      "passed": 16,
+      "passed": 17,
       "failed": 0,
       "blocked": 0
     },
@@ -63,22 +63,22 @@
       "blocked": 0
     },
     "native": {
-      "passed": 19,
+      "passed": 24,
       "failed": 0,
       "blocked": 0
     },
     "normalise": {
-      "passed": 29,
+      "passed": 33,
       "failed": 0,
       "blocked": 0
     },
     "parse": {
-      "passed": 624,
+      "passed": 651,
       "failed": 0,
       "blocked": 0
     },
     "recognise": {
-      "passed": 130,
+      "passed": 131,
       "failed": 0,
       "blocked": 0
     },
@@ -98,7 +98,7 @@
       "blocked": 0
     },
     "state": {
-      "passed": 52,
+      "passed": 54,
       "failed": 0,
       "blocked": 0
     },
@@ -118,27 +118,15 @@
       "blocked": 0
     },
     "xrefs": {
-      "passed": 1353,
+      "passed": 1361,
       "failed": 0,
       "blocked": 0
     }
   },
-  "total": 2466,
+  "total": 2514,
+  "passed": 2514,
   "failed": 0,
   "blocked": 0,
-  "checker_unit_tests": 44,
-  "legacy_runtime_tests": 4,
-  "round3_state_witnesses": {
-    "co-loop-identity": "passed",
-    "co-loop-adj-overwritten": "passed",
-    "deferred-channel-adj-place": "passed",
-    "co-observe-write-observe": "passed",
-    "handle-setjmp-interproc": "passed",
-    "shadow-stack-liveness": "passed",
-    "handle-stale-generation": "passed",
-    "oracle-empty-output": "passed"
-  },
-  "report": "scripts/.tmp/round3-fixes-freeze.json",
-  "report_sha256": "33dc01facaddfe85eb4bec00017ced7814a9ed02a24648b3e0c7f819b4124486",
-  "notes": "All ten round-3 S0 findings and both regressions resolved. Named ISA dependencies remain passing blocker verdicts, not claims of implementing ISA-0.9 capabilities. Receipt covers the indexed examples and independent executors, not general source-to-object equivalence."
+  "checker_unit_tests": 50,
+  "runtime_unit_tests": 4
 }

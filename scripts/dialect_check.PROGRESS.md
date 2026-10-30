@@ -656,3 +656,74 @@ R4-CODEX-02 resolved: W=max(K,ceil(log2(L+1))), exact lane constants; n-narrow-l
 BD3-R4-1 resolved: entry-boundary persistence forces infinity before per-entry TC/E; BLK-1/BLK-4 with existing fallback. handle-cross-entry recogniser red accept/N=1 → blocked:BD-B-ISA4; native actual LLVM across two entries has two distinct cleanly freed handles, no trap; mutation fails. Guaranteed-free and caller-free positives retained, R variant gets ISA12. R4-CODEX-02 commit 6663d8a / response ac2c64e. Full unit/gate verification follows.
 
 Final review: the new shared vector-store path also needs packed sub-byte stores. A native source/materialised i1 boundary regression failed red (wrong byte range), then passed after packing eight bits into one byte, preserving the following sentinel. This is a supplemental R4-CODEX-01 check; all original witnesses remain. Preserve unchanged oracle-abi/tdl/effects subversions at 0.2.4; changed norm/handles/regions/map and full version are 0.2.5. BD3-R4-1 commit bdfa241 / response ba395b6. Initial whole gate 2514/2514; final rerun follows this review fix.
+
+## Round-4 final freeze — 2026-10-30
+
+**2514/2514 passed; 0 failed; 0 blocked/unavailable.**
+Full version `0.2.5` (`dialect-0.2.5;isa-0.8`); ISA grading target 0.8.
+50 checker unit tests and 4 legacy runtime tests pass headless.
+Code/spec snapshot: `3e4c27e7fcdd21b59f32bde83b3d5f1e9441568f`.
+Spec SHA-256: `c19dc84c476fe9a3c6ebb9cb621efd540a04aad05dd675a8ca78f3fd7f452d9a`.
+Independent interpreter: `9e4984fc47587aa2dd501038b011dfc137449aae`; immutable source fingerprint:
+`320982f83c264f805f06d2dc9730d87ba19e247d3485a40e11e8c4efc8b544cc`. Dependency HEAD matched at final verification.
+Machine receipt: `scripts/dialect_check.LAST-RUN.json`; full executed rows:
+`scripts/.tmp/round4-fixes-freeze.json`.
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 17 | 0 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 18 | 0 | 0 |
+| coverage | 125 | 0 | 0 |
+| driver | 1 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 21 | 0 | 0 |
+| hash | 5 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 17 | 0 | 0 |
+| native | 24 | 0 | 0 |
+| normalise | 33 | 0 | 0 |
+| parse | 651 | 0 | 0 |
+| recognise | 131 | 0 | 0 |
+| run-oracle | 18 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 54 | 0 | 0 |
+| step-check | 6 | 0 | 0 |
+| tdl | 10 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1361 | 0 | 0 |
+| **Total** | **2514** | **0** | **0** |
+
+
+| Blocker | Status | Dialect commit | Response commit |
+|---|---|---|---|
+| SOL-R4-01 | resolved | bec39eb | fc97aa7 |
+| SOL-R4-02 | resolved | 68d8f5b | a285b98 |
+| R4-CODEX-01 | resolved | 22d23e9 | 29c3944 |
+| R4-CODEX-02 | resolved | 6663d8a | ac2c64e |
+| BD3-R4-1 | resolved | bdfa241 | ba395b6 |
+
+Supplemental packed-store regression/subversion receipt: 3e4c27e / 399962b.
+No declines, partials, removed expectations, ISA edits or pushes. Named ISA
+blocker examples pass their specified dependency verdicts; zero unavailable
+checks does not claim ISA 0.8 gained dynamic register naming or R allocation.
+New witnesses execute: n-wide-sub (normalise/native), n-gep-index
+(normalise/native/state with Rust mapping), n-vector-i24 (normalise/native),
+n-narrow-lane (normalise/native), handle-cross-entry (recognise/blocker/state).
+Existing n-dynamic-lane output also executes natively at 0,1,2,-1.
+The intermediate freeze failed one check because dependency HEAD moved during
+its build; `scripts/.tmp/round4-freeze-head-race.json` preserves that result.
+The full final rerun above supersedes it, with the guard retained unchanged.
+External LLVM18 low-bit-wrap folding discrepancy is filed as
+**b-dialect-spec-co5** for maintainer/upstream follow-up. The Rust-mapped wrap
+and constant-expression witnesses execute the required high-bit-preserving
+semantics; native LLVM-fold/clang18/23 probes execute the council truncation
+case. This is not an unexecuted dialect witness or partial council resolution.
+
+Exact final command:
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/dialect_check_v02.py --json /home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp/round4-fixes-freeze.json
+```
