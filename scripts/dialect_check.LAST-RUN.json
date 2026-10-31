@@ -1,18 +1,22 @@
 {
-  "spec_commit": "023f5a771a814270634db3be9cfde88ded69f975",
-  "checker_commit": "023f5a771a814270634db3be9cfde88ded69f975",
-  "spec_sha256": "d4f3c1a88391cc147f8c8fa4f80f82852e3ebe6f880610fc16cd5151f33d7206",
-  "dialect_version": "0.2.10",
+  "spec_commit": "5f503e5c6c71c843fa59a495709c7098ce366bcb",
+  "checker_commit": "5f503e5c6c71c843fa59a495709c7098ce366bcb",
+  "spec_sha256": "67157631837887fabb412b762d571157f71dbb79bb9ff13331ec692ce7ad82ba",
+  "dialect_version": "0.2.11",
   "isa_grading_target": "0.8",
-  "interpreter_commit": "697c9a8d64690f0f467a8677a445f4db283a73fc",
-  "interpreter_source_sha256": "ddc1a303cd52bd828744e7aa4f85b17127a2869d6ad59da39934f7a6e5bf6c3e",
+  "interpreter_commit": "ad84e75e10ecbfc582d7fdc50f821ac2a618c1a0",
+  "interpreter_source_sha256": "9857b0ed68e1377b3ca4ff4c8c20158df9e4eaca246c7a61d6d26e090838268f",
   "interpreter_snapshots": [
     {
-      "commit": "697c9a8d64690f0f467a8677a445f4db283a73fc",
-      "source_sha256": "ddc1a303cd52bd828744e7aa4f85b17127a2869d6ad59da39934f7a6e5bf6c3e"
+      "commit": "ad84e75e10ecbfc582d7fdc50f821ac2a618c1a0",
+      "source_sha256": "9857b0ed68e1377b3ca4ff4c8c20158df9e4eaca246c7a61d6d26e090838268f"
+    },
+    {
+      "commit": "c0df4cce67fc7810b3210aa0e84df30720d9913c",
+      "source_sha256": "b1e88233b05683eee89dcb3aff35206f1620e729ef1456cf34cd2893cb80714f"
     }
   ],
-  "checker_source_snapshot_sha256": "74372f9f2a7077e5eba1063ed687115e4ed0854b9732abb061b236b69efe16ff",
+  "checker_source_snapshot_sha256": "79bf42b89773c655be793b2144a85abf95203af1a5cfec09ee67d7b07b687d66",
   "source_files": {
     "SPEC_VERSIONS.toml": "9c54560a9df47fdcb72b71167282075504519128ba8d6351dc1fab6e6971f67a",
     "corpus/legality/cases/README.md": "71a49a6cf62ac5ccd08aa8e4ba6f55cb5b3c78c1b24f7d7f6f85e4189337b75d",
@@ -91,16 +95,21 @@
     "corpus/legality/runtime/driver.c": "5ac1f67ebc61087919a46a2f1a7b32e1879398d40aeaed7d8ff4151d11a85b5b",
     "corpus/legality/runtime/trace_rt.c": "ac6badfdbf4a0de4306945eba574724a57c384e2b0439cf078fea5917e0e1b05",
     "corpus/legality/toolchains.toml": "d94eb9d0695160ece4aa21fdf5e2fe90c03d58a9ab2792d0d26b50c3e154a19f",
-    "scripts/dialect_bounds.py": "169972367a433bc845558214f7d55bba2a09decd3d5c539eb5e01dbcc2234d83",
+    "scripts/dialect_0211.py": "3073b9fce91f4fe0a2a15c6780ce89e68c363113bfd8fab60dba2b7cbb2ac07b",
+    "scripts/dialect_0211_baseline.json": "1f009cf84c6c1dc9264f45dc0f9950dff796c95a996e9f043a2256692de8c778",
+    "scripts/dialect_0211_contract.py": "4603421b3bfa2aa0ce0775bda7c28db0f062ebbc2f17c32d029ce5639572356b",
+    "scripts/dialect_0211_items.json": "9eea6e732ed34b4ba29056fbd32343bd79e6cceb3ecd0c5ae6383c1c57d77571",
+    "scripts/dialect_atomic.py": "29acc5e18678529b510b532d9ea007ef1163920d66b71a474bc7b3e47f38c7c1",
+    "scripts/dialect_bounds.py": "4b5eefd9bc3ebb54a4d0b78f6a1a4fefd33f85fc34dd506ae632f8f24f24737a",
     "scripts/dialect_cc.py": "802fa64ef42cc0bcec5d2837bdf0ab52c44cbd7301b87a6fe9cc1a13451e5bc8",
     "scripts/dialect_check.py": "bc5ca75a72cbcb1cb4cfd7bba15024ff49bdce86717b0c61ae95ab6cd6757974",
-    "scripts/dialect_check_v02.py": "f47dbada7b7c9447be55ffe014cd9ed8bd2223420badcb6625ed4b0a06957d25",
+    "scripts/dialect_check_v02.py": "487e7d1931a7a569854411723903ba6eb59c55a608a46a92bebb98d308c70178",
     "scripts/dialect_driver.py": "87512f14f6936a2d71643bbbcba26b1e4dcd45bec9f86c2000d59d4ec7326465",
-    "scripts/dialect_flow.py": "5a66e95c68cfa334527ccd828b441d9da137f4b10fb8a55c2cb5dbc6b81e0d07",
+    "scripts/dialect_flow.py": "5bd02c934c13188a0589664333e82a270af18a32715f25545059dde68a86e040",
     "scripts/dialect_map.py": "5640ce581f8da26279e3f0ada8e28a24cc12126d721026c53aeeb5a08d607bcb",
     "scripts/dialect_meta.py": "2f7cd48779ce49b99a50e0e0b25098a78f6fa268c550cd5cc9592391d66432c6",
     "scripts/dialect_native.py": "7d4dbc806c060c3c48378323f07da70b5ca2941c6c1f0316be73ca010c573189",
-    "scripts/dialect_normalise.py": "ee053b9b77479036aea9253060cd0f4371e2dac4cf2a9b3c6ba3f9094c1b3cbd",
+    "scripts/dialect_normalise.py": "6cfe05236fc52827e96155673bc2cd7301ed7451d80518ae43f5a14bc5e12e53",
     "scripts/dialect_round2.py": "ee01a9a8c9bbba071f3a90f47c05444397fe584721d9f561b9ab997e550d0d1f",
     "scripts/dialect_round3.py": "b2ac14dedab5e3659085c3ad669aa1e60abd3b2cf41d10c9def0533eb77d0387",
     "scripts/dialect_round4.py": "8371fa5212b9f3556ce21e6f3b8e5700a85763653d8716d59db0b7743977ff61",
@@ -111,8 +120,13 @@
     "scripts/dialect_state.py": "af1a99288b761833db91c6e4634074d3290bb6628bca5d11affa22c387a90eef",
     "scripts/dialect_tdl.py": "e4d5b4cdf85658799c9ed762d8c4aa2d6e8c65241c36c137c44a70084783a854",
     "scripts/dialect_wide.py": "1e776972c918c1e810746f465abe5aeac2db7e171be8ab126b30e9ee573083bf",
-    "scripts/test_dialect_check.py": "334951d4c3bcf086dc19f9e3419087f0c8e9ca7892707dc996264852e7c5abf1",
-    "spec/Bennett-Dialect-Spec.md": "d4f3c1a88391cc147f8c8fa4f80f82852e3ebe6f880610fc16cd5151f33d7206",
+    "scripts/round2_runtime.c": "1f89e74533676eb8ef9ca9a0214cdfc06e395ff4dd7c3e1cd4d4689cedbf9564",
+    "scripts/round3_runtime.c": "354fe0600a29f25c865001187f69aa1cc5532f1e0d9f44c8212f8533a1cfd5fc",
+    "scripts/round7_libm.c": "1fb28b8696b09edc105dd18eda24d85c6c6e14e954b8109c6699b6b7bc748793",
+    "scripts/test_dialect_0211.py": "05ec7cab0801de72c77b5e02413b2a81b8629b84df527f4f70274aaf5df75d75",
+    "scripts/test_dialect_check.py": "5f9962e434f434c6f1a8782e1bebf0acecf5021be970b225c8b390657d6c2b7f",
+    "scripts/test_seeds.c": "dea35373c6f4de9952d2d0ba46d2e4e74e73315091d6b7a002a03e16746c9159",
+    "spec/Bennett-Dialect-Spec.md": "67157631837887fabb412b762d571157f71dbb79bb9ff13331ec692ce7ad82ba",
     "spec/bennett_markers.h": "b5735e6f5bdfad08cf2f05afdd685f801a7c40aa94062e4d67ca18009a9781fd",
     "spec/seeds/coherence.c": "c61990e95a2308157d25d15f0a91a8fe1091e43fbe842f07a777f8a2bf7462af",
     "spec/seeds/contexts.c": "17346e9d66ebdabe7987fb15a26cf37bf6d90daab60e35d0c798b948c3a6aaf2",
@@ -120,141 +134,135 @@
     "spec/seeds/runtime.c": "0a66e5e7fca7948338c5a20121537c07886072868882c92060a203e1a03661b5",
     "spec/seeds/softfloat.c": "de3f03231c39b2286568f6e913ea8f7aa8c7f64bae3af37db5b0f172c38d9ed3"
   },
-  "source_manifest_note": "105 files; before/after final freeze equality verified. Progress logs, receipts and beads are excluded to avoid circular hashes. Interpreter HEAD/source manifest matched at receipt writing. Source-file manifest rather than the prior working-tree HEAD identifies final uncommitted source during the gate; committed unchanged as spec_commit.",
-  "counts": {
-    "asm": {
-      "passed": 1,
-      "failed": 0,
-      "blocked": 0
-    },
-    "blocker": {
-      "passed": 19,
-      "failed": 0,
-      "blocked": 0
-    },
-    "cc-run": {
-      "passed": 8,
-      "failed": 0,
-      "blocked": 0
-    },
-    "check": {
-      "passed": 22,
-      "failed": 0,
-      "blocked": 0
-    },
-    "coverage": {
-      "passed": 125,
-      "failed": 0,
-      "blocked": 0
-    },
-    "driver": {
-      "passed": 2,
-      "failed": 0,
-      "blocked": 0
-    },
-    "events": {
-      "passed": 3,
-      "failed": 0,
-      "blocked": 0
-    },
-    "frontend": {
-      "passed": 21,
-      "failed": 0,
-      "blocked": 0
-    },
-    "hash": {
-      "passed": 9,
-      "failed": 0,
-      "blocked": 0
-    },
-    "header": {
-      "passed": 1,
-      "failed": 0,
-      "blocked": 0
-    },
-    "map": {
-      "passed": 21,
-      "failed": 0,
-      "blocked": 0
-    },
-    "native": {
-      "passed": 31,
-      "failed": 0,
-      "blocked": 0
-    },
-    "normalise": {
-      "passed": 46,
-      "failed": 0,
-      "blocked": 0
-    },
-    "parse": {
-      "passed": 788,
-      "failed": 0,
-      "blocked": 0
-    },
-    "recognise": {
-      "passed": 148,
-      "failed": 0,
-      "blocked": 0
-    },
-    "run-oracle": {
-      "passed": 22,
-      "failed": 0,
-      "blocked": 0
-    },
-    "run-program": {
-      "passed": 5,
-      "failed": 0,
-      "blocked": 0
-    },
-    "seeds": {
-      "passed": 1,
-      "failed": 0,
-      "blocked": 0
-    },
-    "state": {
-      "passed": 76,
-      "failed": 0,
-      "blocked": 0
-    },
-    "step-check": {
-      "passed": 6,
-      "failed": 0,
-      "blocked": 0
-    },
-    "tdl": {
-      "passed": 10,
-      "failed": 0,
-      "blocked": 0
-    },
-    "trace": {
-      "passed": 3,
-      "failed": 0,
-      "blocked": 0
-    },
-    "xrefs": {
-      "passed": 1399,
-      "failed": 0,
-      "blocked": 0
-    }
-  },
-  "total": 2767,
+  "source_manifest_unchanged": true,
+  "interpreter_snapshot_files_verified": true,
+  "interpreter_final_checkout_matches": true,
+  "passed": 2834,
   "failed": 0,
   "blocked": 0,
-  "checker_unit_tests": 84,
-  "legacy_runtime_tests": 7,
-  "full_results": "scripts/.tmp/round5-fixes-freeze.json",
-  "blocker_commits": {
-    "SOL-R8-01 / R8-CODEX-02": "4fecd06",
-    "R8-CODEX-01": "023f5a771a814270634db3be9cfde88ded69f975"
+  "families": {
+    "asm": {
+      "passed": 1
+    },
+    "blocker": {
+      "passed": 19
+    },
+    "cc-run": {
+      "passed": 8
+    },
+    "check": {
+      "passed": 22
+    },
+    "coverage": {
+      "passed": 161
+    },
+    "driver": {
+      "passed": 2
+    },
+    "events": {
+      "passed": 3
+    },
+    "frontend": {
+      "passed": 21
+    },
+    "hash": {
+      "passed": 9
+    },
+    "header": {
+      "passed": 1
+    },
+    "map": {
+      "passed": 21
+    },
+    "native": {
+      "passed": 31
+    },
+    "normalise": {
+      "passed": 46
+    },
+    "parse": {
+      "passed": 809
+    },
+    "recognise": {
+      "passed": 155
+    },
+    "run-oracle": {
+      "passed": 22
+    },
+    "run-program": {
+      "passed": 5
+    },
+    "seeds": {
+      "passed": 1
+    },
+    "state": {
+      "passed": 82
+    },
+    "step-check": {
+      "passed": 6
+    },
+    "tdl": {
+      "passed": 10
+    },
+    "trace": {
+      "passed": 3
+    },
+    "xrefs": {
+      "passed": 1396
+    }
   },
-  "new_native_witnesses": [
-    "pt3-pack257",
-    "pt3-pack256",
-    "pt3-unpack",
-    "pt6-zero-stack",
-    "pt6-zero-heap",
-    "pt8-zero-copy"
+  "rows": "scripts/.tmp/0211-freeze.json",
+  "rows_sha256": "6632cba8d14fca6467d4998e3dda0811d03e771a572864914ea3fc7ea7fddc64",
+  "baseline": {
+    "passed": 2767,
+    "spec_sha256": "d4f3c1a88391cc147f8c8fa4f80f82852e3ebe6f880610fc16cd5151f33d7206",
+    "retained_tagged_blocks": 497
+  },
+  "checker_units": 92,
+  "legacy_runtime_tests": 7,
+  "status": "draft 0.2.11; not yet graded; full outline evidence closure incomplete",
+  "completed_original_beads": [
+    "b-dialect-spec-0t9",
+    "b-dialect-spec-0y2"
   ],
-  "nonblocking_followup": "b-dialect-spec-0y2"
+  "completed_repair_beads": [
+    "b-dialect-spec-nzf"
+  ],
+  "continuation_bead": "b-dialect-spec-oxs",
+  "open_original_items": [
+    "b-dialect-spec-8wf.1",
+    "b-dialect-spec-8wf.3",
+    "b-dialect-spec-8wf.4",
+    "b-dialect-spec-8wf.5",
+    "b-dialect-spec-8wf.6",
+    "b-dialect-spec-8wf.7",
+    "b-dialect-spec-8wf.8",
+    "b-dialect-spec-8wf.9",
+    "b-dialect-spec-8wf.10",
+    "b-dialect-spec-8wf.11",
+    "b-dialect-spec-8wf.12",
+    "b-dialect-spec-8wf.13",
+    "b-dialect-spec-8wf.14",
+    "b-dialect-spec-8wf.15",
+    "b-dialect-spec-8wf.16",
+    "b-dialect-spec-8wf.17",
+    "b-dialect-spec-8wf.18",
+    "b-dialect-spec-8wf.21",
+    "b-dialect-spec-8wf.22",
+    "b-dialect-spec-8wf.23",
+    "b-dialect-spec-8wf.24",
+    "b-dialect-spec-8wf.26",
+    "b-dialect-spec-8wf.27",
+    "b-dialect-spec-8wf.28",
+    "b-dialect-spec-8wf.30",
+    "b-dialect-spec-8wf.31",
+    "b-dialect-spec-8wf.33",
+    "b-dialect-spec-8wf.34",
+    "b-dialect-spec-8wf.35",
+    "b-dialect-spec-8wf.36",
+    "b-dialect-spec-8wf.37",
+    "b-dialect-spec-8wf.39",
+    "b-dialect-spec-gwf"
+  ],
+  "command": "env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 scripts/dialect_check_v02.py --json scripts/.tmp/0211-freeze.json"
 }

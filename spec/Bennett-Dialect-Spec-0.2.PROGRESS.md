@@ -1,3 +1,79 @@
+## Draft 0.2.11 pre-flight freeze receipt — 2026-10-31
+
+**2834/2834 passed; 0 failed; 0 blocked/unavailable. Baseline 2767 → 2834.**
+Draft `0.2.11` (`dialect-0.2.11;isa-0.8`); ISA grading target **0.8**;
+status **not yet graded**. This freezes the checked snapshot, **not full closure
+of every outline conformance consequence**: 33 original compatible item beads
+remain open; continuation **b-dialect-spec-oxs** records the remaining evidence.
+All 35 ruled item resolutions are drafted; counts and rejected alternatives
+are in the per-item table below. 41 per-item normative sentences/markers,
+12 version/process markers; **53 deps markers / 243 resolving references**.
+
+Code/spec/checker snapshot: `5f503e5c6c71c843fa59a495709c7098ce366bcb`.
+Spec SHA-256: `67157631837887fabb412b762d571157f71dbb79bb9ff13331ec692ce7ad82ba`.
+Checker/harness/source manifest SHA-256:
+`79bf42b89773c655be793b2144a85abf95203af1a5cfec09ee67d7b07b687d66` (**115 files**).
+The manifest matched before/after final validation, after the code commit and
+at receipt writing. All **497 accepted tagged blocks** remain byte-identical
+with their original multiplicities; every added gate row is green.
+
+Independent interpreter final snapshot: `ad84e75e10ecbfc582d7fdc50f821ac2a618c1a0`;
+immutable source fingerprint `9857b0ed68e1377b3ca4ff4c8c20158df9e4eaca246c7a61d6d26e090838268f`.
+The gate also used the already-captured c0df4cc snapshot (fingerprint
+`b1e88233b05683eee89dcb3aff35206f1620e729ef1456cf34cd2893cb80714f`).
+Both immutable source copies were verified at receipt writing; the final ISA
+checkout HEAD/files matched the final captured snapshot. The interpreter's
+parallel council-response commit did not alter this draft's grading target.
+No ISA source was edited by this job.
+
+Machine receipt: **scripts/dialect_check.LAST-RUN.json**. Complete rows:
+**scripts/.tmp/0211-freeze.json**. **92 checker units and 7 legacy runtime tests
+pass** headless. No viewer pass, push, header edit, or outside-owned-path source
+edit. SPEC_VERSIONS.toml remains the accepted-release registry outside ownership.
+
+Completed original beads: **0t9**, **0y2**. Completed discovered checker repair:
+**nzf**. Every other compatible item received a section/evidence/rejected-
+alternative comment and remains open for its wider outline evidence; gwf's
+ISA0.9 invocation-binding migration remains cross-reference-only. No duplicate
+ISA gap was filed; bz6/cbe retain their existing 0.3 adoption gates.
+
+| Family | Passed | Failed | Blocked |
+|---|---:|---:|---:|
+| asm | 1 | 0 | 0 |
+| blocker | 19 | 0 | 0 |
+| cc-run | 8 | 0 | 0 |
+| check | 22 | 0 | 0 |
+| coverage | 161 | 0 | 0 |
+| driver | 2 | 0 | 0 |
+| events | 3 | 0 | 0 |
+| frontend | 21 | 0 | 0 |
+| hash | 9 | 0 | 0 |
+| header | 1 | 0 | 0 |
+| map | 21 | 0 | 0 |
+| native | 31 | 0 | 0 |
+| normalise | 46 | 0 | 0 |
+| parse | 809 | 0 | 0 |
+| recognise | 155 | 0 | 0 |
+| run-oracle | 22 | 0 | 0 |
+| run-program | 5 | 0 | 0 |
+| seeds | 1 | 0 | 0 |
+| state | 82 | 0 | 0 |
+| step-check | 6 | 0 | 0 |
+| tdl | 10 | 0 | 0 |
+| trace | 3 | 0 | 0 |
+| xrefs | 1396 | 0 | 0 |
+| **Total** | **2834** | **0** | **0** |
+
+Exact final gate:
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 scripts/dialect_check_v02.py --json scripts/.tmp/0211-freeze.json
+```
+
+Green implementation commits: `338c778` (PT12/first operand), `bdd6eb1`
+(ruled confirmations/collection/call-return/N21), `5f503e5` (typed atomic parser).
+The separate receipt commit follows; nothing was pushed.
+
 ## Draft 0.2.11 implementation — 2026-10-31
 
 Owner: implementation sub-agent, sole specification editor; parent owns the session worklog.
@@ -150,8 +226,8 @@ algorithm/version change, new ISA capability, or header change is required.
 | I36 / 8wf.36 | 15.2 | 1 | 1 | normalise/n-asm; recognise/asm-musl-syscall; asm/asm-0.2 | draft clarification implemented; evidence as listed; full outline closure not inferred |
 | I37 / 8wf.37 | 14.3 | 1 | 1 | native/n-varargs | draft clarification implemented; evidence as listed; full outline closure not inferred |
 | I39 / 8wf.39 | 20.6 | 1 | 1 | state/platform-uart-write; state/sv39-kernel-alias; run-program/fiber-pingpong; run-program/sjlj-two-frames | draft clarification implemented; evidence as listed; full outline closure not inferred |
-| I-0t9 / 0t9 | 1.5 | 1 | 1 | recognise/region-reversible-in-action; recognise/region-reversible-in-action-top-first | draft clarification implemented; evidence as listed; full outline closure not inferred |
-| I-0y2 / 0y2 | 5.2 | 1 | 1 | state/pt12-xor; state/pt12-cmpxchg-success; state/pt12-cmpxchg-failure; state/pt12-xor-as1; state/pt12-cmpxchg-as1 | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I-0t9 / 0t9 | 1.5 | 1 | 1 | recognise/region-reversible-in-action; recognise/region-reversible-in-action-top-first | complete; closed |
+| I-0y2 / 0y2 | 5.2 | 1 | 1 | state/pt12-xor; state/pt12-cmpxchg-success; state/pt12-cmpxchg-failure; state/pt12-xor-as1; state/pt12-cmpxchg-as1 | complete; closed |
 | I-gwf / gwf | 25.2 | 1 | 1 | state/budget-stage; step-check/rung4-mini | draft clarification implemented; evidence as listed; full outline closure not inferred |
 
 Rejected alternatives by item (from the ruled outline; none adopted):
