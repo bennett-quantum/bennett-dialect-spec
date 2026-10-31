@@ -1,5 +1,5 @@
 # Handoff: bennett-dialect-spec
-State (2026-11-01 ~03:00Z): draft 0.2.11 (compatible track, ISA 0.8) accepted by the sol and codex seats
+State (2026-10-31 ~12:50Z): draft 0.2.11 (compatible track, ISA 0.8) accepted by the sol and codex seats
 (round 10; gate 2834/2834; spec SHA 67157631…82ba); muse advisory for this track. 0.2.10 remains the last
 frozen receipt; 0.2.11 is the accepted draft. outline-0.3.md carries the maintainer's rulings D01-D22.
 Next: (1) the 33 evidence closures of b-dialect-spec-oxs as a staged job (gate rows per item); (2) the 0.3

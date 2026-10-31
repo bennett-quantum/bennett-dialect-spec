@@ -1,6 +1,6 @@
 # Bennett LLVM Dialect — Specification, draft 0.2.11
 
-**Date:** 2026-10-31. **Status:** draft 0.2.11, from outline-0.3 rulings of 2026-10-31, **accepted by the council's sol and codex seats in round 10** (2026-11-01; 0 blocking; gate 2834/2834; muse advisory for the compatible track per the maintainer ruling of 2026-10-31).
+**Date:** 2026-10-31. **Status:** draft 0.2.11, from outline-0.3 rulings of 2026-10-31, **accepted by the council's sol and codex seats in round 10** (2026-10-31; 0 blocking; gate 2834/2834; muse advisory for the compatible track per the maintainer ruling of 2026-10-31).
 This draft supersedes accepted 0.2.10, retained in git at spec SHA-256 `d4f3c1a88391cc147f8c8fa4f80f82852e3ebe6f880610fc16cd5151f33d7206`.
 The grading target remains Bennett ISA **0.8**. [deps: DLT-front-P2, DLT-1.3, DLT-23]
 
