@@ -22,11 +22,9 @@ Normative text: `spec/Bennett-Dialect-Spec.md` (draft 0.1, under audit for narro
 9. **Git policy (maintainer, 2026-10-29).** Any agent commits its own paths regularly (`git commit -- <paths>`; retry on `index.lock`); the orchestrator pushes after verified milestones and at least every couple of hours. This opts the repo into the Beads "team-maintainer" profile below for commits only, not for pushes or Dolt sync.
 10. **No narrowing of north-star scope (maintainer, 2026-10-29).** Nothing may reject, refuse, fault, declare inert or omit a capability that `bennett/docs/Bennett-NorthStar.md` promises (thesis, §3–§5, every rung of the §8 demo ladder; Grover over unmodified SQLite is the core). A deferral may postpone mechanics only. If a contract truly lacks something, raise it as a blocker naming the exact change; never shrink scope to fit. See `bennett/docs/plan/2026-10-29-path-to-north-star.md`.
 11. **Headless, no /tmp artefacts.** Never run LLVM `-view-*` / `view-cfg` / `view-dom` / `view-callgraph` passes or viewCFG-style helpers outside an interactive human session (use the `dot-*` variants). Batch and agent commands run with `DISPLAY`, `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS` and `BROWSER` unset and `TMPDIR` set to a project-local or job directory (2026-10-28: ~80,000 .dot files reached the maintainer's editor via xdg-open).
-12. DECLARED DEPENDENCIES IN NEW DRAFT TEXT (maintainer, 2026-10-31; mirrors bennett-isa-spec rule 12).
-   Every new or changed normative sentence in a draft (outline-0.3 and the 0.2.x/0.3 drafts) ends
-   with `[deps: <id>, ...]` naming the statements or clauses it relies on, with IDs from
-   `../bennett-conformance/clauses/DLT-0.2.10.statements.md` (e.g. `DLT-5.2-P4.S1`, `DLT-5.2-P4`,
-   `DLT-5.2`) and ISA IDs from `ISA-0.9-draft.statements.md`. Accepted 0.2.10 bytes never change.
+12. (Withdrawn 2026-10-31 on the process watcher's third pass: declared `[deps: ...]` markers caught
+   errors only in themselves. Existing markers may stay; new text need not carry them. The clause-graph
+   tool infers dependencies.)
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:1105d646 -->
 ## Beads Issue Tracker
