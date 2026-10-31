@@ -1,23 +1,9 @@
-State (2026-10-31 ~22:26Z, resumed evening session): draft **0.2.10** (d0a160d, pushed through the gate), freeze
-2767/2767. Round 8 fixed by one sol editor (docs/briefs/2026-10-30-dialect-round-8-fixes.md). **Round 9 on 0.2.10: sol
-accept + astra accept, 0 blockers, 0 non-blocking** (../bennett/docs/council/dialect-2026-10-29/round-9/report.md).
-0.2.10 is the acceptance candidate; the only remaining step is muse's vote (same round-9 prompt/schema, cwd this repo,
-output ../bennett/.tmp/dialect-r9-muse.json, read in <=1,500-line slices), then `collect`/`aggregate`. Read
-../bennett/HANDOFF.md first.
-
-State (2026-10-30 ~14:30Z, maintainer pause): draft **0.2.9** (aa0f72e, pushed), freeze gate 2732/2732. Council
-rounds 5-7 fixed by one sol editor each (spec + checker together); sol gave core accept in round 6; round 7 mean 4.0
-with precision blockers only; a relay pass fixed the G1 canonical global numbering (regenerated hashes) and upgraded
-the legality-corpus runtime/harness to ABI 0.2 (spec-sem2-adj/compute now exit 0 on LLVM 18/23). **Round 8 prepared**
-(../bennett/docs/council/dialect-2026-10-29/round-8/, sol reviewing at the pause; astra next; muse's seat held until
-2026-10-31; acceptance needs all three). Briefs: docs/briefs/2026-10-30-dialect-round-{5,6,7}-fixes.md,
-2026-10-30-dialect-plugin-relays.md. Read ../bennett/HANDOFF.md first.
-
-State (2026-10-29, session end): DRAFT 0.2 WRITTEN in place (spec/Bennett-Dialect-Spec.md, 7,341 lines, commit ac32fa7; Opus; 87 verdict examples incl. 5 `blocked:` on BLK-1..4, 17 normalisation pairs, 6 executed ISA objects; bennett_markers.h at ABI 0.2; SPEC_VERSIONS dialect 0.2 / isa 0.8; progress file spec/Bennett-Dialect-Spec-0.2.PROGRESS.md with the verification table: llvm blocks on 18/20/23 and ISA objects verified; tdl/sem2/effect/normalise/recognition families NOT yet executable). COUNCIL ROUND 1 on 0.2 started 10:50 UTC (run ../bennett/docs/council/dialect-2026-10-29, members fable/astra/muse, rubric-isa, task-spec): DONE: no consensus, all three revise, 32 blockers (fable 6, astra 22, muse 4), mean 3.21; report ../bennett/docs/council/dialect-2026-10-29/round-1/report.md (the three out-*.json carry the full fix text). Next: an Opus editor resolves them (every disputed example re-derived; response file ../bennett/docs/council/dialect-2026-10-29/round-1/response.md), then round 2; the checker job must execute every example before round 2 is prepared. PRECHECK for 0.2: codex job dialect-check-0.2 (gpt-6.1-sol; brief docs/briefs/2026-10-29-dialect-check-0.2.md; bead b-dialect-spec-gyl) STOPPED by the maintainer at checkpoint a8f0da5 after ~35 min: scripts/dialect_check_v02.py runner, dialect_flow.py recogniser, dialect_normalise.py (milestones 1-3 per scripts/dialect_check.PROGRESS.md), trace runtime edits under corpus/. Resume: `python3 ../bennett/tools/codex_job.py run --name dialect-check-0.2 --cd . --prompt docs/briefs/2026-10-29-dialect-check-0.2.md --paths scripts spec/seeds spec/asm corpus --progress scripts/dialect_check.PROGRESS.md --model gpt-6.1-sol --effort xhigh --max-attempts 20 --network --thread 01a18748-e137-7932-b00c-96cec42560ad` (drop --thread for a fresh session from the progress file). It needs the interpreter CLI commands of b-isa-spec-xam for the tdl/sem2/effect families.
-Next: (1) land dialect round 1 and hand its blockers to an Opus editor with a response file (same loop as the interpreter: ../bennett/docs/council/README.md); (2) finish the 0.2 checker; (3) rounds until acceptance; then dialect 0.3 after ISA 0.9 (draft exists: ../bennett-isa-spec/spec/Bennett-ISA-Spec-0.9-draft.md).
-Previously: State (2026-10-29): legality spike done (docs/spikes/2026-10-28-legality-findings.md, maintainer decisions 1-4); draft 0.1 (spec/Bennett-Dialect-Spec.md) audited and REJECTED for narrowing north-star scope (docs/audit/); SQLite rung-4 spike done: feasible on ISA 0.8 with no ISA change (docs/spikes/sqlite/REPORT.md). Dialect 0.2 outline written and RATIFIED (spec/outline-0.2.md; maintainer rulings at its end: E1-E14, riscv64, ISA 0.9 after dialect acceptance). The 0.2 full text was started and stopped by the maintainer before anything was written: spec/Bennett-Dialect-Spec.md is still 0.1.
-Next: (1) write the 0.2 full text from spec/outline-0.2.md (brief: docs/briefs/2026-10-29-dialect-0.2-fulltext.md); (2) extend scripts/dialect_check.py to execute every 0.2 example against the Rust ISA reference interpreter (needs b-isa-spec-xam); (3) council rounds on 0.2 with ../bennett/docs/council/rubric-isa.md (narrowing is S0). Issues: bd ready; epic b-dialect-spec-8wf (40 narrowings), blocks-rung-4 label for the P0 set.
-Rules: CLAUDE.md rule 10 (no narrowing of north-star scope) and rule 11 (headless; never LLVM view-* passes).
-Start every session from ../bennett/HANDOFF.md.
-Remote: github.com/bennett-quantum/bennett-dialect-spec (pushed).
-See worklog/001_2026-10-28_bootstrap.md.
+# Handoff: bennett-dialect-spec
+State (2026-11-01 ~03:00Z): draft 0.2.11 (compatible track, ISA 0.8) accepted by the sol and codex seats
+(round 10; gate 2834/2834; spec SHA 67157631…82ba); muse advisory for this track. 0.2.10 remains the last
+frozen receipt; 0.2.11 is the accepted draft. outline-0.3.md carries the maintainer's rulings D01-D22.
+Next: (1) the 33 evidence closures of b-dialect-spec-oxs as a staged job (gate rows per item); (2) the 0.3
+capability track (D15-D19) once ISA 0.9 is published (muse vote); (3) consumer re-pins: bennett-plugin is
+being re-pinned to 0.2.10 now and moves to 0.2.11 after the oxs evidence lands.
+Gate: `scripts/dialect_check_v02.py --json scripts/.tmp/<name>.json` headless (TMPDIR under scripts/.tmp).
+Orchestrator state: bennett/HANDOFF.md.
