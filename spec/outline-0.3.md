@@ -1264,3 +1264,19 @@ Recommendation: Yes; I-gwf. No schema invention and no claim of full-D proof for
 **New ISA beads filed: none.** K1/K2/K3/K5/K6 contain the actual missing0.8 capability sentences. K4 is optional and does not replace the sampled CC construction. G-12/13/14/15/16, direct CC dirty borrowing and native indirect calls retain explicit constructions; they are efficiency work, not newly discovered ISA blockers. Exact sentences formerly needed for bz6/cbe are cited in those records. Fixed-region proof labelling and dedicated certificate metadata fields remain wording/schema questions in the already-open gwf bead, with capability-preserving metadata/evidence defaults. K64/K65 need ratification, not duplicate proposal beads.
 
 ## Maintainer rulings
+
+Rulings of 2026-10-31 (maintainer, relayed by the orchestrator; recorded verbatim):
+
+- D01-D13: **yes**, as one block (rule 10: each is a repair of a 0.1 narrowing found by the audit).
+- D14: **both paths** (native K4 for covering exhaustive/library claims; the sampled CC-expansion path
+  retained for the existing inverse claims).
+- D15: **yes, with the caution** that the coherent padding bound uses the conservative finite-domain
+  construction named in the outline; an unsound padding bound is the §6.2 class of defect and is not
+  acceptable as a default.
+- D16-D19: **yes**, in the 0.3 track (ISA 0.9 K1-K6 dependencies; gated on 0.9 publication and execution).
+- D20-D22: **yes**. D22 wording must match ISA 0.9 K74 (checker-owned labels; producer label is a checked
+  request).
+
+Consequences: draft 0.2.11 (compatible track, ISA 0.8) is to be written from this outline now; draft 0.3
+follows once ISA 0.9 is published. Every new or changed normative sentence carries `[deps: ...]`
+(CLAUDE.md rule 12).
