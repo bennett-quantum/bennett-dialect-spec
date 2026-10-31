@@ -1104,6 +1104,54 @@ define void @top() {
 {"domains": {"%ok": [0], "%old": [1], "%width": [1]}, "native": [1, 0, 1, 1, 0, 0]}
 ```
 
+**PT12 spelling witnesses (non-normative).** Explicit address spaces, volatile/weak qualifiers, syncscope and alignment retain the same N9 value effects and native materialised outcomes; the pointer operand keeps its address-space type in the generated load and store.
+
+```llvm example=pt12-xor-as1 verdict=accept
+@cell = internal global i64 1
+@observed_old = global i64 0
+@observed_success = global i64 0
+define void @top() {
+  %p = addrspacecast ptr @cell to ptr addrspace(1)
+  %old = atomicrmw volatile xor ptr addrspace(1) %p, i64 2 syncscope("singlethread") seq_cst, align 8
+  store i64 %old, ptr @observed_old
+  %width = load i64, ptr @cell
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt12-xor-as1 at=return
+{"domains": {"%old": [1, 3], "%width": [1, 3]}, "native": [1, 0, 3, 1, 0, 0]}
+```
+
+```llvm example=pt12-cmpxchg-as1 verdict=accept
+@cell = internal global i64 1
+@observed_old = global i64 0
+@observed_success = global i64 0
+define void @top() {
+  %p = addrspacecast ptr @cell to ptr addrspace(1)
+  %pair = cmpxchg weak volatile ptr addrspace(1) %p, i64 1, i64 3 syncscope("singlethread") seq_cst seq_cst, align 8
+  %old = extractvalue { i64, i1 } %pair, 0
+  %ok = extractvalue { i64, i1 } %pair, 1
+  store i64 %old, ptr @observed_old
+  %ok64 = zext i1 %ok to i64
+  store i64 %ok64, ptr @observed_success
+  %width = load i64, ptr @cell
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt12-cmpxchg-as1 at=return
+{"domains": {"%ok": [0, 1], "%old": [1, 3], "%width": [1, 3]}, "native": [1, 1, 3, 1, 0, 0]}
+```
+
 PT12 checked ROOT propagation: `make` returns the fresh qalloc ROOT to its caller;
 the caller uses that same identity for a gate and free. This is a direct handle
 realisation, so no stored-instance bound is required. The checked verdict is accept.

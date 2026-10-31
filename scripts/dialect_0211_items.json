@@ -480,7 +480,9 @@
     "witnesses": [
       "state/pt12-xor",
       "state/pt12-cmpxchg-success",
-      "state/pt12-cmpxchg-failure"
+      "state/pt12-cmpxchg-failure",
+      "state/pt12-xor-as1",
+      "state/pt12-cmpxchg-as1"
     ],
     "rejected": "Ignoring the store, storing only the old result, or forcing TOP when the finite expansion is available loses the mandated materialised domain; weakening the single-thread assumption is outside this repair."
   },

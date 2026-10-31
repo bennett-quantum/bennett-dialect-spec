@@ -45,6 +45,27 @@ accepted classical correction a second time. PT12's finite integer products use
 K on distinct results; FP uncertainty retains non-handle TOP and ROOT provenance.
 The fail-loud fixpoint ceiling now allows K+1 atomic recurrence iterations.
 
+### PT12 spelling hardening — 2026-10-31
+
+A final boundary probe exposed a remaining PT12 parser bug: with explicit
+`ptr addrspace(1)` the address string included the type suffix and lost its
+tracked object, so neither xor nor cmpxchg added 3 to the memory domain.
+Both subtests failed (`scripts/.tmp/0211-atomic-spelling-red.txt`). The shared
+N9 grammar parser now separates pointer type/value, strips weak/volatile and
+ordering/syncscope syntax, preserves alignment and emits the original typed
+pointer in virtual/materialised loads and stores. Pointer-valued atomic
+storage widths use P(a). No semantic exclusion or new ISA requirement.
+
+New checked rows `pt12-xor-as1` and `pt12-cmpxchg-as1` exercise the spelling
+end to end: LLVM18/23 verify and native materialised O0/O3 give the same
+old/success/width/clean-free/code tuples as their unqualified companions.
+0y2 was reopened during this hardening and closed again after the final
+**2834/2834** green gate (`scripts/.tmp/0211-freeze.json`), 92 checker tests
+and 7 legacy runtime tests. The 115-file source manifest stayed unchanged.
+No additional normative sentence is introduced: the PT12 clarification applies
+to all admitted LLVM atomic spellings already. The full manifest now binds
+five PT12 native states, not only the original three.
+
 ### Confirmations group validation — 2026-10-31
 
 **2824/2824 gate rows passed**, 0 failed/unavailable;
@@ -130,7 +151,7 @@ algorithm/version change, new ISA capability, or header change is required.
 | I37 / 8wf.37 | 14.3 | 1 | 1 | native/n-varargs | draft clarification implemented; evidence as listed; full outline closure not inferred |
 | I39 / 8wf.39 | 20.6 | 1 | 1 | state/platform-uart-write; state/sv39-kernel-alias; run-program/fiber-pingpong; run-program/sjlj-two-frames | draft clarification implemented; evidence as listed; full outline closure not inferred |
 | I-0t9 / 0t9 | 1.5 | 1 | 1 | recognise/region-reversible-in-action; recognise/region-reversible-in-action-top-first | draft clarification implemented; evidence as listed; full outline closure not inferred |
-| I-0y2 / 0y2 | 5.2 | 1 | 1 | state/pt12-xor; state/pt12-cmpxchg-success; state/pt12-cmpxchg-failure | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I-0y2 / 0y2 | 5.2 | 1 | 1 | state/pt12-xor; state/pt12-cmpxchg-success; state/pt12-cmpxchg-failure; state/pt12-xor-as1; state/pt12-cmpxchg-as1 | draft clarification implemented; evidence as listed; full outline closure not inferred |
 | I-gwf / gwf | 25.2 | 1 | 1 | state/budget-stage; step-check/rung4-mini | draft clarification implemented; evidence as listed; full outline closure not inferred |
 
 Rejected alternatives by item (from the ruled outline; none adopted):
@@ -170,6 +191,9 @@ Rejected alternatives by item (from the ruled outline; none adopted):
 - **I-0t9**: Silently redefining candidates to mean a chosen entry would break existing examples; editing accepted bytes to reapply an already-present fix is unnecessary.
 - **I-0y2**: Ignoring the store, storing only the old result, or forcing TOP when the finite expansion is available loses the mandated materialised domain; weakening the single-thread assumption is outside this repair.
 - **I-gwf**: Inventing schema fields, returning normally from a faulted R call or labelling a fixed-database subdomain full-D proof misstates ISA 0.9. Evidence still supports the rung's declared-space test; no rung is removed.
+
+Continuation bead: **b-dialect-spec-oxs** (open), referencing the 33 original
+item beads rather than duplicating their mechanisms.
 
 Additional outline evidence still requires work; these rows remain obligations,
 not skipped/deleted/reclassified checked examples. The current retained/new

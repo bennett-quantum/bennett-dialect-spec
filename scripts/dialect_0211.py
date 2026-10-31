@@ -4,7 +4,7 @@ import dialect_check as d
 from dialect_check_v02 import command, equal, recognise, normalise
 from dialect_native import PREFIX, SEEDS
 
-STATES={'pt12-xor','pt12-cmpxchg-success','pt12-cmpxchg-failure'}
+STATES={'pt12-xor','pt12-cmpxchg-success','pt12-cmpxchg-failure','pt12-xor-as1','pt12-cmpxchg-as1'}
 
 
 def check_state(runner,block):

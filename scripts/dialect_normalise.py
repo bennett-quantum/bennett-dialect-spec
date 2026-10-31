@@ -100,10 +100,10 @@ class Normaliser:
                 i.text=re.sub(r'\s+(?:unordered|monotonic|acquire|release|acq_rel|seq_cst)\b','',i.text)
                 return
             if i.op=='atomicrmw':
-                m=re.match(r'atomicrmw (\w+) ptr ([^,]+), (i\d+|half|bfloat|float|double|x86_fp80|fp128|ppc_fp128) ([^ ]+).*?(, align \d+)?$',b)
-                op,p,t,v,al=m.groups();al=al or ''
+                from dialect_atomic import parts
+                op,p,_,_,t,_,v,al=parts(i)
                 if op not in ('add','sub','and','nand','or','xor','xchg','min','max','umin','umax','fadd','fsub','fmax','fmin','fmaximum','fminimum','fmaximumnum','fminimumnum','uinc_wrap','udec_wrap','usub_cond','usub_sat'):raise d.Fail('N9 atomicrmw '+op)
-                out=[f'%nz.l.{r} = load {t}, ptr {p}{al}']
+                out=[f'%nz.l.{r} = load {t}, {p}{al}']
                 if op=='xchg':nv=v
                 elif op=='nand':
                     out += [f'%nz.a.{r} = and {t} %nz.l.{r}, {v}',f'%nz.v.{r} = xor {t} %nz.a.{r}, -1'];nv=f'%nz.v.{r}'
@@ -122,13 +122,13 @@ class Normaliser:
                     otherwise=f'%nz.l.{r}' if op=='usub_cond' else '0'
                     out += [f'%nz.k.{r} = icmp uge {t} %nz.l.{r}, {v}',f'%nz.s.{r} = sub {t} %nz.l.{r}, {v}',f'%nz.v.{r} = select i1 %nz.k.{r}, {t} %nz.s.{r}, {t} {otherwise}'];nv=f'%nz.v.{r}'
                 else:out.append(f'%nz.v.{r} = {op} {t} %nz.l.{r}, {v}');nv=f'%nz.v.{r}'
-                out.append(f'store {t} {nv}, ptr {p}{al}')
+                out.append(f'store {t} {nv}, {p}{al}')
                 self.replace(f,i.res,f'%nz.l.{r}');return out
             if i.op=='cmpxchg':
-                m=re.match(r'cmpxchg ptr ([^,]+), (i\d+) ([^,]+), i\d+ ([^ ]+).*?(, align \d+)?$',b)
-                p,t,c,n,al=m.groups();al=al or ''
-                return [f'%nz.l.{r} = load {t}, ptr {p}{al}',f'%nz.e.{r} = icmp eq {t} %nz.l.{r}, {c}',
-                    f'%nz.s.{r} = select i1 %nz.e.{r}, {t} {n}, {t} %nz.l.{r}',f'store {t} %nz.s.{r}, ptr {p}{al}',
+                from dialect_atomic import parts
+                _,p,_,_,t,c,n,al=parts(i)
+                return [f'%nz.l.{r} = load {t}, {p}{al}',f'%nz.e.{r} = icmp eq {t} %nz.l.{r}, {c}',
+                    f'%nz.s.{r} = select i1 %nz.e.{r}, {t} {n}, {t} %nz.l.{r}',f'store {t} %nz.s.{r}, {p}{al}',
                     f'%nz.a.{r} = insertvalue {{ {t}, i1 }} zeroinitializer, {t} %nz.l.{r}, 0',
                     f'{i.res} = insertvalue {{ {t}, i1 }} %nz.a.{r}, i1 %nz.e.{r}, 1']
         self.rewrite(go)

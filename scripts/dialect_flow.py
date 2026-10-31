@@ -488,16 +488,10 @@ class Flow:
         metadata supplies bounds. FP updates conservatively retain unknown bits;
         pointer/ROOT provenance is kept for the ordinary containment checks.
         """
-        body=ins.text.split(' = ',1)[-1]
-        if ins.op=='cmpxchg':
-            m=re.fullmatch(r'cmpxchg (?:weak )?(?:volatile )?ptr ([^,]+), (i\d+|ptr) ([^,]+), (?:i\d+|ptr) ([^ ]+) .+',body)
-            if not m:raise d.Fail('PT12 malformed cmpxchg: '+body)
-            p,t,c,n=m.groups();op='cmpxchg'
-        else:
-            m=re.fullmatch(r'atomicrmw (?:volatile )?(\w+) ptr ([^,]+), (\w+) ([^ ]+) .+',body)
-            if not m:raise d.Fail('PT12 malformed atomicrmw: '+body)
-            op,p,t,n=m.groups();c=None
-        ty=d.parse_type(t)[0];width=self.type_width(ty);size=d.tsize(ty,self.pw)
+        from dialect_atomic import parts
+        op,_,p,ty,_,c,n,_=parts(ins)
+        width=self.pointer_widths(ty[1] if len(ty)>1 else 0)[0] if ty[0]=='ptr' else self.type_width(ty)
+        size=(width+7)//8
         ptrs=self.ptrs(f,p)
         old=union(self.getmem(ptrs,size,width),{TOP} if TOP in self.atoms(f,p) else {})
         rhs=self.atoms(f,n);comp=self.atoms(f,c) if c is not None else frozenset()

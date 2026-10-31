@@ -99,4 +99,11 @@ class CollectionGraph(unittest.TestCase):
         helper='define internal void @release(ptr %h) {\n call void @__bennett_qfree(ptr %h)\n ret void\n}\n'
         self.assertEqual(v.recognise(d.with_decls(helper+src.replace('call void @__bennett_qfree(ptr %a)','call void @release(ptr %a)')))[0],'accept')
 
+class AtomicSpelling(unittest.TestCase):
+ def test_address_space_and_syncscope(self):
+  for atomic in ['%old = atomicrmw volatile xor ptr addrspace(1) %p, i64 2 syncscope("singlethread") seq_cst, align 8','%pair = cmpxchg weak volatile ptr addrspace(1) %p, i64 1, i64 3 syncscope("singlethread") seq_cst seq_cst, align 8']:
+   with self.subTest(atomic=atomic):
+    a,f=analysis('@cell = internal global i64 1\ndefine void @top() {\n %p = addrspacecast ptr @cell to ptr addrspace(1)\n '+atomic+'\n %width = load i64, ptr @cell\n ret void\n}\n')
+    self.assertEqual(a.ints(f,'%width'),{1,3})
+
 if __name__=='__main__':unittest.main()
