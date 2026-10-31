@@ -118,20 +118,40 @@ def entry_boundary_live(a,f,site,in_r=False,root=None):
                     else:
                         targets={c['callee'][1:]} if c['callee'].startswith('@') else a.indirect.get(id(ins),set())
                         calls.append((node,targets,list(succ[node])))
-    for node,targets,after in calls:
+    # A visible external function called by CC is not a host-entry return on
+    # that edge. Summarise call/return paths with ROOT alive, then follow only
+    # unmatched returns through possible ancestors of the allocation activation.
+    call_info={node:(targets,after) for node,targets,after in calls}
+    returned_alive=set()
+    def after_call(node):
+        targets,after=call_info[node]
         defined=targets & starts.keys()
-        if defined:
-            succ[node]=[starts[n] for n in defined]
-            for n in defined:
-                for ret in returns[n]:succ[ret].extend(after)
+        return after if not defined or targets-starts.keys() or defined & returned_alive else []
+    while True:
+        before=set(returned_alive)
+        for name,entry in starts.items():
+            queue=[entry];visited=set()
+            while queue:
+                node=queue.pop()
+                if node in visited:continue
+                visited.add(node);_,ins=nodes[node]
+                if ins.op in ('ret','resume'):
+                    returned_alive.add(name);break
+                queue.extend(after_call(node) if node in call_info else succ[node])
+        if returned_alive==before:break
+    ancestors={name:[] for name in starts}
+    for node,targets,after in calls:
+        for name in targets & starts.keys():ancestors[name].extend(after)
     # N29 continuation cases are handled first by setjmp_reentry.
     stack=list(succ[target]) if site is not None else [starts[f.name]];seen=set()
     while stack:
         node=stack.pop()
         if node in seen:continue
         seen.add(node);fun,ins=nodes[node]
-        if ins.op in ('ret','resume') and fun.name in entries:return True
-        stack.extend(succ[node])
+        if ins.op in ('ret','resume'):
+            if fun.name in entries:return True
+            stack.extend(ancestors[fun.name])
+        else:stack.extend(after_call(node) if node in call_info else succ[node])
     return False
 
 

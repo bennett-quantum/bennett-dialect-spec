@@ -69,4 +69,34 @@ class FirstRegionOperand(unittest.TestCase):
                 wrong=dict(block,attrs=dict(block['attrs'],candidates='wrong'))
                 with self.assertRaises(d.Fail):runner.recognition(wrong)
 
+class ClarificationLedger(unittest.TestCase):
+    def test_ruled_sentences(self):
+        import os
+        from pathlib import Path
+        from dialect_0211_contract import ITEMS,check_sentence
+        spec=Path(os.environ.get('DRAFT0211_SPEC',str(d.SPEC))).read_text()
+        for item in ITEMS:
+            with self.subTest(item=item['item']):check_sentence(spec,item)
+
+class CollectionGraph(unittest.TestCase):
+    def test_native_and_abstract_graph(self):
+        import json,tempfile
+        from dialect_0211 import check_graph
+        spec=d.SPEC.read_text();blocks=d.extract_blocks(spec);v.initialise(blocks)
+        block=next(b for b in blocks if b['attrs'].get('state')=='compatible-allocator-graph')
+        with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
+            runner=v.Runner(blocks,spec,tmp,{'state'});check_graph(runner,block)
+            wrong=json.loads(block['body']);wrong['roots']['%lane']=['top%a']
+            with self.assertRaises(d.Fail):check_graph(runner,dict(block,body=json.dumps(wrong)))
+
+    def test_callee_returns_and_free_summary(self):
+        blocks=d.extract_blocks(d.SPEC.read_text());v.initialise(blocks)
+        src=next(b['body'] for b in blocks if b['attrs'].get('example')=='compatible-allocator-graph')
+        self.assertEqual(v.recognise(d.with_decls(src))[0],'accept')
+        # Removing the exact-root free must still expose cross-entry liveness.
+        self.assertEqual(v.recognise(d.with_decls(src.replace('  call void @__bennett_qfree(ptr %a)\n','')))[0],'blocked:BD-B-ISA4')
+        # A callee can discharge liveness, without pretending its return is H.
+        helper='define internal void @release(ptr %h) {\n call void @__bennett_qfree(ptr %h)\n ret void\n}\n'
+        self.assertEqual(v.recognise(d.with_decls(helper+src.replace('call void @__bennett_qfree(ptr %a)','call void @release(ptr %a)')))[0],'accept')
+
 if __name__=='__main__':unittest.main()

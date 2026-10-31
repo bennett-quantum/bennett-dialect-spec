@@ -154,8 +154,9 @@ class Normaliser:
         self.rewrite(go)
 
     def vector(self):
+        def zero(ty):return 'null' if ty[0]=='ptr' else '0.0' if ty[0] in d.FP_TYPES else '0'
         def get(v,n,ty):
-            if v in ('zeroinitializer','undef','poison'):return ['0']*n
+            if v in ('zeroinitializer','undef','poison'):return [zero(ty)]*n
             if v.startswith('<'):return [d.typed_val(x) for x in d.split_top(v[1:-1])]
             if v in self.lanes:return self.lanes[v]
             raise d.Fail('N21 vector source '+v)
@@ -268,13 +269,13 @@ class Normaliser:
                 ps=d.split_top(b[len(i.op):].strip());t=d.parse_type(ps[0])[0];lanes=get(d.typed_val(ps[0]),t[1],t[2]);idx=d.typed_val(ps[1])
                 if not re.fullmatch(r'-?\d+',idx):
                     L=len(lanes);out,it,idx=lane_index(ps[1],L,r);et=d.tstr(t[2])
-                    out.append(f'%nz.c.{r} = icmp uge {it} {idx}, {L}');prev='0'
+                    out.append(f'%nz.c.{r} = icmp uge {it} {idx}, {L}');prev=zero(t[2])
                     for k,value in enumerate(lanes):
                         c=f'%nz.k{k}.{r}';v=f'%nz.e.{r}' if k==L-1 else f'%nz.l{k}.{r}'
                         out += [f'{c} = icmp eq {it} {idx}, {k}',f'{v} = select i1 {c}, {et} {value}, {et} {prev}'];prev=v
-                    return out+[f'{i.res} = select i1 %nz.c.{r}, {et} 0, {et} {prev}']
+                    return out+[f'{i.res} = select i1 %nz.c.{r}, {et} {zero(t[2])}, {et} {prev}']
                 index=int(idx)%(1<<d.parse_type(ps[1])[0][1])
-                self.replace(f,i.res,lanes[index] if index<t[1] else '0');return []
+                self.replace(f,i.res,lanes[index] if index<t[1] else zero(t[2]));return []
             if i.op=='call' and '@llvm.vector.reduce.' in b:
                 c=d.parse_call(i);op=c['callee'].split('.')[3];t=c['args'][0][0];vals=get(c['args'][0][2],t[1],t[2]);out=[];a=vals[0]
                 for k,z in enumerate(vals[1:],1):

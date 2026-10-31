@@ -550,6 +550,10 @@ define void @top(i64 %n) {
 BD-B-ISA4 @top %h: qalloc operand n has value set TOP (parameter of an externally visible function); ISA 0.8 qreg[n] needs a literal n; BLK-1 (ISA-4) qreg[*]
 ```
 
+Allocation class zero MUST denote any, and positive class indices MUST select the existing link-order class-name table. [deps: DLT-3.4-P18, DLT-3.4-P22, ISA-3.3-P8, ISA-8.3]
+
+A top operation-code or class value set MUST dispatch the entire valid table and retain the existing out-of-table runtime diagnostic. [deps: DLT-3.4, DLT-5.3, ISA-4.1-P4, ISA-4.1-P10, ISA-4.4]
+
 ### 3.5 Recognition
 
 A call or invoke instruction is a **marker call** iff its callee operand is the function itself
@@ -754,6 +758,8 @@ define void @g() {
 attributes #0 = { memory(read) }
 ```
 
+The benign, forbidden and unknown marker-attribute classification MUST retain the accepted list and be checked against dynamic marker-sequence preservation on every supported LLVM major. [deps: DLT-3.6, DLT-21.1, DLT-21.2, ISA-13]
+
 ### 3.7 Unwinding of markers
 
 Markers never unwind. Before any other analysis (§4.1 step S1) the plugin rewrites every
@@ -925,6 +931,8 @@ Each tier maps A(F) to its own variant of F by the dispatch of §14.2. Two funct
 equal A(F) (identical-code folding is off), so the map is well defined. A `blockaddress`
 constant is §14.9.
 
+Host and device variants MUST retain a common comparison-link function address and shared global data, while dispatch selects the variant for the caller's tier and coherence signature. [deps: DLT-4.3-P1, DLT-4.4, DLT-19.5, ISA-4.1, ISA-4.2, ISA-9.1]
+
 ### 4.5 Calls out of the device program
 
 A call in a device variant of a function with no definition resolves, in this order:
@@ -990,6 +998,8 @@ used" (§7.2, §14.2). Every slot (X, o) of memory has a content AV(X, o) of the
 holds more than **K = 4096** `INT` atoms they are dropped and t is set (a normative constant: it
 decides dispatch and blocker verdicts, so §24 does not defer it). "AV(v) = ⊤" below means t is
 set; unions and inclusions are taken component-wise.
+
+Abstract-object and return propagation MUST cover attributed allocator calls and defined allocator wrappers through their underlying allocation sites without requiring the wrapper's name in a whitelist. [deps: DLT-5.1-P4, DLT-5.1-P6, DLT-5.2-P10, ISA-7.1, ISA-7.2]
 
 ### 5.2 Rules
 
@@ -1419,6 +1429,75 @@ atoms. Partial copies and fills add overlapping affected intervals; PT6 then ret
 ⊤ for any load whose whole bits are not represented exactly. These are fixed
 reference rules, not optional precision improvements.
 
+Handle-array propagation MUST retain field intervals and finite-width address images so that a disjoint integer counter is not handle-derived, without treating an array type as a proof that indices stay in bounds. [deps: DLT-5.1-P7, DLT-5.2-P3, DLT-5.2-P7, DLT-5.2-P8, ISA-4.1, ISA-4.2]
+
+**Compatible allocation/collection witness (non-normative).** A defined wrapper
+returns an attributed fresh allocation whose name is not a built-in allocator.
+A two-level heap header carries a handle through a shared global; a disjoint
+counter remains ordinary integer data. Two indirect candidates return different
+ROOTs. An i1 vector index selects exactly one live lane without an out-of-range
+zero alternative. Both inputs execute four X gates, two clean frees and code0;
+LLVM18/23 source and materialised O0/O3 execute independently of the analysis.
+
+```llvm example=compatible-allocator-graph verdict=accept callees=first,second
+@shared = internal global { ptr, i64 } zeroinitializer
+@observed_old = global i64 0
+@observed_success = global i64 0
+declare ptr @custom_alloc(i64) allocsize(0)
+declare void @free(ptr)
+define internal ptr @make_node(ptr %h) {
+  %node = call ptr @custom_alloc(i64 16)
+  store ptr %h, ptr %node
+  %link = getelementptr i8, ptr %node, i64 8
+  store ptr null, ptr %link
+  ret ptr %node
+}
+define internal ptr @first(ptr %a, ptr %b) {
+  ret ptr %a
+}
+define internal ptr @second(ptr %a, ptr %b) {
+  ret ptr %b
+}
+define void @host_count() {
+  %counter = getelementptr { ptr, i64 }, ptr @shared, i64 0, i32 1
+  store i64 9, ptr %counter
+  ret void
+}
+define void @top(i1 %choose) {
+  %a = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %b = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %node = call ptr @make_node(ptr %a)
+  %header = call ptr @custom_alloc(i64 8)
+  store ptr %node, ptr %header
+  store ptr %header, ptr @shared
+  %loaded_header = load ptr, ptr @shared
+  %loaded_node = load ptr, ptr %loaded_header
+  %from_node = load ptr, ptr %loaded_node
+  %f = select i1 %choose, ptr @first, ptr @second
+  %from_callback = call ptr %f(ptr %from_node, ptr %b)
+  call void @__bennett_gate(i32 1, ptr %from_callback, i64 0)
+  call void @__bennett_gate(i32 1, ptr %from_callback, i64 0)
+  %v0 = insertelement <2 x ptr> zeroinitializer, ptr %a, i32 0
+  %v1 = insertelement <2 x ptr> %v0, ptr %b, i32 1
+  %lane = extractelement <2 x ptr> %v1, i1 %choose
+  call void @__bennett_gate(i32 1, ptr %lane, i64 0)
+  call void @__bennett_gate(i32 1, ptr %lane, i64 0)
+  call void @host_count()
+  %counter = getelementptr { ptr, i64 }, ptr @shared, i64 0, i32 1
+  %count = load i64, ptr %counter
+  store i64 %count, ptr @observed_old
+  call void @free(ptr %node)
+  call void @free(ptr %header)
+  call void @__bennett_qfree(ptr %a)
+  call void @__bennett_qfree(ptr %b)
+  ret void
+}
+```
+
+```text state=compatible-allocator-graph at=return
+{"roots":{"%from_node":["top%a"],"%from_callback":["top%a","top%b"],"%lane":["top%a","top%b"]},"counter_roots":[],"native":[[9,2,4,2,0,0],[9,2,4,2,0,0]]}
+```
+
 ### 5.3 Value sets
 
 The **value set** VS(v) of an integer or pointer operand is the set of its `INT` and `FN` atoms
@@ -1579,6 +1658,8 @@ A handle operand of a marker whose provenance is empty is `BD-E-HANDLE-UNTRACKED
 a handle of this program). *(non-normative)* A tracked value that at run time is not a live
 handle (a stale copy, a freed register) traps at the marker (`T-DEAD`, §18.3).
 
+Dynamically indexed handle vectors MUST use PT10 lane provenance and N15 total index semantics, retaining explicit ROOT atoms and adding zero only for possible out-of-range extraction. [deps: DLT-5.2-P11, DLT-6.2-P1, DLT-12.2-P17, ISA-4.1, ISA-4.2]
+
 ### 6.3 Comparison (maintainer decision 4)
 
 `icmp eq` and `icmp ne` of a handle with `null`, or with another handle-derived value, compare
@@ -1588,6 +1669,8 @@ in the same physical slot. The result is not handle-derived. In CC it lowers to 
 covers C `if (!q)` and Rust's `Option<Handle>` niche (audit D8). *(non-normative)* A comparison
 is a classical observation of identity, not of the register's content; ids are unique, so it
 equals the native comparison of the two handle values.
+
+Handle equality and null tests MUST compare allocation identity, preserve stale-versus-new inequality and produce a result without handle provenance. [deps: DLT-6.1-P1, DLT-6.3-P1, ISA-3.3-P7, ISA-4.1-P4]
 
 ### 6.4 Collections and containment
 
@@ -1604,6 +1687,12 @@ the analysis cannot see could read it:
 H functions in the link that receive launch register ids through §6.6 are analysed like device code:
 they may copy, store, compare and pass them back to device entries (§6.2 items 2–4); any other
 use is `BD-E-HANDLE-USE`.
+
+Handle provenance MUST flow through every indirect-call candidate's parameters and results exactly as through a direct defined call. [deps: DLT-5.2-P10, DLT-6.2-P5, DLT-6.4, ISA-3.3-P21, ISA-4.1-P11]
+
+A tracked object containing handles MUST remain storable and returnable through other tracked objects, with escape decided by the reachable handle slots rather than object escape alone. [deps: DLT-5.2, DLT-6.4-P1, DLT-6.4-P2, ISA-7.1, ISA-3.3]
+
+A global handle field MUST be analysed by reachable byte slots, allowing analysed host transport under the handle rules and retaining rejection only for an actual prohibited use or unknown-reader escape. [deps: DLT-5.2, DLT-6.4, DLT-6.6, ISA-3.3, ISA-10]
 
 ### 6.5 Realisation on ISA 0.8: static register files
 
@@ -2357,7 +2446,7 @@ define void @top() {
 | `compute(f, use, budget, env)` | `f`, `use` | action | `void (ptr)` | `action_call`; `action_call`; `adj action_call` |
 | `reversible(f, budget, env)` | `f` | reversible | `void (ptr)` | a call of an R function (ISA §3.1, §7.4) |
 | `oracle(f, budget, desc)` | `f` | oracle | any function type (§8) | `oracle_call @ref tk (ins..) tgt fr (mem..) (args..)` (ISA §4.7, §5.2) |
-| `inplace(g, ginv, budget, desc)` | `g`, `ginv` | oracle pair | any function type whose INOUT parameter and result have equal widths (§8.7) | `qinplace @g @ginv tk x` (ISA §4.5) |
+| `inplace(g, ginv, budget, desc)` | `g`, `ginv` | oracle pair | any function type whose INOUT parameter and result have equal widths (§8.7) | native `qinplace` (ISA §4.5) or the CC oracle/swap/inverse expansion of §8.7. [deps: DLT-7.1, DLT-8.7, ISA-4.5, ISA-4.7] |
 
 The marker fixes the region's **interface** (TDL-1, §10). The body is partitioned by content
 (§10) and never rejected for containing classical code; the plugin outlines coherent slices of
@@ -2401,6 +2490,8 @@ only when it is the **unique** candidate, because then every execution of the ma
 
 0.1's `BD-E-REGION-UNBOUNDED` and `BD-E-REGION-EXTERNAL` are deleted.
 
+Region operands loaded from tracked memory or relative tables MUST use the reference candidate analysis and its type-compatible address-taken fallback, with no blanket TOP rejection. [deps: DLT-5.2, DLT-7.2, DLT-12.8-P10, ISA-4.1, ISA-4.2, ISA-9.2]
+
 ### 7.3 Region identity (maintainer decision 1)
 
 A region is identified by its content, never by its symbol. Candidates that resolve to the same
@@ -2432,6 +2523,8 @@ declared interface". After the TDL partition (§10):
   not an R entry: its operand is treated as a direct call of the region function, partitioned by
   TDL inside actions and lifted inside oracles, with the call's budget record governing its
   slices (§9.3; audit B-37). 0.1's `BD-E-REGION-TIER` and `T-TIER` are deleted.
+
+A reversible marker reached during action generation MUST retain direct-body generation and inherited TDL/effect semantics rather than creating an R entry. [deps: DLT-7.4, DLT-10, DLT-11.5-P2, ISA-3.1, ISA-4.7, ISA-5.3]
 
 ### 7.5 Static well-formedness
 
@@ -2470,6 +2563,8 @@ Only the rules the north star requires:
 Deferred measurement is a channel on adjoint paths as well: the special §18.2 rule
 creates fresh retained records for standalone adj and retains E_f records through compute.
 An open window never authorises quncopy of these records.
+
+Front-end-requested deferred measurement MUST retain its channel records through the declared observation boundary, including the accepted standalone-adjoint and compute placement rules. [deps: DLT-7.5, DLT-18.2, ISA-4.4, ISA-4.6, ISA-12.1]
 
 ### 7.6 Outlining conventions
 
@@ -3072,6 +3167,8 @@ The marker then issues, in the caller's tier, one **oracle invocation** (§8.6) 
 the static registers the descriptor's handles denote (§6.5), the budget token (§9.5) and the
 classical arguments.
 
+ARG bindings MUST carry the caller's fixed-at-entry values in parameter order without specialising their values into the shape, and pointer arguments MUST retain entry-state semantics. [deps: DLT-8.2-P3, DLT-8.4-P1, DLT-8.5, ISA-4.7-P1, ISA-12.3-P2]
+
 ### 8.5 Entry state
 
 **Reference semantics.** The region function runs on a **private copy of the caller's whole
@@ -3192,6 +3289,8 @@ and return directly without an extra projection move.
   oracle calls (efficiency item G-15, §25.3). Under a `ctrl` every region call is `ctl`-prefixed
   (§18.2).
 
+The descriptor MUST retain independent IN, ARG, MEM_IN, OUT and INOUT bindings, packed field order, preserved inputs, common-delivery validation and exactly one synthetic invocation for zero payload outputs. [deps: DLT-8.1, DLT-8.2, DLT-8.6, DLT-16.2-P17, ISA-4.7, ISA-5.2, ISA-7.2]
+
 ### 8.7 In-place updates
 
 `inplace(g, ginv, budget, desc)` binds the in-place register x as `INOUT` (exactly one
@@ -3202,11 +3301,10 @@ descriptor's `tgt` MUST be null and its `fault` is ignored (`T-IFACE` otherwise)
 update has no fault outcome (NS §4.2), and the `qinplace` expansion allocates its own clean
 scratch (ISA §4.5).
 
-- **No other bindings**: the call lowers to ISA `qinplace @g @ginv tk x` (ISA §4.5) with @g,
-  @ginv the reference oracles of the pair.
-- **Classical `ARG`s with finite value sets**: one `qinplace` per tuple of argument values, each
-  with the pair specialised to those constants (the arguments become `lift.const` in the
-  reference bodies), dispatched by §14.2.
+- **No other bindings**: an exhaustive/library-verified pair lowers to ISA `qinplace @g @ginv tk x` (ISA §4.5) with @g and @ginv the pair's reference oracles. [deps: DLT-8.7-P2, DLT-8.7-P5, DLT-8.7-P6, ISA-4.5, ISA-12.1]
+  A sampled pair uses the CC expansion below with empty preserved-input, memory and argument lists. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-4.7]
+- **Classical `ARG`s with finite value sets**: an exhaustive/library-verified tuple uses one `qinplace` with the pair specialised to those constants (arguments become `lift.const` in the reference bodies), dispatched by §14.2. [deps: DLT-8.7-P3, DLT-8.7-P6, ISA-4.5, ISA-12.1]
+  A sampled tuple retains the CC expansion with those same argument bindings. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-4.7]
 - **Library bijections**: when the pair is a `bennett-arith` library bijection (add or subtract
   a value, xor, rotate, negate, byte swap, modular addition, modular multiplication by a unit,
   each with its stated conditions and its g∘ginv = id certificate, NS §3.1), the call lowers to
@@ -3245,6 +3343,10 @@ computation cannot be in-place"); a run-time budget (§9.5) below B_min traps at
 (`T-BUDGET`). *(non-normative)* On a finite set, ginv∘g = id makes g injective, hence a
 bijection, so g∘ginv = id and ginv is fault-free on every input, as ISA `qinplace` requires.
 0.1's `BD-E-INPLACE-UNVERIFIED` is deleted.
+
+Parametrised in-place calls MUST preserve the existing CC expansion for every admitted pair. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-3.3-P9, ISA-4.7]
+
+Pairs admitted with sampled evidence and the recorded universal inverse and sound-bound obligations MUST retain the CC expansion, and MUST NOT be labelled a native qinplace inverse-pair proof on the strength of sampling or T-CLEAN. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-3.3-P9, ISA-4.7, ISA-4.5-P5, ISA-12.1-P1, ISA-12.1-P2]
 
 ### 8.8 Examples
 
@@ -3958,6 +4060,8 @@ entry:
 {"baseline_run":{"code":2,"payload":0,"steps":43},"capacities":{"depth":16,"heap":64,"sstack":32,"stack":512,"steps":10000},"final_sstack":32,"identity":"7486a0aa9e6711325475ffce67d6ec1bb3d4d4ec981eb3b755e171ba04819365","resolved":{"depth":16,"heap":64,"sstack":32,"stack":512,"steps":10000},"run":{"code":0,"payload":7,"steps":316},"selection_identity":"4162aa7c5cf3b7bed36162dd7c0f123e26e0606a8bc118184d9f7acaab0786ce","steps_only_run":{"code":1,"payload":0,"steps":0}}
 ```
 
+Per-region budget resolution MUST retain the staged baseline, frozen layout, single selection_identity overlay and final-identity token binding, with explicit non-sentinel marker fields applied after lookup. [deps: DLT-9.1-P7, DLT-9.2-P4, DLT-9.2-P5, DLT-9.2-P6, DLT-9.2-P7, DLT-9.2-P8, ISA-5.4-P3]
+
 ### 9.3 What each budget governs
 
 | Region | Budget | Exhaustion |
@@ -3979,6 +4083,8 @@ pipeline, the normaliser and mapping versions and the runtimes version, never of
 lowering (NS §4.2). Heap bytes are counted by `lift.alloc` (`heap_used + max(n, 1)`), stack cells
 by `lift.call` (R_f cells per call, ISA §3.7, monotonic), depth by `lift.call`/`lift.ret`. The
 R-tier unit is §17.6.
+
+Every oracle budget MUST retain explicit steps, heap, stack and depth components and charge wrapper, replay and helper rows under the canonical map, with shadow-stack backing charged to heap. [deps: DLT-9.1, DLT-9.4, DLT-17.3, ISA-5.4-P2, ISA-3.7]
 
 ### 9.5 Run-time budgets
 
@@ -4423,6 +4529,8 @@ genuine host calls have `fault 8` and a trapped coverage line. Release of outliv
 requires clean/restored state, not unconditional fault 8. Oracle device state stays private
 under §11.3, with declared outputs under §8.6.
 
+An action body containing classical code MUST retain the Cl/M/Co partition, classical twins, predicated outliving stores and clean-workspace obligations of TDL-1 through TDL-12. [deps: DLT-10, DLT-18.2, ISA-4.7, ISA-5.2, ISA-6]
+
 ## 11. Effects and device models per tier (effects 0.2.4)
 
 ### 11.1 Tier table
@@ -4478,6 +4586,8 @@ A model without a binding is unbound: every operation on it is `__bennett_nz_fau
 executions that reach it (NS §4.2). The `entropy` fault code 10 in an oracle: ISA §4.2 admits
 `fault C` for every C < 2^F; ISA §5.4 labels code 10 "(R only)", which §25.2 records as a wording
 item. The bound console buffer's bytes are output slices (§8.6).
+
+Modelled libc effects MUST retain the tier-specific host, reversible-tape or lifted-state realisation, and coherent device state MUST be initialised from the descriptor and reversed with the oracle prefix. [deps: DLT-4.5, DLT-11.1, DLT-11.2, DLT-11.3, ISA-7.3, ISA-7.4, ISA-5.4-P4]
 
 ### 11.4 Host calls from CC
 
@@ -6780,6 +6890,8 @@ musl's `<fenv.h>` functions in `bennett-runtimes` do the same. Unconstrained ope
 to nearest and raise no flags, as LLVM assumes of the default environment. A `strictfp` call-site
 attribute on a marker is benign (§3.6).
 
+All seven formats MUST retain own-format arithmetic and transcendental semantics, with vector operations scalarised first and identical deterministic carrier implementations in the materialised native and lifted builds. [deps: DLT-13.1, DLT-13.2, DLT-13.3, DLT-13.4, DLT-13.5, DLT-12.1-P1, ISA-4.2]
+
 ### 13.6 Examples
 
 The unordered bit is predicate bit 3: ueq = 8|1 = 9, uno = 8, une = 8|2|4 = 14.
@@ -7203,6 +7315,8 @@ out:
 }
 ```
 
+Every device indirect call MUST retain the reference candidate closure and compare-tree lowering to tier-appropriate static calls, using comparison-link addresses and the accepted no-match fault. [deps: DLT-4.1-P12, DLT-14.2, DLT-16.4-P25, ISA-4.1, ISA-4.2, ISA-3.7]
+
 ### 14.3 Varargs (N23)
 
 - A variadic definition `R @f(P…, ...)` becomes `R @f(P…, ptr %nz.va)`; every call of it, direct
@@ -7371,6 +7485,8 @@ top(2147483000) = 2147483320
 (gp_offset < 41) is always false, so every argument is read from `overflow_arg_area`, which is the
 va block: slots at offsets 0, 8, 16 hold x, 20, 300, and the sum is x + 320.
 
+Variadic calls and definitions MUST retain the N23 argument block and target va_list memory-path transform, including promoted scalar types, va_copy and indirect variadic calls. [deps: DLT-14.3, DLT-12.2-P25, ISA-4.1-P8, ISA-4.1-P11, ISA-4.2]
+
 ### 14.4 Unwinding (N28: explicit propagation)
 
 N28–N30 remove `noreturn` and incompatible `tail`/`musttail` constraints from every
@@ -7473,6 +7589,8 @@ declare { ptr, i32 } @__bennett_rt_eh_match(ptr, ptr)
 ```text native=n-eh
 eh(2) = 0; eh(3) = 1; eh(-5) = 1 (input built with clang++ and a C++ may_throw that throws when x is odd; output built with the runtimes seeds, whose may_throw sets the EH state)
 ```
+
+Device exceptions MUST retain explicit propagation and in-region handler execution, with a region-escaping exception reported through that tier's declared fault path. [deps: DLT-14.4, DLT-12.2-P30, ISA-4.1-P11, ISA-4.2, ISA-4.9]
 
 ### 14.5 setjmp and longjmp (N29)
 
@@ -7734,6 +7852,8 @@ difference. Rows are added with a version change (§23).
 - **trapped**: every other row → F(8) with a coverage line naming the asm string. This is
   required by NS §3.3 ("trapped"), and it occurs only on the executions that reach the asm.
 
+Inline assembly and target intrinsics MUST retain the per-target lowered, shimmed or trapped classification with shim identity and a reached unmodelled-effect fault, rather than rejecting an entire device closure for containing asm. [deps: DLT-15, DLT-12.2-P33, ISA-4.1, ISA-7.3, ISA-13]
+
 ### 15.3 Module-level asm and assembly objects
 
 Symbols defined only by `module asm` or by non-bitcode objects (`.S` files) resolve like
@@ -7806,6 +7926,8 @@ SSA values of at most 128 bits, memory, calls and branches at the map boundary.
 Materialised LLVM may still contain bit-exact FP forms and aggregates; §16.4 maps these
 through integer carriers and field locations. Every such accepted form has a row. 0.1's
 `BD-E-LIFT-SUBSET` is deleted.
+
+Every materialised function in an oracle closure MUST remain liftable through the complete normalisation and mapping tables, including memory, recursion, indirect calls, vectors and floating-point carriers. [deps: DLT-12.2, DLT-C, DLT-16.1-P1, DLT-16.4, ISA-3.7, ISA-4.2, ISA-7.2]
 
 ### 16.2 The reference object
 
@@ -10106,11 +10228,13 @@ fault code 4 (§17.5) with the named diagnostic (§22.2).
 | `compute(f, use, budget, env)` | – | E_f = gen(f, env); the TDL-8 copies of E_f's fault registers; E_u = gen(use, env) with E_f's retained recorder visible (TDL-2); then the events E_f, copies, E_u, adjoint(E_f) |
 | `reversible(f, budget, env)` | no recorder active (else §7.4 applies) | §18.6 |
 | `oracle(f, budget, desc)` | the descriptor's checks (§8.1–§8.4: `T-IFACE`, `T-SIZE`, `T-DEAD`, `T-ALIAS`) | event `oracle` or `wide` of the dispatched shape: on every basis state, outputs ⊕= payload(F_B), fault ⊕= code(F_B) (ISA §5.2), F_B from the reference object of §16 on the entry state of §8.5 |
-| `inplace(g, ginv, budget, desc)` | the descriptor's checks; budget ≥ B_min (exhaustive) or B_bound (sampled), `T-BUDGET` | event `inplace`: x ← g(x; args), the permutation that §8.7 verified (ISA `qinplace`) |
+| `inplace(g, ginv, budget, desc)` | the descriptor's checks; budget ≥ B_min (exhaustive) or B_bound (sampled), `T-BUDGET` | event `inplace`: x ← g(x; args), the permutation admitted by §8.7, using its native call or CC expansion. [deps: DLT-8.7, DLT-18.3, ISA-4.5, ISA-4.7] |
 | effect markers | §11 | §11 per tier |
 
 A region operand whose value matches no source of its candidate set traps (`T-REGION`, §7.2); a
 dispatched ill-formed candidate traps (`T-REGION-INVALID`).
+
+A borrow outside a verified static action frame MUST retain the clean-allocation construction, while static action borrows MUST meet the ISA borrow-frame restoration conditions. [deps: DLT-18.3, DLT-25.3, ISA-4.3, ISA-5.6, ISA-9.4]
 
 ### 18.4 Generation of action regions
 
@@ -11025,6 +11149,8 @@ parameter. If the check passes, processing is identical to whole-program mode. I
 driver falls back to whole-program mode (it does not reject). Objects are content-addressed (ISA
 §9.2) and linked at launch (ISA §9.3), so the REPL is incremental.
 
+Closed-unit mode MUST retain whole-program semantics after its closedness check and fall back to whole-program processing when that check fails. [deps: DLT-19.1, DLT-19.7, ISA-9.2, ISA-9.3]
+
 ### 19.8 Mixed LLVM majors
 
 The driver reads every bitcode input with the newest major M of the envelope (bitcode is readable
@@ -11033,6 +11159,8 @@ Every input MUST have one target datalayout and triple (NS §3.2) (`BD-E-VERSION
 tool-version mismatch, not a program property). An input newer than M is `BD-E-VERSION`. The
 tested (front end, major) pairs are published in the envelope; a corpus case links clang 18
 bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
+
+Mixed-major bitcode links within the tested envelope MUST use its newest reader and matching plugin and library bitcode, retaining one target triple and DataLayout. [deps: DLT-19.8, DLT-21.1, ISA-9.1, ISA-9.2]
 
 ### 19.9 Options, identity, outputs, module flag
 
@@ -11175,6 +11303,8 @@ supervisor satp=Sv39; valid writable kernel V=0xffffffe000000000 maps to P
 store 0x34 through V; load P -> 0x34; load V -> 0x34; no code 7
 reverse store -> both P and V read 0x12; page-table state restored
 ```
+
+The riscv64 platform MUST retain modelled MMIO, deterministic interrupt polls, rewindable contexts and Sv39 data/code translation in CC, R and L, with guest aliases naming the same backing bytes. [deps: DLT-14.5, DLT-14.6, DLT-20, ISA-4.1, ISA-4.2, ISA-7.3, ISA-7.4]
 
 ### 20.7 Platform spike (mechanics)
 
@@ -11562,6 +11692,11 @@ the dependency; exact typed R reporting requires ISA 0.9 K5. So only the executi
 
 ### 25.2 Wording items
 
+*(non-normative)* The following are the retained historical ISA 0.8 wording
+requests, not an adoption of ISA 0.9 operations or a claim of normal return after
+an R fault; outline-0.3 I-gwf and I-bz6 record the terminal-run replacement for
+the 0.3 track.
+
 No capability is lost; two implementations could differ until each is fixed in ISA 0.9:
 
 - **ISA-7** is a capability dependency blocker, BLK-5 (§25.1), not a wording-only item.
@@ -11584,6 +11719,14 @@ No capability is lost; two implementations could differ until each is fixed in I
   should say whether an exhaustive claim over the remaining components, with the fixed region
   prepared from classical bytes (`qprep`, `bennett_qreg_prepare`), is a proof for that region
   content.
+
+Certificates MUST retain build-record and resolved-table identities and deferred-measurement information in the existing documented metadata channel where no dedicated field exists, and a fixed-region strict subdomain MUST be labelled evidence with its covered fraction by the checker, treating a producer label as a checked request. [deps: DLT-19.9, DLT-25.2, DLT-18.7, ISA-12.1, ISA-12.2, ISA-12.3]
+
+*(non-normative, I-gwf / D22 migration ledger).* The full-invocation and
+explicit-expected-relation binding proposal remains in outline-0.3 I-gwf for
+ISA 0.9 adoption; its K74 checker-owned label rule supplies the wording above.
+No dedicated schema field, 0.9 object, or terminal R status contract is adopted
+on this ISA 0.8 target. Bead gwf remains open for that versioned migration.
 
 ### 25.3 Efficiency items
 

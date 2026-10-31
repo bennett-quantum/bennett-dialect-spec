@@ -573,6 +573,8 @@ class Runner:
                 if tag in b['attrs'] and tag not in supported:
                     ident = b['attrs'][tag]
                     self.check(TAG_FAMILY[tag], ident, 'P-2', lambda t=tag:self.unsupported(t,'python3 scripts/dialect_check.py --family '+TAG_FAMILY[t], 'b-dialect-spec-qxd'))
+        from dialect_0211_contract import check_all
+        check_all(self)
         return self.rows
 
 
@@ -702,6 +704,9 @@ def action_object(isa,path,name,widths,rows):
 
 
 def state_check(runner,block):
+    if block['attrs']['state']=='compatible-allocator-graph':
+        from dialect_0211 import check_graph
+        return check_graph(runner,block)
     from dialect_0211 import STATES as DRAFT0211, check_state as check_0211
     if block['attrs']['state'] in DRAFT0211:return check_0211(runner,block)
     from dialect_round8 import STATES as ROUND8, check_state as check_round8

@@ -45,6 +45,149 @@ accepted classical correction a second time. PT12's finite integer products use
 K on distinct results; FP uncertainty retains non-handle TOP and ROOT provenance.
 The fail-loud fixpoint ceiling now allows K+1 atomic recurrence iterations.
 
+### Confirmations group validation — 2026-10-31
+
+**2824/2824 gate rows passed**, 0 failed/unavailable;
+`scripts/.tmp/0211-final.json` (pre-parser-hardening group).
+**91 checker units and 7 legacy runtime tests pass.** All 497 accepted tagged
+blocks remain byte-identical, including multiplicity. The tracked source manifest
+matched before/after the gate. Spec SHA-256 at this group:
+`3e7dcb4f99b8d95292ed5a1a58dabc3ddc54c6cd630e2db737cbaaff5d4436f3`.
+The discarded `0211-clarifications.json`/unit run failed on interpreter HEAD
+movement; those are development evidence, not freeze receipts. A fresh rerun
+passed. No independent ISA source was edited. The found nzf checker defects
+are resolved; all 33 remaining outline beads received section/evidence and
+rejected-alternative comments, with broader evidence closure left open.
+
+### Ruled confirmations group — draft text and evidence ledger
+
+All 35 compatible item resolutions now appear in their affected sections.
+I03 also updates two counterpart/effect table cells; I14 qualifies four
+existing native-specialisation sentences so they do not contradict the
+sampled CC path. There are 41 per-item normative sentences/markers, plus
+12 version/process markers: 53 total, 243 dependency references, all resolving
+in the supplied graphs. Unchanged PT/N/TDL/map/diagnostic rows retain
+accepted semantics; PT12 is the one changed reference-analysis row. Native K4,
+D15–D19 and new 0.9 objects/tokens/R faults are not adopted. I-gwf uses existing
+metadata and checker-owned evidence labels; its full-invocation/expected-relation
+0.9 migration remains cross-reference-only and the bead stays open.
+
+Red→green for the **document** ledger: 33 missing-sentence subtests failed
+before insertion (`scripts/.tmp/0211-clarifications-red.txt`), then all 35
+sentence/placement/dependency checks passed. This is textual closure evidence,
+not a claim that 33 new runtime mechanisms were implemented. The full gate
+adds one coverage row per item requiring the listed retained execution rows to
+have passed; a separate S0 row checks every accepted tagged block's hash and
+multiplicity. No accepted example was removed or weakened.
+
+The new compatible-allocator-graph is a separate behavioural witness for
+I11/I22/I23/I24/I26/I27/I28/I35. It combines a custom attributed site, a defined
+allocator wrapper, a returned two-level heap object, a shared global plus
+adjacent integer counter, two callback candidates with different ROOTs and a
+narrow i1 handle lane. Source/materialised native18/23 O0/O3 give identical
+[9,2,4,2,0,0] for both inputs: count, allocations, X gates, clean frees, live,
+code. Analysis checks all three ROOT sets and absence of counter/zero taint.
+This found b-dialect-spec-nzf: false BLK-1 at a nested visible-callee return,
+then invalid `ptr 0` from N21. The red commands failed respectively admission
+and LLVM verification before the fixes. Call-return summaries now distinguish
+a nested device return from host-entry return; root-killing frees still stop
+liveness, including frees in callees. N21 emits typed null/FP/integer zeros.
+These repair the checker against accepted rules; no canonical-map or norm
+algorithm/version change, new ISA capability, or header change is required.
+
+| Item / bead suffix | Section | Sentences | deps markers | Gate witness references | Disposition |
+|---|---|---:|---:|---|---|
+| I01 / 8wf.1 | 10 | 1 | 1 | state/tdl-a; state/tdl-b; state/tdl-d; state/co-loop-identity; state/co-loop-adj-overwritten; state/co-observe-write-observe | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I03 / 8wf.3 | 7.1, 8.7, 18.3 | 3 | 3 | state/inplace-param-quantum; recognise/inplace-arg-finite | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I04 / 8wf.4 | 3.4 | 1 | 1 | recognise/operand-class; recognise/operand-code-table | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I05 / 8wf.5 | 9.2 | 1 | 1 | state/budget-stage; recognise/budget-stage-runtime | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I06 / 8wf.6 | 8.4 | 1 | 1 | recognise/oracle-two-shapes; run-oracle/entry-replay-byte | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I07 / 8wf.7 | 16.1 | 1 | 1 | native/n-wideint; native/n-vector; native/fp-aggregate; run-oracle/listsum | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I08 / 8wf.8 | 7.5 | 1 | 1 | state/deferred-channel-adj-place; state/deferred-channel-adj; state/deferred-channel; recognise/region-measure-in-ctrl | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I09 / 8wf.9 | 18.3 | 1 | 1 | header/markers-c/markers-ir | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I10 / 8wf.10 | 6.3 | 1 | 1 | state/handle-stale-generation; recognise/handle-null-check; recognise/handle-eq | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I11 / 8wf.11 | 5.1 | 1 | 1 | recognise/handle-object-tracked; recognise/pt12-root-return; recognise/compatible-allocator-graph; state/compatible-allocator-graph | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I12 / 8wf.12 | 14.4 | 1 | 1 | native/n-eh; recognise/validator-v15-residue | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I13 / 8wf.13 | 11.3 | 1 | 1 | run-oracle/binding-block-byte; run-oracle/binding-clock-read; run-oracle/binding-console-byte; run-oracle/rung8-mini | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I14 / 8wf.14 | 8.7 | 5 | 5 | state/inplace-bound; recognise/inplace-wrong-inverse | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I15 / 8wf.15 | 13.5 | 1 | 1 | state/fp-sign-carrier; state/fcmp-abi; state/n-libm-x86-f128; state/n-libm-x86-ppcf128; native/n-vector | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I16 / 8wf.16 | 19.8 | 1 | 1 | state/driver-mixed-majors | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I17 / 8wf.17 | 8.6 | 1 | 1 | state/wide-delivery; state/oracle-empty-output; run-oracle/binding-out-byte; recognise/oracle-two-in | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I18 / 8wf.18 | 3.4 | 1 | 1 | recognise/operand-runtime-op; recognise/operand-class; recognise/operand-bad-code | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I21 / 8wf.21 | 3.6 | 1 | 1 | recognise/attr-strictfp-cold; recognise/attr-memory-none; recognise/attr-callsite-read | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I22 / 8wf.22 | 4.4 | 1 | 1 | state/driver-comparison-layout; recognise/indirect-table; recognise/compatible-allocator-graph; state/compatible-allocator-graph | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I23 / 8wf.23 | 6.4 | 1 | 1 | recognise/handle-indirect; recognise/handle-to-external; recognise/compatible-allocator-graph; state/compatible-allocator-graph | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I24 / 8wf.24 | 6.2 | 1 | 1 | recognise/handle-dynamic-lane; state/pt10-lane-zero; state/pt3-pack257; state/pt3-unpack; recognise/compatible-allocator-graph; state/compatible-allocator-graph | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I26 / 8wf.26 | 6.4 | 1 | 1 | recognise/handle-object-tracked; recognise/handle-store-host; recognise/compatible-allocator-graph; state/compatible-allocator-graph | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I27 / 8wf.27 | 5.2 | 1 | 1 | recognise/pt-variable-index; state/pt2-wrap; state/pt5-range-load; recognise/compatible-allocator-graph; state/compatible-allocator-graph | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I28 / 8wf.28 | 6.4 | 1 | 1 | recognise/handle-object-tracked; recognise/handle-store-host; recognise/compatible-allocator-graph; state/compatible-allocator-graph | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I30 / 8wf.30 | 7.2 | 1 | 1 | recognise/region-stack-slot; recognise/region-switch-table; recognise/region-host-param; recognise/region-mixed-types | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I31 / 8wf.31 | 7.4 | 1 | 1 | recognise/region-reversible-in-action; recognise/region-reversible-in-action-top-first; state/nested-cl-view | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I33 / 8wf.33 | 9.4 | 1 | 1 | state/shadow-stack-liveness; state/entry-allocation-only; run-oracle/listsum; state/budget-stage | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I34 / 8wf.34 | 19.7 | 1 | 1 | state/driver-closed-unit-fallback | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I35 / 8wf.35 | 14.2 | 1 | 1 | recognise/indirect-table; recognise/indirect-host-pointer; recognise/handle-indirect; recognise/compatible-allocator-graph; state/compatible-allocator-graph | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I36 / 8wf.36 | 15.2 | 1 | 1 | normalise/n-asm; recognise/asm-musl-syscall; asm/asm-0.2 | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I37 / 8wf.37 | 14.3 | 1 | 1 | native/n-varargs | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I39 / 8wf.39 | 20.6 | 1 | 1 | state/platform-uart-write; state/sv39-kernel-alias; run-program/fiber-pingpong; run-program/sjlj-two-frames | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I-0t9 / 0t9 | 1.5 | 1 | 1 | recognise/region-reversible-in-action; recognise/region-reversible-in-action-top-first | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I-0y2 / 0y2 | 5.2 | 1 | 1 | state/pt12-xor; state/pt12-cmpxchg-success; state/pt12-cmpxchg-failure | draft clarification implemented; evidence as listed; full outline closure not inferred |
+| I-gwf / gwf | 25.2 | 1 | 1 | state/budget-stage; step-check/rung4-mini | draft clarification implemented; evidence as listed; full outline closure not inferred |
+
+Rejected alternatives by item (from the ruled outline; none adopted):
+
+- **I01**: Generation-only execution changes the controlled store result; retaining incidental garbage as undeclared outputs violates the accepted cleanup contract.
+- **I03**: Reinstating BLK-3 is false; replacing every pair with native qinplace would exclude the sampled path described in I14.
+- **I04**: Accepting only class zero or merging classes without names loses the requested resource class.
+- **I05**: Iterating the final hash back into lookup creates cycles; steps-only records or source edits would restore the narrowing.
+- **I06**: Packing all inputs or constant-specialising every runtime argument imposes source/ABI restrictions the accepted descriptor removed.
+- **I07**: A scalar-only profile, silently trapping an unsupported generic intrinsic, or limiting the contract to checker seeds narrows scope.
+- **I08**: Measuring immediately changes the controlled instrument; uncopying retained channel records silently turns the channel into a unitary.
+- **I09**: Reinstating T-BORROW drops capability; treating arbitrary dirty state as clean without restoration is unsound.
+- **I10**: Physical-slot equality or id truncation aliases generations; banning null checks again breaks unmodified language idioms.
+- **I11**: A new whitelist of wrapper names or TOP for every non-libc return reinstates the same restriction; inventing freshness for opaque external code is unsound.
+- **I12**: Rejecting all unwinding or replacing an in-region catch with fault 4 changes defined program behaviour.
+- **I13**: F(8) for a modelled VFS/entropy call narrows SQLite/Monte Carlo; native host calls from R/L violate effect closure.
+- **I14**: Library-only admission narrows scope; claiming a sampled maximum is B_min or using a sampled claim as K4 authority is unsound.
+- **I15**: Silent widening through f64/native long double, deleting retained fneg/transport, or faulting uncovered checker formats would narrow the accepted contract.
+- **I16**: One-major-only linkage or promising arbitrary newer bitcode beyond the tested reader both contradict the envelope contract.
+- **I17**: Source packing wrappers, return-only results, the superseded k+2 scheme or deleting the zero-output call change the admitted interface or fault outcome.
+- **I18**: BD-E-OPERAND-UNBOUNDED for a finite-table selector reinstates the narrowing; remapping an invalid code silently is incorrect.
+- **I21**: Reverting to the spike-only whitelist narrows build flags; declaring all attributes benign permits elimination/speculation.
+- **I22**: Duplicating globals changes state; replacing stored addresses by clone addresses breaks comparisons/VFS tables; restoring BD-E-DEVICE-ADDRESS narrows libraries.
+- **I23**: Blanket address-taken/indirect escape rejects visible device code; allowing an opaque host callee to consume handles violates containment.
+- **I24**: Constant-lane-only acceptance narrows collections; merging packed scalar integers as lane values or dropping ROOTs is unsound.
+- **I26**: Object-level escape bans prohibit lists/trees; ignoring an actual unknown reader discards the north-star containment rule.
+- **I27**: Field-insensitive TOP restores the false rejection; assuming array bounds or using mathematical instead of modular GEP loses reachable slots.
+- **I28**: A name-based host-reference ban confuses unrelated fields; letting host native code dereference or perform arithmetic on handles violates provenance.
+- **I30**: Rejecting every imprecise candidate set or any over-approximated ill-formed candidate narrows correct executions; selected invalid/no-match candidates keep the accepted runtime faults.
+- **I31**: Creating an actual R call from a coherent event list would evade predication; reintroducing region-tier rejection loses inferred lifting.
+- **I33**: Memoryless tuples for a memory-using body, treating stack cells as bytes or omitting replay/helper cost changes the fault set.
+- **I34**: Rejecting a nonclosed unit rather than falling back narrows the fast path contract; running before final link without closedness can miss context.
+- **I35**: Requiring devirtualisation or rewriting SQLite narrows scope; qjumpr is intra-function and cannot substitute for a call.
+- **I36**: Blanket asm rejection removes musl/kernel paths; treating a syscall as a no-op silently changes effects; patterns do not constitute a completed platform inventory.
+- **I37**: Fixed-arity-only acceptance or relying on host register-save contents excludes printf/sqlite3_mprintf and misreads front-end va_arg expansion.
+- **I39**: Rejecting setjmp or turning volatile MMIO into an ordinary memfault drops platform scope; restricting translation to user mode breaks supervisor virtual memory.
+- **I-0t9**: Silently redefining candidates to mean a chosen entry would break existing examples; editing accepted bytes to reapply an already-present fix is unnecessary.
+- **I-0y2**: Ignoring the store, storing only the old result, or forcing TOP when the finite expansion is available loses the mandated materialised domain; weakening the single-thread assumption is outside this repair.
+- **I-gwf**: Inventing schema fields, returning normally from a faulted R call or labelling a fixed-database subdomain full-D proof misstates ISA 0.9. Evidence still supports the rung's declared-space test; no rung is removed.
+
+Additional outline evidence still requires work; these rows remain obligations,
+not skipped/deleted/reclassified checked examples. The current retained/new
+mini witnesses are not claimed to be the actual §8 end-to-end programs.
+In particular: exhaustive class/table loader and runtime selector sweeps;
+wrong-invocation/params-hash certificate replay; above-threshold sampled-pair
+admission (the current simple-pair recogniser still fails unimplemented there);
+entangled dirty-frame evidence; the full benign-attribute dynamic matrix;
+Windows funclets; all-ABI va_copy/spills/callback formatting; block-overlay
+write/read/reversal and entropy-exhaustion composition; platform poll/trap,
+full Sv39/exec inventory, and actual boot/unboot/rung execution. Exact per-item
+coverage remains the outline's Conformance consequence paragraphs; the table
+above names only evidence actually checked here. Related epic children remain
+open with completion comments for the draft portion, rather than being closed
+on mini evidence. The two narrow foundation beads are complete and closed.
+No new ISA gap found. Existing bz6/cbe and gwf retain their versioned adoption
+gates; no duplicate ISA capability issue is justified by compatible drafting.
+
 ## Round-8 final freeze — 0.2.10 — 2026-10-30
 
 **2767/2767 passed; 0 failed; 0 blocked/unavailable. Baseline 2732 → 2767.**

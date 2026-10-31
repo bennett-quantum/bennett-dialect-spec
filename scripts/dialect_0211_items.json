@@ -1,0 +1,500 @@
+[
+  {
+    "item": "I01",
+    "key": "01",
+    "bead": "b-dialect-spec-8wf.1",
+    "title": "Taint-driven lifting",
+    "section": "10",
+    "sentence": "An action body containing classical code MUST retain the Cl/M/Co partition, classical twins, predicated outliving stores and clean-workspace obligations of TDL-1 through TDL-12. [deps: DLT-10, DLT-18.2, ISA-4.7, ISA-5.2, ISA-6]",
+    "witnesses": [
+      "state/tdl-a",
+      "state/tdl-b",
+      "state/tdl-d",
+      "state/co-loop-identity",
+      "state/co-loop-adj-overwritten",
+      "state/co-observe-write-observe"
+    ],
+    "rejected": "Generation-only execution changes the controlled store result; retaining incidental garbage as undeclared outputs violates the accepted cleanup contract."
+  },
+  {
+    "item": "I03",
+    "key": "03",
+    "bead": "b-dialect-spec-8wf.3",
+    "title": "Parametrised inplace",
+    "section": "8.7",
+    "sentence": "Parametrised in-place calls MUST preserve the existing CC expansion for every admitted pair. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-3.3-P9, ISA-4.7]",
+    "witnesses": [
+      "state/inplace-param-quantum",
+      "recognise/inplace-arg-finite"
+    ],
+    "rejected": "Reinstating BLK-3 is false; replacing every pair with native qinplace would exclude the sampled path described in I14."
+  },
+  {
+    "item": "I04",
+    "key": "04",
+    "bead": "b-dialect-spec-8wf.4",
+    "title": "Allocation classes",
+    "section": "3.4",
+    "sentence": "Allocation class zero MUST denote any, and positive class indices MUST select the existing link-order class-name table. [deps: DLT-3.4-P18, DLT-3.4-P22, ISA-3.3-P8, ISA-8.3]",
+    "witnesses": [
+      "recognise/operand-class",
+      "recognise/operand-code-table"
+    ],
+    "rejected": "Accepting only class zero or merging classes without names loses the requested resource class."
+  },
+  {
+    "item": "I05",
+    "key": "05",
+    "bead": "b-dialect-spec-8wf.5",
+    "title": "Per-region budget tables",
+    "section": "9.2",
+    "sentence": "Per-region budget resolution MUST retain the staged baseline, frozen layout, single selection_identity overlay and final-identity token binding, with explicit non-sentinel marker fields applied after lookup. [deps: DLT-9.1-P7, DLT-9.2-P4, DLT-9.2-P5, DLT-9.2-P6, DLT-9.2-P7, DLT-9.2-P8, ISA-5.4-P3]",
+    "witnesses": [
+      "state/budget-stage",
+      "recognise/budget-stage-runtime"
+    ],
+    "rejected": "Iterating the final hash back into lookup creates cycles; steps-only records or source edits would restore the narrowing."
+  },
+  {
+    "item": "I06",
+    "key": "06",
+    "bead": "b-dialect-spec-8wf.6",
+    "title": "Classical oracle arguments",
+    "section": "8.4",
+    "sentence": "ARG bindings MUST carry the caller's fixed-at-entry values in parameter order without specialising their values into the shape, and pointer arguments MUST retain entry-state semantics. [deps: DLT-8.2-P3, DLT-8.4-P1, DLT-8.5, ISA-4.7-P1, ISA-12.3-P2]",
+    "witnesses": [
+      "recognise/oracle-two-shapes",
+      "run-oracle/entry-replay-byte"
+    ],
+    "rejected": "Packing all inputs or constant-specialising every runtime argument imposes source/ABI restrictions the accepted descriptor removed."
+  },
+  {
+    "item": "I07",
+    "key": "07",
+    "bead": "b-dialect-spec-8wf.7",
+    "title": "Full lifted LLVM closure",
+    "section": "16.1",
+    "sentence": "Every materialised function in an oracle closure MUST remain liftable through the complete normalisation and mapping tables, including memory, recursion, indirect calls, vectors and floating-point carriers. [deps: DLT-12.2, DLT-C, DLT-16.1-P1, DLT-16.4, ISA-3.7, ISA-4.2, ISA-7.2]",
+    "witnesses": [
+      "native/n-wideint",
+      "native/n-vector",
+      "native/fp-aggregate",
+      "run-oracle/listsum"
+    ],
+    "rejected": "A scalar-only profile, silently trapping an unsupported generic intrinsic, or limiting the contract to checker seeds narrows scope."
+  },
+  {
+    "item": "I08",
+    "key": "08",
+    "bead": "b-dialect-spec-8wf.8",
+    "title": "Requested deferred measurement",
+    "section": "7.5",
+    "sentence": "Front-end-requested deferred measurement MUST retain its channel records through the declared observation boundary, including the accepted standalone-adjoint and compute placement rules. [deps: DLT-7.5, DLT-18.2, ISA-4.4, ISA-4.6, ISA-12.1]",
+    "witnesses": [
+      "state/deferred-channel-adj-place",
+      "state/deferred-channel-adj",
+      "state/deferred-channel",
+      "recognise/region-measure-in-ctrl"
+    ],
+    "rejected": "Measuring immediately changes the controlled instrument; uncopying retained channel records silently turns the channel into a unitary."
+  },
+  {
+    "item": "I09",
+    "key": "09",
+    "bead": "b-dialect-spec-8wf.9",
+    "title": "Borrowing outside generations",
+    "section": "18.3",
+    "sentence": "A borrow outside a verified static action frame MUST retain the clean-allocation construction, while static action borrows MUST meet the ISA borrow-frame restoration conditions. [deps: DLT-18.3, DLT-25.3, ISA-4.3, ISA-5.6, ISA-9.4]",
+    "witnesses": [
+      "header/markers-c/markers-ir"
+    ],
+    "rejected": "Reinstating T-BORROW drops capability; treating arbitrary dirty state as clean without restoration is unsound."
+  },
+  {
+    "item": "I10",
+    "key": "10",
+    "bead": "b-dialect-spec-8wf.10",
+    "title": "Handle equality and null tests",
+    "section": "6.3",
+    "sentence": "Handle equality and null tests MUST compare allocation identity, preserve stale-versus-new inequality and produce a result without handle provenance. [deps: DLT-6.1-P1, DLT-6.3-P1, ISA-3.3-P7, ISA-4.1-P4]",
+    "witnesses": [
+      "state/handle-stale-generation",
+      "recognise/handle-null-check",
+      "recognise/handle-eq"
+    ],
+    "rejected": "Physical-slot equality or id truncation aliases generations; banning null checks again breaks unmodified language idioms."
+  },
+  {
+    "item": "I11",
+    "key": "11",
+    "bead": "b-dialect-spec-8wf.11",
+    "title": "General allocation sites",
+    "section": "5.1",
+    "sentence": "Abstract-object and return propagation MUST cover attributed allocator calls and defined allocator wrappers through their underlying allocation sites without requiring the wrapper's name in a whitelist. [deps: DLT-5.1-P4, DLT-5.1-P6, DLT-5.2-P10, ISA-7.1, ISA-7.2]",
+    "witnesses": [
+      "recognise/handle-object-tracked",
+      "recognise/pt12-root-return",
+      "recognise/compatible-allocator-graph",
+      "state/compatible-allocator-graph"
+    ],
+    "rejected": "A new whitelist of wrapper names or TOP for every non-libc return reinstates the same restriction; inventing freshness for opaque external code is unsound."
+  },
+  {
+    "item": "I12",
+    "key": "12",
+    "bead": "b-dialect-spec-8wf.12",
+    "title": "Exceptions and unwinding",
+    "section": "14.4",
+    "sentence": "Device exceptions MUST retain explicit propagation and in-region handler execution, with a region-escaping exception reported through that tier's declared fault path. [deps: DLT-14.4, DLT-12.2-P30, ISA-4.1-P11, ISA-4.2, ISA-4.9]",
+    "witnesses": [
+      "native/n-eh",
+      "recognise/validator-v15-residue"
+    ],
+    "rejected": "Rejecting all unwinding or replacing an in-region catch with fault 4 changes defined program behaviour."
+  },
+  {
+    "item": "I13",
+    "key": "13",
+    "bead": "b-dialect-spec-8wf.13",
+    "title": "Device models and libc virtualisation",
+    "section": "11.3",
+    "sentence": "Modelled libc effects MUST retain the tier-specific host, reversible-tape or lifted-state realisation, and coherent device state MUST be initialised from the descriptor and reversed with the oracle prefix. [deps: DLT-4.5, DLT-11.1, DLT-11.2, DLT-11.3, ISA-7.3, ISA-7.4, ISA-5.4-P4]",
+    "witnesses": [
+      "run-oracle/binding-block-byte",
+      "run-oracle/binding-clock-read",
+      "run-oracle/binding-console-byte",
+      "run-oracle/rung8-mini"
+    ],
+    "rejected": "F(8) for a modelled VFS/entropy call narrows SQLite/Monte Carlo; native host calls from R/L violate effect closure."
+  },
+  {
+    "item": "I14",
+    "key": "14",
+    "bead": "b-dialect-spec-8wf.14",
+    "title": "In-place evidence above small widths",
+    "section": "8.7",
+    "sentence": "Pairs admitted with sampled evidence and the recorded universal inverse and sound-bound obligations MUST retain the CC expansion, and MUST NOT be labelled a native qinplace inverse-pair proof on the strength of sampling or T-CLEAN. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-3.3-P9, ISA-4.7, ISA-4.5-P5, ISA-12.1-P1, ISA-12.1-P2]",
+    "witnesses": [
+      "state/inplace-bound",
+      "recognise/inplace-wrong-inverse"
+    ],
+    "rejected": "Library-only admission narrows scope; claiming a sampled maximum is B_min or using a sampled claim as K4 authority is unsound."
+  },
+  {
+    "item": "I15",
+    "key": "15",
+    "bead": "b-dialect-spec-8wf.15",
+    "title": "All seven FP formats and vector/libm FP",
+    "section": "13.5",
+    "sentence": "All seven formats MUST retain own-format arithmetic and transcendental semantics, with vector operations scalarised first and identical deterministic carrier implementations in the materialised native and lifted builds. [deps: DLT-13.1, DLT-13.2, DLT-13.3, DLT-13.4, DLT-13.5, DLT-12.1-P1, ISA-4.2]",
+    "witnesses": [
+      "state/fp-sign-carrier",
+      "state/fcmp-abi",
+      "state/n-libm-x86-f128",
+      "state/n-libm-x86-ppcf128",
+      "native/n-vector"
+    ],
+    "rejected": "Silent widening through f64/native long double, deleting retained fneg/transport, or faulting uncovered checker formats would narrow the accepted contract."
+  },
+  {
+    "item": "I16",
+    "key": "16",
+    "bead": "b-dialect-spec-8wf.16",
+    "title": "Mixed LLVM majors",
+    "section": "19.8",
+    "sentence": "Mixed-major bitcode links within the tested envelope MUST use its newest reader and matching plugin and library bitcode, retaining one target triple and DataLayout. [deps: DLT-19.8, DLT-21.1, ISA-9.1, ISA-9.2]",
+    "witnesses": [
+      "state/driver-mixed-majors"
+    ],
+    "rejected": "One-major-only linkage or promising arbitrary newer bitcode beyond the tested reader both contradict the envelope contract."
+  },
+  {
+    "item": "I17",
+    "key": "17",
+    "bead": "b-dialect-spec-8wf.17",
+    "title": "Multiple inputs, memory and out-parameters",
+    "section": "8.6",
+    "sentence": "The descriptor MUST retain independent IN, ARG, MEM_IN, OUT and INOUT bindings, packed field order, preserved inputs, common-delivery validation and exactly one synthetic invocation for zero payload outputs. [deps: DLT-8.1, DLT-8.2, DLT-8.6, DLT-16.2-P17, ISA-4.7, ISA-5.2, ISA-7.2]",
+    "witnesses": [
+      "state/wide-delivery",
+      "state/oracle-empty-output",
+      "run-oracle/binding-out-byte",
+      "recognise/oracle-two-in"
+    ],
+    "rejected": "Source packing wrappers, return-only results, the superseded k+2 scheme or deleting the zero-output call change the admitted interface or fault outcome."
+  },
+  {
+    "item": "I18",
+    "key": "18",
+    "bead": "b-dialect-spec-8wf.18",
+    "title": "Runtime operation codes and classes",
+    "section": "3.4",
+    "sentence": "A top operation-code or class value set MUST dispatch the entire valid table and retain the existing out-of-table runtime diagnostic. [deps: DLT-3.4, DLT-5.3, ISA-4.1-P4, ISA-4.1-P10, ISA-4.4]",
+    "witnesses": [
+      "recognise/operand-runtime-op",
+      "recognise/operand-class",
+      "recognise/operand-bad-code"
+    ],
+    "rejected": "BD-E-OPERAND-UNBOUNDED for a finite-table selector reinstates the narrowing; remapping an invalid code silently is incorrect."
+  },
+  {
+    "item": "I21",
+    "key": "21",
+    "bead": "b-dialect-spec-8wf.21",
+    "title": "Benign marker attributes",
+    "section": "3.6",
+    "sentence": "The benign, forbidden and unknown marker-attribute classification MUST retain the accepted list and be checked against dynamic marker-sequence preservation on every supported LLVM major. [deps: DLT-3.6, DLT-21.1, DLT-21.2, ISA-13]",
+    "witnesses": [
+      "recognise/attr-strictfp-cold",
+      "recognise/attr-memory-none",
+      "recognise/attr-callsite-read"
+    ],
+    "rejected": "Reverting to the spike-only whitelist narrows build flags; declaring all attributes benign permits elimination/speculation."
+  },
+  {
+    "item": "I22",
+    "key": "22",
+    "bead": "b-dialect-spec-8wf.22",
+    "title": "Polyvariant function cloning",
+    "section": "4.4",
+    "sentence": "Host and device variants MUST retain a common comparison-link function address and shared global data, while dispatch selects the variant for the caller's tier and coherence signature. [deps: DLT-4.3-P1, DLT-4.4, DLT-19.5, ISA-4.1, ISA-4.2, ISA-9.1]",
+    "witnesses": [
+      "state/driver-comparison-layout",
+      "recognise/indirect-table",
+      "recognise/compatible-allocator-graph",
+      "state/compatible-allocator-graph"
+    ],
+    "rejected": "Duplicating globals changes state; replacing stored addresses by clone addresses breaks comparisons/VFS tables; restoring BD-E-DEVICE-ADDRESS narrows libraries."
+  },
+  {
+    "item": "I23",
+    "key": "23",
+    "bead": "b-dialect-spec-8wf.23",
+    "title": "Handles through callbacks and returned addresses",
+    "section": "6.4",
+    "sentence": "Handle provenance MUST flow through every indirect-call candidate's parameters and results exactly as through a direct defined call. [deps: DLT-5.2-P10, DLT-6.2-P5, DLT-6.4, ISA-3.3-P21, ISA-4.1-P11]",
+    "witnesses": [
+      "recognise/handle-indirect",
+      "recognise/handle-to-external",
+      "recognise/compatible-allocator-graph",
+      "state/compatible-allocator-graph"
+    ],
+    "rejected": "Blanket address-taken/indirect escape rejects visible device code; allowing an opaque host callee to consume handles violates containment."
+  },
+  {
+    "item": "I24",
+    "key": "24",
+    "bead": "b-dialect-spec-8wf.24",
+    "title": "Dynamically indexed handle vectors",
+    "section": "6.2",
+    "sentence": "Dynamically indexed handle vectors MUST use PT10 lane provenance and N15 total index semantics, retaining explicit ROOT atoms and adding zero only for possible out-of-range extraction. [deps: DLT-5.2-P11, DLT-6.2-P1, DLT-12.2-P17, ISA-4.1, ISA-4.2]",
+    "witnesses": [
+      "recognise/handle-dynamic-lane",
+      "state/pt10-lane-zero",
+      "state/pt3-pack257",
+      "state/pt3-unpack",
+      "recognise/compatible-allocator-graph",
+      "state/compatible-allocator-graph"
+    ],
+    "rejected": "Constant-lane-only acceptance narrows collections; merging packed scalar integers as lane values or dropping ROOTs is unsound."
+  },
+  {
+    "item": "I26",
+    "key": "26",
+    "bead": "b-dialect-spec-8wf.26",
+    "title": "Linked handle structures",
+    "section": "6.4",
+    "sentence": "A tracked object containing handles MUST remain storable and returnable through other tracked objects, with escape decided by the reachable handle slots rather than object escape alone. [deps: DLT-5.2, DLT-6.4-P1, DLT-6.4-P2, ISA-7.1, ISA-3.3]",
+    "witnesses": [
+      "recognise/handle-object-tracked",
+      "recognise/handle-store-host",
+      "recognise/compatible-allocator-graph",
+      "state/compatible-allocator-graph"
+    ],
+    "rejected": "Object-level escape bans prohibit lists/trees; ignoring an actual unknown reader discards the north-star containment rule."
+  },
+  {
+    "item": "I27",
+    "key": "27",
+    "bead": "b-dialect-spec-8wf.27",
+    "title": "Field-sensitive handle provenance",
+    "section": "5.2",
+    "sentence": "Handle-array propagation MUST retain field intervals and finite-width address images so that a disjoint integer counter is not handle-derived, without treating an array type as a proof that indices stay in bounds. [deps: DLT-5.1-P7, DLT-5.2-P3, DLT-5.2-P7, DLT-5.2-P8, ISA-4.1, ISA-4.2]",
+    "witnesses": [
+      "recognise/pt-variable-index",
+      "state/pt2-wrap",
+      "state/pt5-range-load",
+      "recognise/compatible-allocator-graph",
+      "state/compatible-allocator-graph"
+    ],
+    "rejected": "Field-insensitive TOP restores the false rejection; assuming array bounds or using mathematical instead of modular GEP loses reachable slots."
+  },
+  {
+    "item": "I28",
+    "key": "28",
+    "bead": "b-dialect-spec-8wf.28",
+    "title": "Handle fields in shared globals",
+    "section": "6.4",
+    "sentence": "A global handle field MUST be analysed by reachable byte slots, allowing analysed host transport under the handle rules and retaining rejection only for an actual prohibited use or unknown-reader escape. [deps: DLT-5.2, DLT-6.4, DLT-6.6, ISA-3.3, ISA-10]",
+    "witnesses": [
+      "recognise/handle-object-tracked",
+      "recognise/handle-store-host",
+      "recognise/compatible-allocator-graph",
+      "state/compatible-allocator-graph"
+    ],
+    "rejected": "A name-based host-reference ban confuses unrelated fields; letting host native code dereference or perform arithmetic on handles violates provenance."
+  },
+  {
+    "item": "I30",
+    "key": "30",
+    "bead": "b-dialect-spec-8wf.30",
+    "title": "Region operands loaded from heap objects",
+    "section": "7.2",
+    "sentence": "Region operands loaded from tracked memory or relative tables MUST use the reference candidate analysis and its type-compatible address-taken fallback, with no blanket TOP rejection. [deps: DLT-5.2, DLT-7.2, DLT-12.8-P10, ISA-4.1, ISA-4.2, ISA-9.2]",
+    "witnesses": [
+      "recognise/region-stack-slot",
+      "recognise/region-switch-table",
+      "recognise/region-host-param",
+      "recognise/region-mixed-types"
+    ],
+    "rejected": "Rejecting every imprecise candidate set or any over-approximated ill-formed candidate narrows correct executions; selected invalid/no-match candidates keep the accepted runtime faults."
+  },
+  {
+    "item": "I31",
+    "key": "31",
+    "bead": "b-dialect-spec-8wf.31",
+    "title": "Reversible calls inside actions",
+    "section": "7.4",
+    "sentence": "A reversible marker reached during action generation MUST retain direct-body generation and inherited TDL/effect semantics rather than creating an R entry. [deps: DLT-7.4, DLT-10, DLT-11.5-P2, ISA-3.1, ISA-4.7, ISA-5.3]",
+    "witnesses": [
+      "recognise/region-reversible-in-action",
+      "recognise/region-reversible-in-action-top-first",
+      "state/nested-cl-view"
+    ],
+    "rejected": "Creating an actual R call from a coherent event list would evade predication; reintroducing region-tier rejection loses inferred lifting."
+  },
+  {
+    "item": "I33",
+    "key": "33",
+    "bead": "b-dialect-spec-8wf.33",
+    "title": "Four-component budgets",
+    "section": "9.4",
+    "sentence": "Every oracle budget MUST retain explicit steps, heap, stack and depth components and charge wrapper, replay and helper rows under the canonical map, with shadow-stack backing charged to heap. [deps: DLT-9.1, DLT-9.4, DLT-17.3, ISA-5.4-P2, ISA-3.7]",
+    "witnesses": [
+      "state/shadow-stack-liveness",
+      "state/entry-allocation-only",
+      "run-oracle/listsum",
+      "state/budget-stage"
+    ],
+    "rejected": "Memoryless tuples for a memory-using body, treating stack cells as bytes or omitting replay/helper cost changes the fault set."
+  },
+  {
+    "item": "I34",
+    "key": "34",
+    "bead": "b-dialect-spec-8wf.34",
+    "title": "Closed-unit fast path",
+    "section": "19.7",
+    "sentence": "Closed-unit mode MUST retain whole-program semantics after its closedness check and fall back to whole-program processing when that check fails. [deps: DLT-19.1, DLT-19.7, ISA-9.2, ISA-9.3]",
+    "witnesses": [
+      "state/driver-closed-unit-fallback"
+    ],
+    "rejected": "Rejecting a nonclosed unit rather than falling back narrows the fast path contract; running before final link without closedness can miss context."
+  },
+  {
+    "item": "I35",
+    "key": "35",
+    "bead": "b-dialect-spec-8wf.35",
+    "title": "Indirect calls in device code",
+    "section": "14.2",
+    "sentence": "Every device indirect call MUST retain the reference candidate closure and compare-tree lowering to tier-appropriate static calls, using comparison-link addresses and the accepted no-match fault. [deps: DLT-4.1-P12, DLT-14.2, DLT-16.4-P25, ISA-4.1, ISA-4.2, ISA-3.7]",
+    "witnesses": [
+      "recognise/indirect-table",
+      "recognise/indirect-host-pointer",
+      "recognise/handle-indirect",
+      "recognise/compatible-allocator-graph",
+      "state/compatible-allocator-graph"
+    ],
+    "rejected": "Requiring devirtualisation or rewriting SQLite narrows scope; qjumpr is intra-function and cannot substitute for a call."
+  },
+  {
+    "item": "I36",
+    "key": "36",
+    "bead": "b-dialect-spec-8wf.36",
+    "title": "Inline assembly and target intrinsics",
+    "section": "15.2",
+    "sentence": "Inline assembly and target intrinsics MUST retain the per-target lowered, shimmed or trapped classification with shim identity and a reached unmodelled-effect fault, rather than rejecting an entire device closure for containing asm. [deps: DLT-15, DLT-12.2-P33, ISA-4.1, ISA-7.3, ISA-13]",
+    "witnesses": [
+      "normalise/n-asm",
+      "recognise/asm-musl-syscall",
+      "asm/asm-0.2"
+    ],
+    "rejected": "Blanket asm rejection removes musl/kernel paths; treating a syscall as a no-op silently changes effects; patterns do not constitute a completed platform inventory."
+  },
+  {
+    "item": "I37",
+    "key": "37",
+    "bead": "b-dialect-spec-8wf.37",
+    "title": "Varargs",
+    "section": "14.3",
+    "sentence": "Variadic calls and definitions MUST retain the N23 argument block and target va_list memory-path transform, including promoted scalar types, va_copy and indirect variadic calls. [deps: DLT-14.3, DLT-12.2-P25, ISA-4.1-P8, ISA-4.1-P11, ISA-4.2]",
+    "witnesses": [
+      "native/n-varargs"
+    ],
+    "rejected": "Fixed-arity-only acceptance or relying on host register-save contents excludes printf/sqlite3_mprintf and misreads front-end va_arg expansion."
+  },
+  {
+    "item": "I39",
+    "key": "39",
+    "bead": "b-dialect-spec-8wf.39",
+    "title": "Kernel/runtime platform and control transfer",
+    "section": "20.6",
+    "sentence": "The riscv64 platform MUST retain modelled MMIO, deterministic interrupt polls, rewindable contexts and Sv39 data/code translation in CC, R and L, with guest aliases naming the same backing bytes. [deps: DLT-14.5, DLT-14.6, DLT-20, ISA-4.1, ISA-4.2, ISA-7.3, ISA-7.4]",
+    "witnesses": [
+      "state/platform-uart-write",
+      "state/sv39-kernel-alias",
+      "run-program/fiber-pingpong",
+      "run-program/sjlj-two-frames"
+    ],
+    "rejected": "Rejecting setjmp or turning volatile MMIO into an ordinary memfault drops platform scope; restricting translation to user mode breaks supervisor virtual memory."
+  },
+  {
+    "item": "I-0t9",
+    "key": "0t9",
+    "bead": "b-dialect-spec-0t9",
+    "title": "First-region-operand example metadata",
+    "section": "1.5",
+    "sentence": "The candidates attribute MUST continue to assert the resolved set of the first region operand in module instruction order, including nested-marker examples. [deps: DLT-1.5-P9, DLT-4.1, DLT-7.2, ISA-4.7]",
+    "witnesses": [
+      "recognise/region-reversible-in-action",
+      "recognise/region-reversible-in-action-top-first"
+    ],
+    "rejected": "Silently redefining candidates to mean a chosen entry would break existing examples; editing accepted bytes to reapply an already-present fix is unnecessary."
+  },
+  {
+    "item": "I-0y2",
+    "key": "0y2",
+    "bead": "b-dialect-spec-0y2",
+    "title": "PT12 atomic-update transfers (nonblocking)",
+    "section": "5.2",
+    "sentence": "Before domains freeze, PT12 MUST apply PT6 to the old value, the PT5 transfers of the full N9 update, and PT7 to the actual stored value, with cmpxchg returning its old-value and success fields and storing the selected new-or-old value. [deps: DLT-5.2-P1, DLT-5.2-P6, DLT-5.2-P7, DLT-5.2-P8, DLT-5.2-P13, DLT-12.2-P11, ISA-4.1, ISA-4.2]",
+    "witnesses": [
+      "state/pt12-xor",
+      "state/pt12-cmpxchg-success",
+      "state/pt12-cmpxchg-failure"
+    ],
+    "rejected": "Ignoring the store, storing only the old result, or forcing TOP when the finite expansion is available loses the mandated materialised domain; weakening the single-thread assumption is outside this repair."
+  },
+  {
+    "item": "I-gwf",
+    "key": "gwf",
+    "bead": "b-dialect-spec-gwf",
+    "title": "ISA wording and certificate migration ledger",
+    "section": "25.2",
+    "sentence": "Certificates MUST retain build-record and resolved-table identities and deferred-measurement information in the existing documented metadata channel where no dedicated field exists, and a fixed-region strict subdomain MUST be labelled evidence with its covered fraction by the checker, treating a producer label as a checked request. [deps: DLT-19.9, DLT-25.2, DLT-18.7, ISA-12.1, ISA-12.2, ISA-12.3]",
+    "witnesses": [
+      "state/budget-stage",
+      "step-check/rung4-mini"
+    ],
+    "rejected": "Inventing schema fields, returning normally from a faulted R call or labelling a fixed-database subdomain full-D proof misstates ISA 0.9. Evidence still supports the rung's declared-space test; no rung is removed."
+  }
+]
