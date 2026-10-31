@@ -445,12 +445,12 @@ class Flow:
             if self.nonlocal_linkage(f.name):
                 for idx,(ty,_,v) in enumerate(f.params):
                     if v:self.put(f,v,{0:{('P','EXT','*'),('C',f'ENTRY:{f.name}:{idx}')} if ty[0]=='ptr' else {TOP}})
-        for iteration in range(100):
+        for iteration in range(8194):
             changed=False
             for f in self.funcs():
                 for ins in f.instrs():changed |= self.flow_step(f,ins)
             if not changed:break
-        else:raise d.Fail('PT1–PT12: fixpoint did not converge within 100 iterations')
+        else:raise d.Fail('PT1–PT12: fixpoint did not converge within 8194 iterations')
         self.device={f.name for f in self.funcs() if any(self.marker_calls(f))}
         self.device |= set().union(set(),*self.cands.values())
         for _ in range(len(self.m.funcs)):
@@ -473,7 +473,7 @@ class Flow:
                              for a in atoms if a[0]!='C' or a[1] in active)
         self.values={k:{lane:activate(ats) for lane,ats in v.items()} for k,v in self.values.items()}
         self.memory={k:activate(ats) for k,ats in self.memory.items()}
-        for _ in range(100):
+        for _ in range(8194):
             changed=False
             for f in self.funcs():
                 for ins in f.instrs():changed |= self.flow_step(f,ins)
@@ -481,8 +481,69 @@ class Flow:
         self.base={(fn,v):frozenset(x[1:] for x in union(*lanes.values()) if x[0]=='P') for (fn,v),lanes in self.values.items()}
         self.prov={(fn,v):{k:frozenset(x[1] for x in a if x[0]=='R') for k,a in lanes.items()} for (fn,v),lanes in self.values.items()}
 
+    def atomic_step(self,f,ins):
+        """PT12: old-value load, N9 update, actual store; one S2 fixpoint.
+
+        Finite integer products are evaluated before K widening. No LLVM range
+        metadata supplies bounds. FP updates conservatively retain unknown bits;
+        pointer/ROOT provenance is kept for the ordinary containment checks.
+        """
+        body=ins.text.split(' = ',1)[-1]
+        if ins.op=='cmpxchg':
+            m=re.fullmatch(r'cmpxchg (?:weak )?(?:volatile )?ptr ([^,]+), (i\d+|ptr) ([^,]+), (?:i\d+|ptr) ([^ ]+) .+',body)
+            if not m:raise d.Fail('PT12 malformed cmpxchg: '+body)
+            p,t,c,n=m.groups();op='cmpxchg'
+        else:
+            m=re.fullmatch(r'atomicrmw (?:volatile )?(\w+) ptr ([^,]+), (\w+) ([^ ]+) .+',body)
+            if not m:raise d.Fail('PT12 malformed atomicrmw: '+body)
+            op,p,t,n=m.groups();c=None
+        ty=d.parse_type(t)[0];width=self.type_width(ty);size=d.tsize(ty,self.pw)
+        ptrs=self.ptrs(f,p)
+        old=union(self.getmem(ptrs,size,width),{TOP} if TOP in self.atoms(f,p) else {})
+        rhs=self.atoms(f,n);comp=self.atoms(f,c) if c is not None else frozenset()
+        new=frozenset();success=set()
+        provenance={x for x in old|rhs|comp if x[0] in ('R','C')}
+        def finite(atoms):return bool(atoms) and all(a[0]=='I' for a in atoms)
+        if op=='xchg':new=rhs
+        elif op=='cmpxchg':
+            if finite(old) and finite(comp):
+                for a,b in itertools.product(old,comp):
+                    ok=a[1]%(1<<width)==b[1]%(1<<width)
+                    success.add(('I',int(ok)))
+                    new=union(new,rhs if ok else {a})
+            elif old and comp:
+                success={('I',0),('I',1)};new=union(old,rhs)
+        elif ty[0]=='int' and finite(old) and finite(rhs):
+            mask=(1<<width)-1
+            def signed(x):return x-(1<<width) if x&(1<<(width-1)) else x
+            ops={'add':lambda a,b:a+b,'sub':lambda a,b:a-b,
+                 'and':lambda a,b:a&b,'nand':lambda a,b:~(a&b),
+                 'or':lambda a,b:a|b,'xor':lambda a,b:a^b,
+                 'min':lambda a,b:a if signed(a)<signed(b) else b,
+                 'max':lambda a,b:a if signed(a)>signed(b) else b,
+                 'umin':min,'umax':max,
+                 'uinc_wrap':lambda a,b:0 if a>=b else a+1,
+                 'udec_wrap':lambda a,b:b if a==0 or a>b else a-1,
+                 'usub_cond':lambda a,b:a-b if a>=b else a,
+                 'usub_sat':lambda a,b:max(a-b,0)}
+            if op not in ops:raise d.Fail('PT12 unknown integer N9 update '+op)
+            # K counts distinct results, not Cartesian pairs; stop only at K+1.
+            values=set()
+            for a,b in itertools.product(old,rhs):
+                values.add(('I',ops[op](a[1]&mask,b[1]&mask)&mask))
+                if len(values)>4096:values={TOP};break
+            new=frozenset(values)
+        elif old and rhs:new=union({TOP},provenance)
+        new=union(new,provenance)
+        changed=False
+        for obj,off in ptrs:
+            if new:changed|=self.slot(obj,off,size,new,width)
+        lanes={0:old,1:success} if op=='cmpxchg' else {0:old}
+        return self.put(f,ins.res,lanes)|changed
+
     def flow_step(self,f,ins):
         op=ins.op;body=ins.text.split(' = ',1)[-1];changed=False;lanes={}
+        if op in ('atomicrmw','cmpxchg'):return self.atomic_step(f,ins)
         if op=='alloca':lanes={0:{('P',f.name+ins.res,0)}}
         elif op=='getelementptr':lanes=self.gep(f,body)
         elif op in ('phi','select'):

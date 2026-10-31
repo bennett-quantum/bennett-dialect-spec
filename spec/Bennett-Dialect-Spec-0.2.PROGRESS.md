@@ -1,3 +1,50 @@
+## Draft 0.2.11 implementation — 2026-10-31
+
+Owner: implementation sub-agent, sole specification editor; parent owns the session worklog.
+Scope: ruled compatible track, ISA grading target 0.8. The outline index contains
+32 epic children plus 0t9/0y2/gwf = 35 compatible records (the request's “33 plus
+three” count does not match that index). No outline, docs, worklog, HANDOFF,
+CLAUDE, sibling or marker-header edits. No push. SPEC_VERSIONS.toml is outside
+owned paths and continues to identify accepted 0.2.10; this working draft's
+header, full version, plugin identity and module-flag check are 0.2.11.
+
+Accepted baseline reproduced headless: **2767/2767**, 0 failed/unavailable,
+`scripts/.tmp/0211-baseline.json`. Accepted spec SHA-256 verified before editing:
+`d4f3c1a88391cc147f8c8fa4f80f82852e3ebe6f880610fc16cd5151f33d7206`.
+The accepted text is superseded in git, never rewritten as an accepted release.
+
+### Foundation group: I-0y2 and I-0t9
+
+| Bead | Section | Normative sentences added/changed | deps markers | Witness rows | Disposition |
+|---|---|---:|---:|---|---|
+| b-dialect-spec-0y2 | 5.2 PT12 | 1 | 1 | pt12-xor; pt12-cmpxchg-success; pt12-cmpxchg-failure (parse/recognise/state) | complete; 2782/2782 full gate green; bead closed |
+| b-dialect-spec-0t9 | 1.5, 7.7 | 1 | 1 | region-reversible-in-action; region-reversible-in-action-top-first (parse/recognise) | complete; ordering companion and full gate green; bead closed |
+
+PT12 hand derivation: 1 xor 2 = 3, 3 xor 2 = 1, giving least fixed-point
+{1,3}; a single run has old=1, width=3. Successful cmpxchg(1,3) has initial
+old=1/success=1/width=3 and abstract old/width={1,3}, success={0,1}; failed
+cmpxchg(9,3) has old=1/success=0/width=1, with no false store of 3.
+All three native materialised witnesses execute on LLVM18/23 at O0/O3 with two
+X gates, one clean free, live_after=0 and code0. Python supplies expected domains
+and outputs only; clang-built binaries supply the observed execution.
+
+Red→green: the three atomic-domain tests failed 10 subtests before the repair
+(`scripts/.tmp/0211-pt12-red.txt`); four tests now pass, including eight integer
+update variants, both cmpxchg outcomes and the first-operand ordering test.
+The ordering companion is absent from the accepted snapshot and its regression
+fails there (`scripts/.tmp/0211-0t9-red.txt`); both orderings pass in this draft,
+and a deliberately wrong candidates assertion is rejected by the checker.
+Selected development gate: 231/231 recognise/state, 0 failures.
+Full foundation gate: **2782/2782**, 0 failed/unavailable,
+`scripts/.tmp/0211-foundation.json`; **88 checker units pass**.
+
+Rejected for 0y2: ignored stores, storing only the old result, and forcing TOP
+where the finite N9 update is available; the single-thread assumption stays.
+Rejected for 0t9: redefining candidates as a chosen entry or applying the already
+accepted classical correction a second time. PT12's finite integer products use
+K on distinct results; FP uncertainty retains non-handle TOP and ROOT provenance.
+The fail-loud fixpoint ceiling now allows K+1 atomic recurrence iterations.
+
 ## Round-8 final freeze — 0.2.10 — 2026-10-30
 
 **2767/2767 passed; 0 failed; 0 blocked/unavailable. Baseline 2732 → 2767.**

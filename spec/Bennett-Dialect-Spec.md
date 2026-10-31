@@ -1,20 +1,14 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.10
+# Bennett LLVM Dialect — Specification, draft 0.2.11
 
-**Date:** 2026-10-29. **Status:** draft 0.2.10 of `bennett-dialect-spec` (`Bennett-NorthStar.md`
-§3, §6.1), written from the ratified outline `spec/outline-0.2.md` (maintainer rulings of
-2026-10-29 at its end), revised after council rounds 1–3. It replaces draft
-0.1, which the narrowing audit (`docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) found
-to narrow north-star scope in 40 distinct places. Nothing is implemented. It targets the
-Bennett virtual ISA **draft 0.8** (`bennett-isa-spec/spec/Bennett-ISA-Spec.md`, council
-accepted 2026-10-28), cited "ISA §n", and is graded against ISA 0.8. MUST, MUST NOT, SHOULD and
-MAY are normative; *(non-normative)* explains. Mechanics this draft does not settle carry a
-**default** in §24; capabilities that ISA 0.8 cannot express in some case are **blockers** in
-§25, each with the exact ISA change.
+**Date:** 2026-10-31. **Status:** draft 0.2.11, from outline-0.3 rulings of 2026-10-31, not yet graded.
+This draft supersedes accepted 0.2.10, retained in git at spec SHA-256 `d4f3c1a88391cc147f8c8fa4f80f82852e3ebe6f880610fc16cd5151f33d7206`.
+The grading target remains Bennett ISA **0.8**. [deps: DLT-front-P2, DLT-1.3, DLT-23]
 
-**Versioning.** Dialect 0.2.10: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4,
-effects 0.2.4, norm 0.2.8, map 0.2.9, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8.
-The **full version string** (`0.2.10`) is the compatibility unit (§23): drafts are not compatible
-with each other.
+**Versioning.** Dialect 0.2.11: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4, effects 0.2.4, norm 0.2.8, map 0.2.9, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8. [deps: DLT-front-P2, DLT-23]
+The **full version string** (`0.2.11`) is the compatibility unit (§23): drafts are not compatible with each other. [deps: DLT-front-P2, DLT-23]
+The compatible track MUST retain existing marker signatures, canonical map and externally visible reference behaviour while clarifying inherited rules and supplying closure evidence. [deps: DLT-front-P2, DLT-3.2, DLT-16, DLT-23]
+Every new or changed normative sentence MUST end with a dependency declaration naming its DLT or ISA statement or clause dependencies. [deps: DLT-1.5, DLT-23]
+ISA 0.9 adoption remains in the separate 0.3 track described by `outline-0.3.md`, D15–D19; this draft does not adopt those operations.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
 that the north star promises (its thesis, §3–§5 and every rung of the §8 demo ladder; Grover
@@ -161,6 +155,8 @@ its declaration (§3.2, §3.1). **Section references**: `§n` is a section of th
 list (`ISA §4.7, §5.3`) names the same document as the reference before it. Fenced blocks
 without a tag are illustrations and are non-normative; an `llvm` or `isa` block without a tag is
 an error of this document.
+
+The candidates attribute MUST continue to assert the resolved set of the first region operand in module instruction order, including nested-marker examples. [deps: DLT-1.5-P9, DLT-4.1, DLT-7.2, ISA-4.7]
 
 ### 1.6 Diagnostics and verdicts
 
@@ -1021,12 +1017,82 @@ not permit omitting a value produced by the materialised execution.
 | PT9 | direct call of G, or indirect call with candidate G (§14.2) | AV(parameter i of G) ⊇ AV(argument i); AV(result) ⊇ the union of AV over G's `ret` operands; `byval` arguments copy the pointee's slots into the callee's copy object |
 | PT10 | `insertelement`/`extractelement`/`shufflevector`/`insertvalue`/`extractvalue` | extraction/insertion use N15’s total unsigned index semantics. Constant in-range extraction copies its lane; constant out-of-range extraction gives the element type’s zero. Dynamic extraction unions every source lane selected by a represented index, plus zero iff the index set includes an unsigned value >= L (including top when 2^K > L). No zero is added if every represented index is in range; zero adds no ROOT. In-range insertion replaces the selected lane; out-of-range insertion preserves the vector. Dynamic insertion includes each old lane unless it is certainly replaced, and the inserted value whenever that lane can be selected. Valid shuffle indices and aggregate paths move atoms unchanged (handle-table reads, audit B-23) |
 | PT11 | a parameter of a function with a host caller, a device entry, or a function whose address host code uses | AV ⊇ {(EXT, `*`)} for `ptr` parameters, ⊤ for integer parameters, plus the atoms of the device-side arguments by PT9; for a pointer parameter i of a device entry E, also the candidate atom ROOT(E, i) of §6.6 |
-| PT12 | a `qalloc`/`qborrow` call; a call of a function with no definition that resolves to a host call (§4.5) or is trapped; an `atomicrmw`/`cmpxchg` (before N9) | `qalloc`/`qborrow`: AV ∋ ROOT(site) (§6.5). An undefined callee: the result is ⊤ and every slot reachable from its pointer arguments gets ⊤. `atomicrmw`/`cmpxchg`: a load plus a store (PT6, PT7) |
+| PT12 | a `qalloc`/`qborrow` call; a call of a function with no definition that resolves to a host call (§4.5) or is trapped; an `atomicrmw`/`cmpxchg` (before N9) | `qalloc`/`qborrow`: AV ∋ ROOT(site) (§6.5). An undefined callee: the result is ⊤ and every slot reachable from its pointer arguments gets ⊤. Before domains freeze, PT12 MUST apply PT6 to the old value, the PT5 transfers of the full N9 update, and PT7 to the actual stored value, with cmpxchg returning its old-value and success fields and storing the selected new-or-old value. [deps: DLT-5.2-P1, DLT-5.2-P6, DLT-5.2-P7, DLT-5.2-P8, DLT-5.2-P13, DLT-12.2-P11, ISA-4.1, ISA-4.2] |
 
 An `inttoptr` of a constant gives (EXT, `*`) and, for function-pointer purposes, ⊤: function
 addresses are symbolic `FN` atoms during the analysis, and their numeric values A(F) are fixed
 only by the comparison link (§19.5), after normalisation (S7) and before lifting (S8).
 
+
+**PT12 N9 update witnesses (DB/DN/DS; non-normative).** The global starts at 1. Xor by 2 alternates 1 and 3 in the flow-insensitive least fixpoint; a single execution allocates width 3. Cmpxchg against 1 first succeeds and writes 3; subsequent abstract iterations include failure on old 3. Against 9 it always fails and leaves 1. Native LLVM 18/23 materialised O0/O3 checks old/success, actual width, clean free, liveness and code 0.
+
+```llvm example=pt12-xor verdict=accept
+@cell = internal global i64 1
+@observed_old = global i64 0
+@observed_success = global i64 0
+define void @top() {
+  %old = atomicrmw xor ptr @cell, i64 2 seq_cst
+  store i64 %old, ptr @observed_old
+  %width = load i64, ptr @cell
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt12-xor at=return
+{"domains": {"%old": [1, 3], "%width": [1, 3]}, "native": [1, 0, 3, 1, 0, 0]}
+```
+
+```llvm example=pt12-cmpxchg-success verdict=accept
+@cell = internal global i64 1
+@observed_old = global i64 0
+@observed_success = global i64 0
+define void @top() {
+  %pair = cmpxchg ptr @cell, i64 1, i64 3 seq_cst seq_cst
+  %old = extractvalue { i64, i1 } %pair, 0
+  %ok = extractvalue { i64, i1 } %pair, 1
+  store i64 %old, ptr @observed_old
+  %ok64 = zext i1 %ok to i64
+  store i64 %ok64, ptr @observed_success
+  %width = load i64, ptr @cell
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt12-cmpxchg-success at=return
+{"domains": {"%ok": [0, 1], "%old": [1, 3], "%width": [1, 3]}, "native": [1, 1, 3, 1, 0, 0]}
+```
+
+```llvm example=pt12-cmpxchg-failure verdict=accept
+@cell = internal global i64 1
+@observed_old = global i64 0
+@observed_success = global i64 0
+define void @top() {
+  %pair = cmpxchg ptr @cell, i64 9, i64 3 seq_cst seq_cst
+  %old = extractvalue { i64, i1 } %pair, 0
+  %ok = extractvalue { i64, i1 } %pair, 1
+  store i64 %old, ptr @observed_old
+  %ok64 = zext i1 %ok to i64
+  store i64 %ok64, ptr @observed_success
+  %width = load i64, ptr @cell
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt12-cmpxchg-failure at=return
+{"domains": {"%ok": [0], "%old": [1], "%width": [1]}, "native": [1, 0, 1, 1, 0, 0]}
+```
 
 PT12 checked ROOT propagation: `make` returns the fresh qalloc ROOT to its caller;
 the caller uses that same identity for a gate and free. This is a direct handle
@@ -2384,9 +2450,9 @@ Only the rules the north star requires:
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). Standalone adj uses the deterministic
   latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
-  `lowered` entry with source `dialect-0.2.10:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.11:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
-  records the wording item).
+  records the wording item). [deps: DLT-7.5, DLT-19.9, DLT-25.2]
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
   markers on handles received through `env`: they lower to R-tier `action_call`/`oracle_call`
   (ISA §3.1, §4.7), recorded in the R history and reversed by re-application or adjoint (ISA
@@ -2790,6 +2856,30 @@ define void @top() {
   ret void
 }
 ```
+
+```llvm example=region-reversible-in-action-top-first verdict=accept candidates=body
+define void @top() {
+  %e = alloca { ptr, i64 }
+  call void @__bennett_adj(ptr @body, ptr null, ptr %e)
+  ret void
+}
+
+define internal void @classical(ptr %e) {
+  %p = getelementptr i8, ptr %e, i64 8
+  %v = load i64, ptr %p
+  %v2 = add i64 %v, 1
+  store i64 %v2, ptr %p
+  ret void
+}
+
+define internal void @body(ptr %e) {
+  call void @__bennett_reversible(ptr @classical, ptr null, ptr %e)
+  ret void
+}
+
+```
+
+
 
 ```llvm example=region-reversible-marker verdict=blocked:BD-B-ISA7 candidates=body
 define internal void @body(ptr %e) {
@@ -3697,7 +3787,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.10.
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.11. [deps: DLT-9.2, DLT-23]
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -10848,7 +10938,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.10 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.11 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -10964,20 +11054,20 @@ bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.10;isa-0.8`; the driver refuses a plugin whose string differs. One plugin build per LLVM
+`dialect-0.2.11;isa-0.8`; the driver refuses a plugin whose string differs. [deps: DLT-19.9, DLT-23] One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
 pipeline, normaliser_version: "0.2.8"}` and `bindings.dialect_mapping_version = "0.2.9"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.10:<rule id>` (e.g. `dialect-0.2.10:N33`); the
+report (ISA §13), whose `source` field is `dialect-0.2.11:<rule id>` (e.g. `dialect-0.2.11:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved, including each shape's selection_identity, final semantic identity,
 resolved components and frozen layout capacities under §9.2) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
 hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
 `producer.version` (`<driver version>+build.<hex>`) until the ISA certificate has a field for it
-(§25.2).
+(§25.2). [deps: DLT-19.9, DLT-25.2]
 
 **A missing plugin fails loud.** No production artefact defines a marker: `bennett-runtimes`,
 `bennett-arith` and the driver's link inputs define no `__bennett_*` marker symbol (test runtimes
@@ -10985,9 +11075,9 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.10"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.11"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
-differs from its version (`BD-E-VERSION`):
+differs from its version (`BD-E-VERSION`). [deps: DLT-19.9, DLT-23]
 
 ```llvm example=version-flag verdict=reject:BD-E-VERSION
 define void @top() {
@@ -11389,10 +11479,10 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.10`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.11`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
-  not compatible with each other.
-- The S2 bitcast/initial-image repairs revise the full dialect to `0.2.10`.
+  not compatible with each other. [deps: DLT-23, DLT-19.9]
+- The compatible clarifications and PT12 N9 update transfer revise the full dialect to `0.2.11`. [deps: DLT-5.2, DLT-12.2-P11, DLT-23]
   The lifting map remains `0.2.9` (global-numbering correction); `norm`, `handles` and
   `regions` remain `0.2.8`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
   asm and corpus remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
