@@ -139,40 +139,56 @@ class Interpreter:
         self.exe = ISA_DIR / 'source' / 'target' / 'debug' / 'bennett-isa-ref'
         self.ready = False
         self.commit = None
+        self.fingerprint = None
 
     def build(self):
         commit=read_commit(ISA_SOURCE.parent)
-        if self.ready and self.commit==commit:
-            return
-        self.ready=False
-        # Content fingerprints catch concurrent uncommitted command additions too.
-        paths = sorted(p for p in ISA_SOURCE.rglob('*') if p.is_file() and
-                       not any(x in ('target','.tmp','.git','.beads') for x in p.relative_to(ISA_SOURCE).parts) and
-                       (p.suffix == '.rs' or p.name in ('Cargo.toml', 'Cargo.lock', 'README.md')))
-        before = {str(p.relative_to(ISA_SOURCE)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+        # Include both crates with their sibling layout: Cargo resolves the
+        # interpreter's ../conformance path even for a non-test offline build.
+        crates = (ISA_SOURCE, ISA_SOURCE.parent / 'conformance')
+
+        def source_hashes():
+            return {str(p.relative_to(ISA_SOURCE.parent)): hashlib.sha256(p.read_bytes()).hexdigest()
+                    for crate in crates for p in sorted(crate.rglob('*'))
+                    if p.is_file() and
+                    not any(x in ('target', '.tmp', '.git', '.beads') for x in p.relative_to(crate).parts) and
+                    (p.suffix == '.rs' or p.name in ('Cargo.toml', 'Cargo.lock', 'README.md'))}
+
+        before = source_hashes()
         fingerprint = hashlib.sha256(json.dumps({'commit':commit,'files':before}, sort_keys=True).encode()).hexdigest()
+        if self.ready and self.fingerprint == fingerprint:
+            return
+        self.ready = False
         ISA_DIR.mkdir(parents=True,exist_ok=True)
         # Content-addressed immutable snapshots keep a later build from deleting
         # the executable another checker process is still using.
-        source = ISA_DIR / ('source-'+fingerprint[:20])
-        self.exe = source / 'target' / 'debug' / 'bennett-isa-ref'
+        source = ISA_DIR.resolve() / ('source-'+fingerprint[:20])
+        manifest = source / 'reference-interpreter' / 'Cargo.toml'
+        self.exe = manifest.parent / 'target' / 'debug' / 'bennett-isa-ref'
         stamp = ISA_DIR / ('BUILD-'+fingerprint[:20]+'.json')
         with (ISA_DIR/'build.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
             if not stamp.exists() or not self.exe.exists():
-                if not source.exists():
-                    shutil.copytree(ISA_SOURCE, source, ignore=shutil.ignore_patterns('target', '.git', '.tmp', '.beads'))
+                # Only incomplete/unbuilt snapshots are replaced. Published
+                # snapshots stay in place for concurrent checker processes.
+                if source.exists():
+                    shutil.rmtree(source)
+                for crate in crates:
+                    shutil.copytree(crate, source / crate.name,
+                                    ignore=shutil.ignore_patterns('target', '.git', '.tmp', '.beads'))
                 copied = {k: hashlib.sha256((source / k).read_bytes()).hexdigest() for k in before}
-                after = {str(p.relative_to(ISA_SOURCE)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
+                after = source_hashes()
                 if before != after or before != copied or read_commit(ISA_SOURCE.parent)!=commit:
                     raise d.Fail('interpreter sources changed during snapshot; rerun to take a consistent copy')
-                command(['cargo', 'build', '--offline', '--manifest-path', source / 'Cargo.toml'], timeout=120)
+                command(['cargo', 'build', '--offline', '--manifest-path', manifest,
+                         '--target-dir', manifest.parent / 'target'], timeout=120)
                 stamp.write_text(json.dumps({'commit': commit,
                     'source_sha256': fingerprint, 'files': before}, indent=2) + '\n')
             (ISA_DIR/'BUILD.json').write_text(stamp.read_text())
         if read_commit(ISA_SOURCE.parent)!=commit:
             raise d.Fail("interpreter HEAD moved during build; rerun for a consistent snapshot")
         self.commit=commit
+        self.fingerprint=fingerprint
         self.ready = True
 
     def call(self, verb, *args):
