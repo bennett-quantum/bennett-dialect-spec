@@ -2,7 +2,9 @@
 
 **Date:** 2026-11-01. **Status:** draft 0.2.12, from consumer-named gaps of 2026-11-01; awaiting council review.
 This draft supersedes 0.2.11, accepted by the council's sol and codex seats in round 10
-(2026-10-31; gate 2834/2834), retained in git at spec SHA-256
+(2026-10-31; gate 2834/2834), retained at git `eaad067` with accepted-text SHA-256
+`05101a18e04098cfca5fdfb52edc9d9027723455adf2569da2fa49ef7a47c7c1`.
+Its pre-acceptance freeze receipt records spec SHA-256
 `67157631837887fabb412b762d571157f71dbb79bb9ff13331ec692ce7ad82ba`.
 Accepted 0.2.10 and its SHA are retained by `errata-0.2.10.md`; its text is unchanged.
 The grading target remains Bennett ISA **0.8**. [deps: DLT-front-P2, DLT-1.3, DLT-23]
@@ -4619,6 +4621,10 @@ driver declares the models in `devices.models` (ISA §9.1) and supplies `block_i
 | block-device reads and writes (the platform's virtio-blk, §20.3) | `block.read`, `block.write` |
 | files | a runtimes VFS over the block device, or over a data-image file system linked as a global |
 
+**Console syscall framing.** For virtual stdout/stderr, runtimes MUST implement `writev` by validating the vector count and total length before the first effect, then emitting one `console.write` per nonempty vector in source order (zero-length writes emit no record), returning the total byte count; the descriptor ABI limits are 0..1024 vectors and total at most target SSIZE_MAX, with invalid counts/overflow returning EINVAL and a null nonempty vector table returning EFAULT.
+
+The console shim MUST return ENOTTY for `ioctl(TIOCGWINSZ)`, ESPIPE for seeking, and success for closing a virtual stdout/stderr descriptor, with no extra device effect or terminal metadata; this close releases no host resource and does not disable the virtual byte sink.
+
 Device models beyond the four arrive with an ISA version (ISA §17 item 3, a mechanics
 deferral, §24): until then an effect on another device is `FAULT_EFFECT_UNMODELLED`.
 
@@ -4643,6 +4649,8 @@ executions that reach it (NS §4.2). The `entropy` fault code 10 in an oracle: I
 item. The bound console buffer's bytes are output slices (§8.6).
 
 Modelled libc effects MUST retain the tier-specific host, reversible-tape or lifted-state realisation, and coherent device state MUST be initialised from the descriptor and reversed with the oracle prefix. [deps: DLT-4.5, DLT-11.1, DLT-11.2, DLT-11.3, ISA-7.3, ISA-7.4, ISA-5.4-P4]
+
+**Model history.** R console writes MUST use only the ISA effect tape, while L model state is ordinary reversible memory initialised from descriptor bindings, private and discarding only under the oracle rules of §11.3; action console capacity exhaustion MUST fault before mutation under TDL-12, and a standalone native-model test undo log MUST NOT substitute for either tier's history. No second production model-history ABI is required.
 
 ### 11.4 Host calls from CC
 
@@ -11147,6 +11155,10 @@ The whole program is the device program in tier R (NS §4.2: "entered through
 - un-run is `bennett_reverse` (ISA §10): whole-run reversal restores the entry state; tape replay is
   deterministic from the tape and the entropy;
 - a `measure` reachable in the program is `BD-E-REVERSIBLE-MEASURE` (§7.5b).
+
+**Process context.** Before entering `<sym>`, the driver/runtimes preparation MUST establish a static single-thread musl process context with the supplied argc/argv/envp bytes, a null-terminated argv and envp, `environ`, program name, initial fenv and the libc/stdio state needed by the linked program; comparison-only Linux `_start` is permitted, but Linux ELF crt/TLS/auxv entry is not required in device tiers.
+
+For a C `main` entry, the runtimes entry wrapper MUST treat normal return as `exit(status)`, running registered exit handlers and flushing stdio exactly once under §14.7 before the launch stub catches the exit pseudo-exception; explicit `exit` follows that same path, and `_Exit` bypasses handlers/flush as §14.7 specifies.
 
 ### 19.3 Mode `--bennett-oracle=<sym>` ("oracle from program")
 

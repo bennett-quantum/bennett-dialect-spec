@@ -11,3 +11,15 @@ The plugin MUST retain A(S) for every original source function or alias whose ad
 ## jjr — §§16.9, 17.1
 
 The thin malloc body in §16.9 is a specialised witness whose calls all request 16 bytes. ISA allocation itself is exactly byte-bumping, not aligned; C malloc still owes its target ABI alignment. The general wrapper rounds its requested extent and inserts explicit charged padding allocations when an intervening runtime primitive leaves the next address unaligned, identically in both builds. This resolves the example-versus-C-ABI ambiguity without altering ISA §7.1.
+
+## lbq — §§11.2–11.3, 14.7, 19.2
+
+**Console syscall framing.** For virtual stdout/stderr, runtimes MUST implement `writev` by validating the vector count and total length before the first effect, then emitting one `console.write` per nonempty vector in source order (zero-length writes emit no record), returning the total byte count; the descriptor ABI limits are 0..1024 vectors and total at most target SSIZE_MAX, with invalid counts/overflow returning EINVAL and a null nonempty vector table returning EFAULT.
+
+The console shim MUST return ENOTTY for `ioctl(TIOCGWINSZ)`, ESPIPE for seeking, and success for closing a virtual stdout/stderr descriptor, with no extra device effect or terminal metadata; this close releases no host resource and does not disable the virtual byte sink.
+
+**Model history.** R console writes MUST use only the ISA effect tape, while L model state is ordinary reversible memory initialised from descriptor bindings, private and discarding only under the oracle rules of §11.3; action console capacity exhaustion MUST fault before mutation under TDL-12, and a standalone native-model test undo log MUST NOT substitute for either tier's history. No second production model-history ABI is required.
+
+**Process context.** Before entering `<sym>`, the driver/runtimes preparation MUST establish a static single-thread musl process context with the supplied argc/argv/envp bytes, a null-terminated argv and envp, `environ`, program name, initial fenv and the libc/stdio state needed by the linked program; comparison-only Linux `_start` is permitted, but Linux ELF crt/TLS/auxv entry is not required in device tiers.
+
+For a C `main` entry, the runtimes entry wrapper MUST treat normal return as `exit(status)`, running registered exit handlers and flushing stdio exactly once under §14.7 before the launch stub catches the exit pseudo-exception; explicit `exit` follows that same path, and `_Exit` bypasses handlers/flush as §14.7 specifies.

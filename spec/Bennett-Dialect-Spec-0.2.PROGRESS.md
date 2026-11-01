@@ -1,3 +1,10 @@
+## Draft 0.2.12 — lbq — 2026-11-01
+
+clarified: Ordered console vectors, static musl context, exact exit/flush and tier history; brt-4w7; lbq stays open.
+Disposition and clauses: `docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`.
+Headless gate **2854/2854**, zero failed/blocked; `scripts/.tmp/0212-lbq.json`.
+Validator `cargo test`: **1/1**, doc-tests 0; passed. Consumer implementation limits remain in beads.
+
 ## Draft 0.2.12 — jjr — 2026-11-01
 
 clarified: Exact primitive history, aligned C allocation with explicit charged padding; runtimes brt-agy; jjr stays open.

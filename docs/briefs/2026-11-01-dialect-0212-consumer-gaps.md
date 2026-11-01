@@ -7,3 +7,4 @@ Accepted 0.2.10 stays in git at 023f5a7; errata are a separate binding interpret
 |---|---|---|---|---|
 | mkb | N0 before resolve; S2 already models normalisation and N0 requires true | §§7.2, 12.2 N0 | clarified | Original source addresses retained; plugin bp-tr5 needs implementation evidence |
 | jjr | Aligned C wrapper over exact primitive; unmodified C needs ABI alignment | §§16.9, 17.1 | clarified | Current odd-size thin malloc is an implementation blocker; keep jjr open |
+| lbq | A: ordered byte effects, static musl context, ISA R tape; follows tier/entry contracts | §§11.2–11.3, 19.2 (14.7 cross-reference) | clarified | Framing matches; complete process-context evidence remains brt-4w7; keep lbq open; no second tape/ELF startup ABI |

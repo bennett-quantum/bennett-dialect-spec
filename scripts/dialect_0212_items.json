@@ -37,5 +37,40 @@
     "id": "jjr/1",
     "sentence": "If another runtime allocation leaves the next primitive address unaligned, runtimes MUST first allocate the minimal positive padding to reach the next a-aligned address, as an explicit ordinary primitive allocation charged to the same heap/history; it MUST track the next byte address across every runtime primitive allocation, and neither backend may conceal that padding or round a primitive result. Overflow/padding-budget failure faults before the corresponding allocation mutation. A heap with no intervening unaligned request needs no padding allocation.",
     "witnesses": []
+  },
+  {
+    "bead": "lbq",
+    "section": "11.2",
+    "id": "lbq/1",
+    "sentence": "**Console syscall framing.** For virtual stdout/stderr, runtimes MUST implement `writev` by validating the vector count and total length before the first effect, then emitting one `console.write` per nonempty vector in source order (zero-length writes emit no record), returning the total byte count; the descriptor ABI limits are 0..1024 vectors and total at most target SSIZE_MAX, with invalid counts/overflow returning EINVAL and a null nonempty vector table returning EFAULT.",
+    "witnesses": []
+  },
+  {
+    "bead": "lbq",
+    "section": "11.2",
+    "id": "lbq/2",
+    "sentence": "The console shim MUST return ENOTTY for `ioctl(TIOCGWINSZ)`, ESPIPE for seeking, and success for closing a virtual stdout/stderr descriptor, with no extra device effect or terminal metadata; this close releases no host resource and does not disable the virtual byte sink.",
+    "witnesses": []
+  },
+  {
+    "bead": "lbq",
+    "section": "11.3",
+    "id": "lbq/1",
+    "sentence": "**Model history.** R console writes MUST use only the ISA effect tape, while L model state is ordinary reversible memory initialised from descriptor bindings, private and discarding only under the oracle rules of \u00a711.3; action console capacity exhaustion MUST fault before mutation under TDL-12, and a standalone native-model test undo log MUST NOT substitute for either tier's history. No second production model-history ABI is required.",
+    "witnesses": []
+  },
+  {
+    "bead": "lbq",
+    "section": "19.2",
+    "id": "lbq/1",
+    "sentence": "**Process context.** Before entering `<sym>`, the driver/runtimes preparation MUST establish a static single-thread musl process context with the supplied argc/argv/envp bytes, a null-terminated argv and envp, `environ`, program name, initial fenv and the libc/stdio state needed by the linked program; comparison-only Linux `_start` is permitted, but Linux ELF crt/TLS/auxv entry is not required in device tiers.",
+    "witnesses": []
+  },
+  {
+    "bead": "lbq",
+    "section": "19.2",
+    "id": "lbq/2",
+    "sentence": "For a C `main` entry, the runtimes entry wrapper MUST treat normal return as `exit(status)`, running registered exit handlers and flushing stdio exactly once under \u00a714.7 before the launch stub catches the exit pseudo-exception; explicit `exit` follows that same path, and `_Exit` bypasses handlers/flush as \u00a714.7 specifies.",
+    "witnesses": []
   }
 ]
