@@ -6962,6 +6962,8 @@ For `_rm` carrier transcendentals, implementations MUST choose a result within t
 
 ### 13.5 Constrained intrinsics, `strictfp` and the floating-point environment
 
+bennett-runtimes defines @__bennett_rt_fenv as a global { i32, i32 }, align 4; round is field 0 at byte offset 0, flags is field 1 at byte offset 4, initially {0,0}; bennett-arith declares that same object.
+
 `llvm.experimental.constrained.<op>(…, metadata <rounding>, metadata <except>)` becomes the
 soft-float call of §13.1 with the suffix `_rm` and an extra `i32 R` operand: R = 0 for
 `round.tonearest`, 1 `round.downward`, 2 `round.upward`, 3 `round.towardzero`, 4

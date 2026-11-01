@@ -5,6 +5,8 @@ Seven consumer gaps jjr, lbq, 0na, dfd, 1av, z7u and 21a remain open as implemen
 Acceptance and boundary samples do not establish full-domain accuracy or exact-flag implementation conformance.
 Item 1: headless gate 2893/2893, zero failed/blocked; validator cargo test 1/1.
 Checker repair pc2: immutable ISA source capture now fingerprints/copies its included ref-0.9 catalog; grading remains ISA 0.8. Snapshot regression failed before repair, then passed.
+Item 2: published exact runtime-owned fenv layout; arith declaration already exists. Runtimes follow-up brt-zct.1 (dialect-0.2.12,fenv-layout) stays open.
+Headless gate 2894/2894, zero failed/blocked; validator cargo test 1/1.
 
 ## Draft 0.2.12 — 21a — 2026-11-01
 
