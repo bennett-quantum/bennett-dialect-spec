@@ -44,7 +44,7 @@ for sha in "${shas[@]}"; do
       gate cargo test --offline --manifest-path "$wt/$m" || return $?
     done
     echo "pre-push: dialect gate (scripts/dialect_check_v02.py)" >&2 &&
-    gate env -C "$wt" python3 -I scripts/dialect_check_v02.py --json "$wt/scripts/.tmp/pre-push-gate.json"
+    gate env -C "$wt" python3 scripts/dialect_check_v02.py --json "$wt/scripts/.tmp/pre-push-gate.json"
   }
   run_gate || status=$?
   cleanup
