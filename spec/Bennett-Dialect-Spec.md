@@ -10031,6 +10031,8 @@ If another runtime allocation leaves the next primitive address unaligned, runti
 
 The §16.9 thin wrapper is a specialised witness for its only allocation size, 16 bytes (already aligned on its target), not a replacement for C allocation alignment after arbitrary odd-sized requests. Padding belongs to the wrapper's live allocation and budget charge; it does not change the primitive. Aligned allocation with a stronger requested alignment remains a runtimes operation, not a new primitive.
 
+Suites DR/DD check the §§17.1/19.5 allocation/layout boundary vector in `scripts/0212_allocation.c` and `scripts/dialect_0212_vectors.py`; this is a conformance vector, not a new primitive.
+
 ### 17.2 Layout
 
 The device `layout` (ISA §9.1) replicates the comparison link (§19.5). CC and R code use ISA §7.1

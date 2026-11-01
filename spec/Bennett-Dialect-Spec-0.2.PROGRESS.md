@@ -9,6 +9,8 @@ Item 2: published exact runtime-owned fenv layout; arith declaration already exi
 Headless gate 2894/2894, zero failed/blocked; validator cargo test 1/1.
 Item 3: independent host DF oracle executes 70 observations per LLVM 18/23 build: exact PPC (1,2^-60) sum to f80 0x3fff8000000000000008 without inexact/input mutation; qNaN/sNaN in either operand, false/true predicates, initial flags 0/16, strict quiet/signaling and both ignore forms, unchanged bits; sin(+0) exact positive zero/no flags for five modes (nearest-away agrees because zero has no tie). Full-domain and production exact-flag obligations remain open.
 Quiet-to-signaling mutation was rejected; restored probe green. Headless gate 2897/2897, zero failed/blocked; validator cargo test 1/1.
+Item 4: DR/DD native fixture and independent ISA execution check a=16/base=4096, requests 3/13/16 at 4096/4099/4112, bump 4128, three records, all zero-filled bytes, exact live sizes, padding/extent/overflow failure-before-mutation and reversal. An extra zero-size diagnostic allocation proves the final bump and zero live size. Actual driver emitter checked at capacity 32 for one constant, align 8 and little-endian fields at 0/8/16 under LLVM 18/23. No new primitive or production-runtime closure claim. Padding-suppression mutation rejected.
+Headless gate 2900/2900, zero failed/blocked; validator cargo test 1/1.
 
 ## Draft 0.2.12 — 21a — 2026-11-01
 

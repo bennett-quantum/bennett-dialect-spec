@@ -228,5 +228,14 @@
     "witnesses": [
       "coverage/0212/round11/DF-boundaries"
     ]
+  },
+  {
+    "bead": "round11",
+    "section": "17.1",
+    "id": "round11/DR-DD-evidence",
+    "sentence": "Suites DR/DD check the \u00a7\u00a717.1/19.5 allocation/layout boundary vector in `scripts/0212_allocation.c` and `scripts/dialect_0212_vectors.py`; this is a conformance vector, not a new primitive.",
+    "witnesses": [
+      "coverage/0212/round11/DR-DD-boundaries"
+    ]
   }
 ]
