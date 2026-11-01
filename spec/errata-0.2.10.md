@@ -27,3 +27,7 @@ For a C `main` entry, the runtimes entry wrapper MUST treat normal return as `ex
 ## 0na — §§3.1, 17.7, 19.5
 
 The “nobody: primitives” ownership row applies to production bitcode before ISA lowering, not native comparison support implementing those primitives after materialisation. Such support must preserve device layout and history. Draft 0.2.12 §19.5 publishes the new v1 layout transport ABI; that spelling is not imposed retroactively on 0.2.10. The existing memory/fault outcomes and North Star definedness classifiers are not waived by UBSan-only support.
+
+## dfd — §§13.1, 13.5
+
+The explicit exact-conversion and correct-rounding guarantees take priority over APFloat implementation fallbacks. PPCDoubleDouble denotes high+low, not the legacy consecutive-106-bit approximation. A low component may not be discarded when the exact sum is representable in the destination. Sparse-tail loss and intermediate unsigned-low saturation are not permitted by the named-format reference. Draft 0.2.12 §13.1 makes canonical-pair rounding and flags explicit; no claim that the current arith publication already meets these guarantees is made.

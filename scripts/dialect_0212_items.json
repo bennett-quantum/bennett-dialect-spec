@@ -107,5 +107,33 @@
     "id": "0na/1",
     "sentence": "**Native layout ABI v1.** The driver MUST define exactly one external constant `@__bennett_rt_native_layout = constant { i64, i64, i64 } { i64 1, i64 heap_base, i64 heap_limit_max }, align 8` in comparison-only support, with fields at byte offsets 0, 8 and 16 in target little-endian order and values from this same resolved \u00a719.5 layout; runtimes declares that object and validates the version/range before use, with no weak/default definition. The third field is a byte capacity, not an end address; it includes shadow-stack allocations under \u00a79.2. This object has no relationship to blockaddress identity objects `__bennett_rt_blk.<f>`.",
     "witnesses": []
+  },
+  {
+    "bead": "dfd",
+    "section": "13.1",
+    "id": "dfd/1",
+    "sentence": "**PPCDoubleDouble priority and rounding.** The reference to the LLVM major's APFloat `PPCDoubleDouble` names its two-binary64 value representation and operation conventions, not permission to violate this section's explicit numerical guarantees: implementations MUST preserve the exact real value high + low for conversions and the correctly-rounded requirements for `sqrt`, `fma` and rounding-to-integral operations, and MUST NOT substitute the legacy consecutive-106-bit fallback when it changes such a result.",
+    "witnesses": []
+  },
+  {
+    "bead": "dfd",
+    "section": "13.1",
+    "id": "dfd/2",
+    "sentence": "For these guarantees, a finite canonical double-double is a nonoverlapping pair (h,l) of binary64 values with h = roundTiesToEven(h+l) and l the exact residual (positive zero when the residual is zero), zero represented as (signed zero,+0); the result MUST be the canonical pair whose exact sum is nearest the exact mathematical result (or its directed neighbour for \u00a713.5), with ties to the even low-component significand, using the high significand when the low component is zero, and NaN/inf represented in the high component with low +0. Overflow is determined by rounding with an unbounded high exponent first and then applying binary64's high-component exponent limit with IEEE overflow outcomes for the active mode (the finite maximum or infinity as appropriate); underflow uses tininess after rounding of the exact pair sum, with subnormal threshold 2^-1022.",
+    "witnesses": []
+  },
+  {
+    "bead": "dfd",
+    "section": "13.1",
+    "id": "dfd/3",
+    "sentence": "Cross-format conversion MUST use the exact sum of both components, be exact whenever that sum is representable in the destination, and otherwise round once to the destination format under the requested mode; it MUST NOT drop a representable low component, saturate an in-range positive total because its low component is negative, or introduce intermediate-conversion flags. For example, high = 1 and low = 2^-60 convert to x86_fp80 as exactly 1 + 2^-60, not 1. The `fpext` exactness statement describes true numerical widening; a cross-format pair whose value sets are not nested still uses this conversion rule, regardless of equal storage width.",
+    "witnesses": []
+  },
+  {
+    "bead": "dfd",
+    "section": "13.1",
+    "id": "dfd/4",
+    "sentence": "Constrained operations covered by these guarantees MUST derive invalid/divbyzero/overflow/underflow/inexact from the mathematical operation and final rounding, not the status of an inaccurate APFloat fallback or an intermediate high/low operation; for sqrt/fma/conversion, inexact means the final pair's exact sum differs from the exact finite result, and underflow requires both tininess after rounding and inexactness. Rounding-to-integral follows the named IEEE operation: rint/lrint/llrint signal inexact on a nonintegral finite operand, nearbyint suppresses inexact, and floor/ceil/trunc/round/roundeven/lround/llround do not raise inexact merely for discarding a fractional part. Other PPC operations retain their named major-specific APFloat semantics subject to the explicit canonical-NaN rules above.",
+    "witnesses": []
   }
 ]

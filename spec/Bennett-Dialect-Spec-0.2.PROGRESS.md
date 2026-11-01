@@ -1,3 +1,10 @@
+## Draft 0.2.12 — dfd — 2026-11-01
+
+clarification + pair/flag definition: Exact high+low conversions and correctly rounded protected operations; fallback insufficient; bennett-arith-4yg; dfd open.
+Disposition and clauses: `docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`.
+Headless gate **2873/2873**, zero failed/blocked; `scripts/.tmp/0212-dfd.json`.
+Validator `cargo test`: **1/1**, doc-tests 0; passed. Consumer implementation limits remain in beads.
+
 ## Draft 0.2.12 — 0na — 2026-11-01
 
 new ABI + clarification: Comparison-only primitive support and v1 layout; full detection beyond UBSan remains brt-2qs / bennett-driver-i0v; 0na open.
