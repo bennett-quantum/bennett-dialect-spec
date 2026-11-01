@@ -1,0 +1,12091 @@
+# Bennett LLVM Dialect — Specification, draft 0.3
+
+**Date:** 2026-11-01. **Status:** draft 0.3, not yet graded; the orchestrator convenes the council at an acceptance
+candidate. It derives from draft 0.2.12 (`Bennett-Dialect-Spec.md`, accepted by the sol seat in round 11, unchanged and still
+the file the 0.2.12 gate checks). The grading target is Bennett ISA **0.9** (`Bennett-ISA-Spec-0.9.md`, accepted by all three
+seats, K1–K81). The dossier is `docs/notes/2026-11-01-dialect-0.3-dossier.md`.
+
+**Versioning.** Dialect 0.3: markers 0.2, handles 0.3, regions 0.3, oracle-abi 0.3, tdl 0.3, effects 0.3, norm 0.2.8, map 0.3, asm 0.2, platform 0.3, driver 0.3, corpus 0.2; targets ISA 0.9. [deps: DLT-front-P2, DLT-23]
+The **full version string** (`0.3`) is the compatibility unit (§23): drafts are not compatible with each other. [deps: DLT-front-P2, DLT-23]
+Marker signatures, the header and descriptor version 2 are unchanged from 0.2.12; every reference object and hash changes with the ISA version string (ISA §9.2). Producers and executors of the 0.2.x/ISA 0.9 track stay on that track until they migrate explicitly.
+Declared dependency markers are retained for historical context; the council withdrew the requirement on 2026-10-31 (CLAUDE.md rule 12).
+
+**Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
+that the north star promises (its thesis, §3–§5 and every rung of the §8 demo ladder; Grover
+over unmodified SQLite is the core). It rejects at compile time only what the north star itself
+requires to be rejected or what a maintainer decision settles; every such rejection is a row of
+§22.1 citing the clause or decision. A deferral (§24) postpones mechanics only and states the
+capability it keeps. Where the ISA cannot express a promised capability in some case, the
+dialect still specifies the whole mechanism, states the realisation that exists for the
+other cases, and names a blocker (§25) whose verdict is `blocked:`, never `reject:`. On ISA 0.9
+no blocker is active (§25.1).
+
+**Sources.** North star §0, §3, §4, §5, §8; the legality spike and its findings
+(`docs/spikes/2026-10-28-legality-findings.md`, decisions 1–4); the narrowing audit (row ids
+D1–D25, B-01–B-55, O-01–O-08, G-12–G-16, ISA-1–ISA-11 are cited unchanged); the rung-4 spike
+(`docs/spikes/sqlite/REPORT.md`, cited "SQLite §n"); the outline (cited "outline", decisions
+B1–B17, questions E1–E14).
+
+---
+
+## 1. Scope and conformance
+
+### 1.1 What the dialect is
+
+The dialect is the contract between **front ends** that emit LLVM IR containing calls to
+`__bennett_*` marker functions and the **plugin** that, at the final link of a whole program,
+recognises those calls, analyses and normalises the code they reach, and maps it onto the ISA
+(ISA §1.1). It fixes:
+
+- the marker ABI, operand encodings and C header (§3);
+- the processing order, execution tiers, polyvariant variants and function addresses (§4);
+- the device analysis: points-to, value sets and every question answered from them (§5);
+- the handle convention, provenance, comparison and collections of handles (§6);
+- regions: kinds, candidate sets, dispatch, identity, well-formedness (§7);
+- the oracle interface: the descriptor, parameter and device bindings, entry state, wide outputs
+  and in-place updates (§8);
+- budgets (§9);
+- taint-driven lifting of classical code under control (§10);
+- effects and device models per tier (§11);
+- the materialised normalisation and the residual-poison validator (§12), floating point
+  (§13), calls and control transfer (§14), inline asm and target intrinsics (§15);
+- the lifting map from materialised LLVM to ISA objects (§16);
+- the device classical memory model, CC and R lowering rules and fault outcomes (§17);
+- a reference semantics from marker programs to the ISA formal model (§18);
+- the driver's modes and plugin-invocation interface (§19);
+- the platform profile `riscv64-bennett-virt` (§20);
+- the legality corpus and conformance suites (§21); diagnostics (§22); versioning (§23);
+  deferred mechanics (§24); blockers and ISA items (§25).
+
+It does not fix the plugin's optimisation pipeline after normalisation, the plugin's device
+objects beyond the constraints of §18.7, or any format the ISA owns.
+
+### 1.2 Conformance classes
+
+| Class | Who | Obligation |
+|---|---|---|
+| Producer | front ends (clang, rustc, Bennett.jl, importers) | emit modules that satisfy §3 and the outlining conventions of §7.6; never emit a reserved name of §3.1 other than a marker |
+| Plugin | `bennett-plugin` and competitors | the processing order of §4.1; give every module the verdict the rules give it, with the diagnostics of §22; produce ISA objects whose execution equals the reference semantics (§18.7); suites DA–DX (§21.3) |
+| Driver | `bennett-driver` | §19; links `bennett-runtimes` and `bennett-arith` bitcode of the link's LLVM major (§19.1); builds the comparison link and the native comparison binary (§17.7); emits blocker reports (§25) |
+| Validator | the plugin's validator and `bennett-conformance` | the residual-poison validator (§12.4) and the reference recogniser (§3, §5, §6, §7), implemented independently; suites DA–DN |
+| Runtime | `bennett-runtimes` and `bennett-arith` | define every entry point that §11, §13, §14, §17 and §20 name (prefixes `__bennett_rt_`, `__bennett_dev_`, `__bennett_sf_`, §3.1) with the semantics stated there, as ordinary bitcode compiled by the same pipeline; suites DR and DF |
+| Platform | a platform profile of §20 | a board model plus shims satisfying §20; suite DP |
+
+`scripts/dialect_check.py` in this repository is the seed of the pre-flight checker (§1.5). It
+never bounds this document: an example it cannot yet execute fails the check (rule P-2, §1.5).
+
+### 1.3 Relation to the ISA specification
+
+The ISA is settled; this document never redefines it. Every ISA notion used here (tiers, wires,
+`qreg` handles, oracles, actions, permutation actions, lprocs, F_B, budgets, tokens, fault
+codes, the reference interpreter, interface and closure hashes, layouts, the launch ABI) has
+exactly the meaning ISA §2–§17 give it. Where the dialect needs a construct ISA 0.9 lacks, this
+document states (a) the full dialect mechanism, (b) its realisation on ISA 0.9 where one exists,
+which may be a longer construction (an **efficiency item**, §25.3), and (c) otherwise a
+**blocker** (§25.1) naming the exact ISA change. The dialect never shrinks to fit the ISA and
+never extends the ISA unilaterally.
+
+### 1.4 Departures from the north star
+
+Only these remain. Every row of 0.1 §1.4 that narrowed scope (1.4-d, 1.4-e, 1.4-f) is deleted;
+its replacement is §10, §9 and §8.7 respectively.
+
+| North star | Dialect 0.2 | Why |
+|---|---|---|
+| §3.1 handle row: a handle through an `inttoptr`/`ptrtoint` round trip is rejected | Provenance flows through bitwise copies (§6.2) | Spike F1; maintainer decision 2; north-star amendment A2 (drafted with A1, bd `-25h`) |
+| §3.1: regions entered as `__bennett_ctrl(q, @f, …)` with a constant `@f` | Region operands are classical data dispatched over a candidate set bounded by the program (§7.2) | Spike F3; maintainer decision 3 |
+| Region named by symbol | Region identity is by content (§7.3) | Spike F2; maintainer decision 1 |
+| §3.1 handle row is silent on comparison | `icmp eq/ne` of handles is identity (§6.3) | Maintainer decision 4 (2026-10-29; legality findings §3); a superset |
+| §3.1, §4.2: a `qstore` into a register not known to be clean is a compile-time error | `qstore` is the ISA's XOR store; the compile-time rule is an optional warning `BD-W-QSTORE-UNCLEAN` (§6.7) | A register-granularity rule forbids the uncomputing second store; a superset of the north star (audit 1.4-g, D7) |
+| §3.2: normalisation of "the outlined region" | Normalisation applies to every device variant (§12.1) | Device CC code is lowered to ISA CC, whose semantics differs from LLVM's poison semantics (ISA §4.1); a superset (audit 1.4-h) |
+
+### 1.5 Notation and checked examples
+
+LLVM IR is LLVM's textual form with opaque pointers, as accepted by LLVM 18, 20 and 23. `P(a)` is
+the representation width of an integral pointer in address space a from DataLayout, falling
+back to the default pointer entry (64 with no entry). `pw=P(0)` is the ISA address width,
+not the width of every LLVM pointer. `I(a)` is its independently specified pointer-index width
+(default P(a)). Numbers are decimal unless written `0x…`. A(F) is the function address of §4.4.
+
+**Process rules** (also in `spec/README.md`):
+
+- **P-1.** Every mechanism rule id (the steps S1–S9, rules N1–N35, V1–V16, TDL-1–TDL-12, the
+  points-to rules PT1–PT12, the binding kinds of §8.2, the transforms of §14, the map rows of
+  §16.4) has at least one checked `accept` example; every compile-time rejection of §22.1 has
+  one `reject` example; every active blocker of §25.1 has one `blocked` example (none on ISA 0.9) and every lowering row of §25.1 has a `lowering-report` and an execution witness. Appendix B is the
+  index, and the checker derives it from the text: a rule id with no example fails the check.
+- **P-2.** An example that the checker cannot yet execute **fails** the check with
+  `checker-unimplemented: <capability>`. It is never skipped, and this document never removes
+  or weakens an example to make the checker pass. The freeze gate is an all-green check.
+- **P-3.** Every executed result comes from an independent executor: LLVM tools, natively built
+  binaries, or the Rust ISA reference interpreter `bennett-isa-ref`. Python computes only
+  *expected* artefacts (recogniser verdicts, normaliser output, map output, TDL events), and is
+  never both producer and judge of one example.
+
+Every fenced block whose info string starts with `llvm`, `isa`, `c`, `rust`, `julia`, `json` or
+`text` followed by a tag below is a **checked example**. Its attributes are `key=value` pairs.
+The last column names the checker capability (Appendix B) and, where the ISA reference
+interpreter is the executor, the `bennett-isa-ref` command (`check`, `hash`, `run-oracle`,
+`step-check` exist; `run-cc`, `reverse`, `run-action`, `run-program` are requested,
+bd `b-isa-spec-xam`).
+
+| Tag | Meaning; what the checker does | Capability / command |
+|---|---|---|
+| `llvm markers-ir` | the marker list of §3.2; compared with the C view | `parse`, `header` |
+| `c markers-c` | the prototypes of the C header; byte-equal to `spec/bennett_markers.h` between its BEGIN/END PROTOTYPES lines | `header` |
+| `llvm example=ID verdict=V` | a module; it parses and verifies on LLVM 18, 20 and 23 and the reference recogniser gives verdict `V` (`accept`, `reject:<code>` or `blocked:<code>`, §1.6). Optional attributes: `candidates=f,g` (the resolved candidate set of the first region operand, §7.2), `callees=f,g` (the candidate set of the first indirect call, §14.2), `shapes=N` (the number of compiled oracle shapes, §8.4), `mode=validate` (validator only, §12.4), `rmode=@f` (compiled in the whole-program R mode with entry f, §19.2) | `parse`, `recognise` |
+| `llvm normalise-in=ID` / `llvm normalise-out=ID` | the normaliser (§12) applied to the first gives the second, lines compared after collapsing runs of blanks; both verify on the three majors (a source-only `majors=23` tag limits a form introduced in LLVM 23); the second passes the validator | `parse`, `normalise` |
+| `text native=ID` | inputs and outputs of the native differential of a normalisation pair or a lifted example: both modules (or the C source and the module) built natively with the seeds of `spec/seeds/` (§21.4), run on the listed inputs, outputs equal to the listed values | `native` |
+| `llvm lift=ID` | a materialised module; attribute `region=@f` names the region function and `desc=` the binding shape: the parameters' bindings in order (`IN(n,zext)`, `IN(n,sext)`, `ARG(W)`, `MEM_IN(A)`, `OUT(size)`), then `;dev=` device bindings (`ENTROPY(A)`, …) and `;tgt=` n(tgt) | `parse`, `map` |
+| `text linkmap=ID` | the comparison-link facts the map of `lift=ID` reads (§19.5): `null_size`, `heap_base`, `heap_limit_max`, the globals with their bases, the A(F) of address-taken functions, and the budget table's largest `heap` and `stack` | `map` |
+| `isa object=ID` | the reference object (§16.2) that the map produces from `lift=ID`, as complete ISA text; byte-equal to the map output; `bennett-isa-ref check` accepts it | `map`, `check` |
+| `text hash=ID` | the interface hashes of the object's symbols (`bennett-isa-ref hash`) | `hash` |
+| `text run=ID` | lines `input=… [mem=name:hex] [arg=…] budget=s,h,st,d -> code=C payload=P steps=N`; each line is the output of `bennett-isa-ref run-oracle <object> ref` with those options | `run-oracle` |
+| `text step-check=ID` | a prefix-reversal claim; the output of `bennett-isa-ref step-check <object> ref --exhaustive` with the stated options | `step-check` |
+| `llvm semantics=ID corpus=NAME` | a marker program; byte-equal to `corpus/legality/cases/NAME.ll`; run through the trace runtime and the reference semantics (§18) | `trace`, `run-action` |
+| `text events=ID` / `text state=ID` | the event list (§18.2) of a marker program on an input, and the state vector before event `at` | `trace`, `run-action` |
+| `text tdl=ID` | the TDL partition (§10, TDL-3) and generated event list of an action region invocation | `tdl`, `run-action` |
+| `text cc-run=ID` | a CC or R run: results, fault records, tape, and the state after `bennett_reverse` | `run-cc`, `reverse` |
+| `text lowering-report=ID` | the ISA 0.9 lowering report (§25.1) of an example with `lowering=` rows; the rows derived by the recogniser MUST equal the report's | `lowering` |
+| `text witness09=ID row=K…` | an ISA 0.9 execution witness: the stated run, fault and reversal results of an object the checker builds from the §25.1 lowering | `isa09` |
+| `json budget-table=ID` | a budget table (§9.2); parsed and resolved against the example it names | `driver` |
+| `c example=ID`, `rust example=ID`, `julia example=ID` | a source file compiled by the toolchains of `corpus/legality/toolchains.toml` (`clang -O2 -flto` on 18, 20, 23, with `-I spec`; with `rmode=` against the `bennett-runtimes` musl sysroot, for which the checker's seeds stand in; `rustc --emit=llvm-bc`; Julia `code_llvm`) and then `lto<O3>`; the result is recognised with verdict `verdict=V` | `frontend`, `recognise` |
+
+A module example that calls a marker or a primitive without declaring it implicitly contains
+its declaration (§3.2, §3.1). **Section references**: `§n` is a section of this document, `ISA
+§n` of the ISA specification, `NS §n` of `Bennett-NorthStar.md`; a reference that continues a
+list (`ISA §4.7, §5.3`) names the same document as the reference before it. Fenced blocks
+without a tag are illustrations and are non-normative; an `llvm` or `isa` block without a tag is
+an error of this document.
+
+The candidates attribute MUST continue to assert the resolved set of the first region operand in module instruction order, including nested-marker examples. [deps: DLT-1.5-P9, DLT-4.1, DLT-7.2, ISA-4.7]
+
+### 1.6 Diagnostics and verdicts
+
+A module's **verdict** is one of:
+
+- `accept`: the plugin produces its objects;
+- `reject:<code>`: a compile-time rejection of §22.1. The plugin MUST fail the compilation
+  (nonzero exit, no output object) and report at least the first diagnostic in the processing
+  order of §4.1;
+- `blocked:<code>`: the module is accepted by the dialect, but at least one program point needs
+  a capability the targeted ISA cannot express (§25.1). The plugin MUST produce its objects with
+  every such point lowered to a **blocker trap** (§25.1: a run-time fault on exactly the
+  executions that reach the point), MUST emit the blocker report of §25.1 and MUST exit with the
+  distinct status 3. The code is the first blocker report in processing order. On ISA 0.9 no
+  blocker code is active: the four former codes are §25.1 lowerings and such a module's verdict is `accept`.
+
+A module that would be rejected and blocked is rejected. Warnings (`BD-W-*`, §22.4) never change
+a verdict.
+
+## 2. Terminology
+
+- **Marker**: one of the 23 functions of §3.2. **Marker call**: a `call` or `invoke` whose
+  callee is a marker (§3.5). **Effect marker**: one of the five `__bennett_effect_*` markers.
+- **Primitive**: a reserved function with prefix `__bennett_nz_` that the map lowers to an ISA
+  instruction directly (§3.1, §16.4): `__bennett_nz_fault`, `__bennett_nz_alloc`,
+  `__bennett_nz_free`. **Runtime entry point**: a function with prefix `__bennett_rt_`,
+  `__bennett_dev_` or `__bennett_sf_` that `bennett-runtimes` or `bennett-arith` defines in
+  bitcode (§3.1).
+- **Handle**: the `ptr` value a `__bennett_qalloc` or `__bennett_qborrow` call returns; it
+  denotes a **register** of n qubits, the ISA's `qreg[n]` (ISA §3.3). Qubit `i` of a handle is a
+  **wire**. **Register tag**: the opaque value (nonzero, below 2^pw) that represents a handle in
+  device memory and in integers; at the host–device boundary a handle is an ISA launch register
+  id (§6.1).
+- **Root**: an allocation of a register, identified by its allocation site and dynamic instance
+  index (§6.5). **Handle-derived**: a value whose provenance (§6.2) contains a root.
+- **Region function**: a function a region-entry marker receives. **Region operand**: the marker
+  operand that names it. **Candidate set**: the functions a region operand can denote (§7.2).
+- **Action region**: a candidate of a `ctrl`, `adj` or `compute` operand; its interface is a
+  quantum action (ISA §5.3). **Oracle region**: a candidate of an `oracle` or `inplace` operand;
+  its interface is a lifted oracle (ISA §5.2). **Reversible region**: a candidate of a
+  `reversible` operand, or the whole-program entry of §19.2; R-tier code (ISA §3.1).
+- **Tier** of a function variant: **H** (host, native), **CC** (device classical control, ISA
+  §3.1), **R** (reversible, ISA §3.1), **L** (lifted: an lproc or oracle body, ISA §3.7). A
+  **variant** is a (function, tier, coherence signature) triple (§4.3); host code keeps the
+  original function, every device tier gets a clone.
+- **Device program**: every variant of tier CC, R or L. **Device entry**: a device variant
+  called by an H function (a launch, ISA §10).
+- **Function address** A(F): the address of F in the driver's comparison link (§4.4).
+- **Abstract object**, **slot**, **value set**: §5. ⊤ is the unbounded value set.
+- **Descriptor**: the in-memory oracle interface record of §8.1. **Binding**: one parameter or
+  device entry of a descriptor. **Shape**: a tuple of binding kinds, modes and widths (§8.4).
+- **Budget record**: the in-memory record `bennett_budget` of §9.1. **Budget table**: the driver
+  input of §9.2.
+- **Coherence state**: Cl (classical) or Co (coherent) of a value or object instance (§10,
+  TDL-2). **Coherent slice**: an outlined maximal region of Co instructions (TDL-3).
+  **Arena**: the coherent memory of §10 TDL-4. **Generation**: the classical execution of an
+  action region that records its events (§18.4).
+- **Device model**: one of `console`, `clock`, `entropy`, `block` (ISA §7.3), realised per tier
+  by §11.
+- **Coverage classes** (ISA §13): **lowered** (the construct has an ISA realisation),
+  **shimmed** (it is replaced by a runtime or platform shim with a recorded `shim_hash`),
+  **trapped** (it faults with code 8, `FAULT_EFFECT_UNMODELLED`, on the executions that reach it,
+  and has a coverage line).
+- **Driver mode**: one of the invocation modes of §19.2–§19.7. **Platform profile**: §20.
+- **Materialised module**: the module after normalisation (§12). **Reference object**: the ISA
+  object the map produces for one oracle shape (§16.2); its oracle `@ref` defines F_B.
+- **Blocker**: a capability with no realisation on the targeted ISA in a stated case (§25.1); none is active on ISA 0.9 (BLK-1 to BLK-5 are retired, §25.1).
+
+## 3. The marker ABI (markers 0.2)
+
+### 3.1 Reserved names
+
+Every function or global name that starts with `__bennett_` is reserved. The reserved names
+other than the markers of §3.2 are:
+
+| Prefix | Who defines | Who may reference it |
+|---|---|---|
+| `__bennett_nz_` | production: nobody; comparison-only native support exception (§17.7); **primitives**, lowered by the map (§16.4) and the CC/R lowering (§17.4) | the normaliser (§12) and runtimes bitcode |
+| `__bennett_sf_` | `bennett-arith` bitcode (§13) | the normaliser and runtimes bitcode |
+| `__bennett_rt_` | `bennett-runtimes` bitcode (§11, §14, §17, §20); the driver's layout objects `__bennett_rt_blk.<f>` (§14.9) and comparison-only `__bennett_rt_native_layout` (§19.5) | the normaliser, the driver's synthesised code (§19) and runtimes bitcode |
+| `__bennett_dev_` | `bennett-runtimes` bitcode: device-model entry points and device state (§11.3) | the plugin's L lowering of effect markers and runtimes bitcode |
+
+The primitives are exactly:
+
+```
+declare void @__bennett_nz_fault(i64 %code)    ; fault with code C (§12.3)
+declare ptr  @__bennett_nz_alloc(i64 %n)       ; ISA alloc / lift.alloc (§17.1)
+declare void @__bennett_nz_free(ptr %p)        ; ISA free / lift.free
+```
+
+A **producer input** is a bitcode file given to the driver other than `bennett-runtimes` and
+`bennett-arith` bitcode. A producer input:
+
+1. MUST NOT define (`define`) a function whose name is a marker or a reserved name
+   (`BD-E-MARKER-DEFINED`);
+2. MUST NOT declare, define or reference a reserved name that is not a marker
+   (`BD-E-MARKER-UNKNOWN`);
+3. MUST NOT use a marker other than as the callee of a call or invoke (`BD-E-MARKER-ADDRESS`):
+   no stored, compared, passed or cast marker address, so that no marker is ever called
+   indirectly.
+
+The driver checks rules 1–3 on every producer input before linking; the plugin checks rules 1
+and 3 on the linked module, and, in closed-unit mode (§19.7), all three on its input. Checked
+examples are producer inputs. `__bennett_ctrl_v`, the variadic probe of the spike ABI v0, is
+not a marker; it is rejected by rule 2. *(non-normative)* The legality corpus's trace runtime
+defines markers; it is a test harness, never a production link input (§19.9).
+
+### 3.2 The marker list
+
+The normative IR signatures (return type, name, parameter types; parameter names are
+documentation):
+
+```llvm markers-ir
+declare ptr @__bennett_qalloc(i64 %cls, i64 %n)
+declare ptr @__bennett_qborrow(i64 %cls, i64 %n)
+declare void @__bennett_qfree(ptr %h)
+declare void @__bennett_gate(i32 %op, ptr %h, i64 %i)
+declare void @__bennett_gate2(i32 %op, ptr %a, i64 %i, ptr %b, i64 %j)
+declare void @__bennett_gate3(i32 %op, ptr %a, i64 %i, ptr %b, i64 %j, ptr %c, i64 %k)
+declare void @__bennett_rot(i32 %op, ptr %h, i64 %i, double %theta)
+declare i1 @__bennett_measure(ptr %h, i64 %i)
+declare void @__bennett_qload(ptr %dst, ptr %mem, ptr %addr)
+declare void @__bennett_qstore(ptr %mem, ptr %addr, ptr %val)
+declare void @__bennett_qprep(ptr %h, ptr %src, i64 %nbytes)
+declare void @__bennett_observe(ptr %p, i64 %len)
+declare void @__bennett_ctrl(ptr %q, i64 %qi, ptr %f, ptr %budget, ptr %env)
+declare void @__bennett_adj(ptr %f, ptr %budget, ptr %env)
+declare void @__bennett_compute(ptr %f, ptr %use, ptr %budget, ptr %env)
+declare void @__bennett_reversible(ptr %f, ptr %budget, ptr %env)
+declare void @__bennett_oracle(ptr %f, ptr %budget, ptr %desc)
+declare void @__bennett_inplace(ptr %g, ptr %ginv, ptr %budget, ptr %desc)
+declare void @__bennett_effect_console_write(ptr %p, i64 %len)
+declare void @__bennett_effect_clock_read(ptr %p)
+declare void @__bennett_effect_entropy_read(ptr %p, i64 %len)
+declare void @__bennett_effect_block_read(i64 %sector, ptr %p)
+declare void @__bennett_effect_block_write(i64 %sector, ptr %p)
+```
+
+Operand roles, by marker (positions are 0-based). "Dispatched" operands are classical values
+whose value set (§5.3) selects among compiled alternatives (§3.4); "memory" operands point into
+classical memory.
+
+| Marker | Handle operands | Region operands (kind) | Dispatched operands | Budget | Descriptor | Other |
+|---|---|---|---|---|---|---|
+| `qalloc`, `qborrow` | – | – | 0 `cls`, 1 `n` | – | – | – |
+| `qfree` | 0 | – | – | – | – | – |
+| `gate` | 1 | – | 0 `op` | – | – | 2 index |
+| `gate2` | 1, 3 | – | 0 `op` | – | – | 2, 4 indices |
+| `gate3` | 1, 3, 5 | – | 0 `op` | – | – | 2, 4, 6 indices |
+| `rot` | 1 | – | 0 `op` | – | – | 2 index, 3 angle |
+| `measure` | 0 | – | – | – | – | 1 index |
+| `qload`, `qstore` | 0, 1, 2 | – | – | – | – | – |
+| `qprep` | 0 | – | – | – | – | 1 memory (source bytes), 2 byte count |
+| `observe` | – | – | – | – | – | 0 memory, 1 byte count |
+| `ctrl` | 0 | 2 (action) | – | 3 | – | 1 index, 4 env |
+| `adj` | – | 0 (action) | – | 1 | – | 2 env |
+| `compute` | – | 0, 1 (action) | – | 2 | – | 3 env |
+| `reversible` | – | 0 (reversible) | – | 1 | – | 2 env |
+| `oracle` | (in the descriptor) | 0 (oracle) | – | 1 | 2 | – |
+| `inplace` | (in the descriptor) | 0, 1 (oracle) | – | 2 | 3 | – |
+| `effect_console_write` | – | – | – | – | – | 0 memory, 1 length |
+| `effect_clock_read` | – | – | – | – | – | 0 memory (8 bytes) |
+| `effect_entropy_read` | – | – | – | – | – | 0 memory, 1 length |
+| `effect_block_read`, `effect_block_write` | – | – | – | – | – | 0 sector, 1 memory (512 bytes) |
+
+Changes from 0.1 and from the spike ABI v0 (`corpus/legality/markers.h`): `qalloc`, `qborrow`,
+`qfree`, `gate`, `gate2`, `rot`, `measure`, `qload` and `qstore` keep their v0 signatures, so
+the spike evidence applies to them unchanged; `gate3` is unchanged from 0.1; every region-entry
+marker now takes a budget record (§9.1); `oracle` and `inplace` take a descriptor (§8.1) in
+place of 0.1's handle operands; `qprep`, `observe` and the five effect markers are new. The
+positive legality requirement (§3.6) is a property of unknown external calls, not of a
+signature, but every changed or new marker gets legality corpus cases before this version
+freezes (§21.2, bd `-566`).
+
+**Meaning in brief** (the rules are in the sections named):
+
+- `qprep(h, src, n)`: for every k < n and j < 8, wire 8k + j of h ⊕= bit j of byte `src[k]`;
+  n ≤ n(h)/8 (else `T-SIZE`). A copy when h is clean; self-inverse. It is how data "fixed
+  classically before entry" (NS §4.2, §8 rung 4) reaches a register (§8.5, §17.4); one `gate`
+  per set bit would need about 1.3·10^8 marker calls for the rung-4 image.
+- `observe(p, len)`: a computational-basis measurement of the classical bytes [p, p + len)
+  whose coherence state is Co (§10, TDL-11); partial observation retains authoritative basis cells in Co until full coverage permits Cl. It is
+  the only way superposed classical memory reaches classical code (NS §4.2: "outputs leave
+  through measurement after exit"). On Cl bytes it does nothing.
+- the effect markers: one per ISA device-model operation (ISA §7.3), realised per tier by §11.
+  `bennett-runtimes` calls them from its musl, Julia and platform shims; ordinary programs may
+  call them directly.
+
+### 3.3 C header view
+
+`spec/bennett_markers.h` is the normative C and C++ header. Its prototypes (in C++ each carries
+`noexcept`, which makes clang add `nounwind`, a permitted attribute, and emit `call` rather than
+`invoke`):
+
+```c markers-c
+bennett_q __bennett_qalloc(uint64_t cls, uint64_t n) BENNETT_NOEXCEPT;
+bennett_q __bennett_qborrow(uint64_t cls, uint64_t n) BENNETT_NOEXCEPT;
+void __bennett_qfree(bennett_q h) BENNETT_NOEXCEPT;
+void __bennett_gate(uint32_t op, bennett_q h, uint64_t i) BENNETT_NOEXCEPT;
+void __bennett_gate2(uint32_t op, bennett_q a, uint64_t i, bennett_q b, uint64_t j) BENNETT_NOEXCEPT;
+void __bennett_gate3(uint32_t op, bennett_q a, uint64_t i, bennett_q b, uint64_t j, bennett_q c, uint64_t k) BENNETT_NOEXCEPT;
+void __bennett_rot(uint32_t op, bennett_q h, uint64_t i, double theta) BENNETT_NOEXCEPT;
+bool __bennett_measure(bennett_q h, uint64_t i) BENNETT_NOEXCEPT;
+void __bennett_qload(bennett_q dst, bennett_q mem, bennett_q addr) BENNETT_NOEXCEPT;
+void __bennett_qstore(bennett_q mem, bennett_q addr, bennett_q val) BENNETT_NOEXCEPT;
+void __bennett_qprep(bennett_q h, const void *src, uint64_t nbytes) BENNETT_NOEXCEPT;
+void __bennett_observe(void *p, uint64_t len) BENNETT_NOEXCEPT;
+void __bennett_ctrl(bennett_q q, uint64_t qi, bennett_region f, const bennett_budget *budget, void *env) BENNETT_NOEXCEPT;
+void __bennett_adj(bennett_region f, const bennett_budget *budget, void *env) BENNETT_NOEXCEPT;
+void __bennett_compute(bennett_region f, bennett_region use, const bennett_budget *budget, void *env) BENNETT_NOEXCEPT;
+void __bennett_reversible(bennett_region f, const bennett_budget *budget, void *env) BENNETT_NOEXCEPT;
+void __bennett_oracle(const void *f, const bennett_budget *budget, const bennett_oracle_desc *desc) BENNETT_NOEXCEPT;
+void __bennett_inplace(const void *g, const void *ginv, const bennett_budget *budget, const bennett_oracle_desc *desc) BENNETT_NOEXCEPT;
+void __bennett_effect_console_write(const void *p, uint64_t len) BENNETT_NOEXCEPT;
+void __bennett_effect_clock_read(void *p) BENNETT_NOEXCEPT;
+void __bennett_effect_entropy_read(void *p, uint64_t len) BENNETT_NOEXCEPT;
+void __bennett_effect_block_read(uint64_t sector, void *p) BENNETT_NOEXCEPT;
+void __bennett_effect_block_write(uint64_t sector, const void *p) BENNETT_NOEXCEPT;
+```
+
+The header also defines:
+
+- `typedef struct bennett_q_opaque *bennett_q;` and `typedef void (*bennett_region)(void *env);`;
+- `bennett_budget` (§9.1), `bennett_bind`, `bennett_devbind` and `bennett_oracle_desc` (§8.1),
+  and the macros `BENNETT_ORACLE_DESC(NP, ND)`, `BENNETT_ORACLE_DESC_P(NP)` and
+  `BENNETT_ORACLE_DESC_D(ND)` that declare a descriptor with NP ≥ 1 parameter bindings and ND ≥ 1
+  device bindings, parameters only, or devices only;
+- `bennett_oracle_desc_init(d, np, nd, tgt, fault)` and `bennett_bind_set(b, kind, mode, q,
+  value, size)`, macros that set the fields by plain stores, so that producers build descriptors
+  by constant stores (§8.1);
+- the operation codes of §3.4 and the constants of §8 and §9.
+
+Clang lowers C `bool` to `zeroext i1`, which §3.6 admits. The checker compiles the header with
+clang 18, 20 and 23 and compares every prototype's IR signature with §3.2.
+
+### 3.4 Operand encodings
+
+**Operation codes** (`op`):
+
+| Marker | Code | Operation | ISA realisation (ISA §4.4) |
+|---|---|---|---|
+| `gate` | 1 | X | `x` |
+| `gate` | 2 | H | `h` |
+| `gate` | 3 | S | `s` |
+| `gate` | 4 | S† | `sdg` |
+| `gate` | 5 | T | `t` |
+| `gate` | 6 | T† | `tdg` |
+| `gate` | 7 | Z | `s` then `s` (S² = Z exactly) |
+| `gate` | 8 | Y | `sdg` then `x` then `s` (S·X·S† = Y exactly) |
+| `gate2` | 1 | CX, `a` control, `b` target | `cx` |
+| `gate2` | 2 | CZ | `cz` |
+| `gate2` | 3 | SWAP | `swap` |
+| `gate3` | 1 | CCX, `a`, `b` controls, `c` target | `ccx` |
+| `rot` | 1 | RX(θ) | `rx θ` |
+| `rot` | 2 | RY(θ) | `ry θ` |
+| `rot` | 3 | RZ(θ) | `rz θ` |
+
+"Then" is time order. The realisations are exact including global phase, so Z and Y stay exact
+under control.
+
+**Classes** (`cls`). `cls` = 0 denotes the ISA class `any` (ISA §4.3). `cls` = k ≥ 1 denotes
+entry k (1-based) of the link's **class-name table**: the names of the module flags
+`!"bennett.classes"` (behaviour `AppendUnique`, a list of strings) of every input, in order of
+first appearance in the driver's link order, followed by the names given with
+`--bennett-class=<name>` (§19.9) that are not already present. The driver writes the table into
+the object's class references (ISA §4.3 `qalloc cls n`, §3.3 `qreg.new cls n`); a name the
+target does not declare is an ISA load error (ISA §8.3 `classes`), not a dialect error.
+
+**Width** (`n`): the number of qubits, ≥ 1. **Indices**: classical values; an index ≥ n(h)
+traps (`T-INDEX`, §18.3). **Angle**: a classical `double` (soft-float bits, §13); a non-finite
+angle traps (`T-THETA`).
+
+**Constant and run-time operands.** A dispatched operand (role table, §3.2) is classical data.
+Its value set VS(v) is computed by §5.3. The plugin compiles one alternative per member of the
+**dispatch domain** and selects among them at run time with the compare tree of §14.2:
+
+- `op`: the dispatch domain is VS(op) when it is finite, else the marker's whole code table.
+  A run-time value outside the table traps (`T-OP`).
+- `cls`: VS(cls) when finite, else {0} ∪ every index of the class-name table. A value outside
+  traps (`T-CLASS`).
+- `n`: VS(n) when finite (constants, bounds established by materialised instructions, masks, `select`, `phi`,
+  loads from constant tables, §5.3). A value 0 at run time traps (`T-SIZE`). When VS(n)
+  is ⊤ there is no dispatch: after the `T-SIZE` check the marker lowers to `q = qreg.new cls n`
+  with the `i64` value n (ISA §3.3, K1), of type `qreg[*]`; a value the device cannot provide is
+  `FAULT_BUDGET_HEAP` (code 2) with no effect. Classical runtime widths MUST lower through `qreg[*]` with the existing n >= 1 dialect check and checked transfers. [deps: DLT-3.4, ISA-3.3-P7, ISA-3.3-P8, ISA-3.3-P19]
+
+A **constant** operand outside its table (an `op` code not in the table, a constant `cls`
+beyond the class-name table, a constant `n` = 0) is `BD-E-OPERAND`: the program traps at that
+marker on every execution that reaches it, so the rejection is fail-fast for an always-failing
+call (§22.1). Under coherent control (a Co operand, §10 TDL-10) the same domains apply.
+
+The `cfg-switch-op-table` shape (`default<O3>` sinks seven gate calls into one with a phi of
+operation codes) is accepted, as are operation codes loaded from a constant table (SimplifyCFG's
+switch-to-lookup on the `op` operand):
+
+```llvm example=operand-phi-codes verdict=accept
+define void @top(i1 %c) {
+entry:
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  br i1 %c, label %a, label %b
+
+a:
+  br label %j
+
+b:
+  br label %j
+
+j:
+  %op = phi i32 [ 2, %a ], [ 7, %b ]
+  call void @__bennett_gate(i32 %op, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=operand-code-table verdict=accept
+@switch.table.ops = private unnamed_addr constant [3 x i32] [i32 1, i32 2, i32 5]
+
+define void @top(i64 %i) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %k = urem i64 %i, 3
+  %p = getelementptr [3 x i32], ptr @switch.table.ops, i64 0, i64 %k
+  %op = load i32, ptr %p
+  call void @__bennett_gate(i32 %op, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+A gate-list interpreter that reads its operation codes from host input is accepted: the code
+is dispatched over the whole `gate` table, and a code outside it traps (`T-OP`) on that
+execution only:
+
+```llvm example=operand-runtime-op verdict=accept
+define void @interp(i32 %op) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 %op, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=operand-bad-code verdict=reject:BD-E-OPERAND
+define void @top() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 99, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+A class named by the module flag is entry 2 of this module's class-name table:
+
+```llvm example=operand-class verdict=accept
+define void @top() {
+  %h = call ptr @__bennett_qalloc(i64 2, i64 3)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 6, !"bennett.classes", !1}
+!1 = !{!"fast", !"slow"}
+```
+
+A width bounded by a mask has a finite value set: `and` with 7 gives {0, …, 7} and the `add`
+gives VS(%n) = {1, …, 8}; the plugin compiles one static register per member and dispatches
+(§6.5). A width from host input with no bound lowers to a run-time-width register (ISA K1):
+
+```llvm example=operand-width-masked verdict=accept
+define void @top(i64 %m) {
+  %k = and i64 %m, 7
+  %n = add i64 %k, 1
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %n)
+  call void @__bennett_gate(i32 2, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=operand-width-host verdict=accept lowering=K1
+define void @top(i64 %n) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %n)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text lowering-report=operand-width-host
+K1 @top %h: qalloc operand n has value set TOP (parameter of an externally visible function); T-SIZE check, then qreg.new any n : qreg[*]
+```
+
+Allocation class zero MUST denote any, and positive class indices MUST select the existing link-order class-name table. [deps: DLT-3.4-P18, DLT-3.4-P22, ISA-3.3-P8, ISA-8.3]
+
+A top operation-code or class value set MUST dispatch the entire valid table and retain the existing out-of-table runtime diagnostic. [deps: DLT-3.4, DLT-5.3, ISA-4.1-P4, ISA-4.1-P10, ISA-4.4]
+
+### 3.5 Recognition
+
+A call or invoke instruction is a **marker call** iff its callee operand is the function itself
+(not a loaded or cast value) and that function's name is exactly a marker name. Names are
+compared byte for byte; no prefix, suffix or demangled match is made. A marker call is accepted
+iff all of the following hold; otherwise `BD-E-MARKER-SIGNATURE`:
+
+1. the declaration's function type is exactly the marker's IR signature, **or** is the
+   unprototyped form `R (...)` with R the marker's return type (a C declaration without a
+   prototype, spike case `c-unprototyped-decl`);
+2. the call instruction's function type is exactly the marker's IR signature, **or**, only when
+   the declaration is unprototyped, the marker's parameter list followed by `...`;
+3. the call passes exactly as many arguments as the signature has parameters;
+4. the calling convention is the default C convention and the call has no operand bundles.
+
+Attributes and metadata are not part of the comparison; they are governed by §3.6.
+
+```llvm example=recog-unprototyped verdict=accept
+declare ptr @__bennett_qalloc(...)
+declare void @__bennett_gate(...)
+declare void @__bennett_qfree(...)
+
+define void @kr() {
+  %h = call ptr (i64, i64, ...) @__bennett_qalloc(i64 0, i64 1)
+  call void (i32, ptr, i64, ...) @__bennett_gate(i32 2, ptr %h, i64 0)
+  call void (ptr, ...) @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+The same program passing an `int` index without a cast gives an `i32` argument and is
+rejected:
+
+```llvm example=recog-unprototyped-wrong-type verdict=reject:BD-E-MARKER-SIGNATURE
+declare ptr @__bennett_qalloc(...)
+declare void @__bennett_gate(...)
+declare void @__bennett_qfree(...)
+
+define void @kr() {
+  %h = call ptr (i64, i64, ...) @__bennett_qalloc(i64 0, i64 1)
+  call void (i32, ptr, i32, ...) @__bennett_gate(i32 2, ptr %h, i32 0)
+  call void (ptr, ...) @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=recog-measure-i8 verdict=reject:BD-E-MARKER-SIGNATURE
+declare i8 @__bennett_measure(ptr, i64)
+
+define i8 @m() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %b = call i8 @__bennett_measure(ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret i8 %b
+}
+```
+
+A 0.1-style `ctrl` with an `i64` budget no longer has the marker's signature:
+
+```llvm example=recog-ctrl-01 verdict=reject:BD-E-MARKER-SIGNATURE
+declare void @__bennett_ctrl(ptr, i64, ptr, i64, ptr)
+
+define internal void @body(ptr %e) {
+  ret void
+}
+
+define void @top(ptr %e) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_ctrl(ptr %h, i64 0, ptr @body, i64 -1, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=recog-ctrl-v verdict=reject:BD-E-MARKER-UNKNOWN
+declare void @__bennett_ctrl_v(ptr, i64, ptr, i64, ...)
+
+define void @v(ptr %e) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void (ptr, i64, ptr, i64, ...) @__bennett_ctrl_v(ptr %h, i64 0, ptr null, i64 8, i32 1)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=recog-address-taken verdict=reject:BD-E-MARKER-ADDRESS
+@table = global ptr @__bennett_gate
+```
+
+```llvm example=recog-defined verdict=reject:BD-E-MARKER-DEFINED
+define void @__bennett_qfree(ptr %h) {
+  ret void
+}
+```
+
+A producer input may not reference a runtime entry point:
+
+```llvm example=recog-runtime-name verdict=reject:BD-E-MARKER-UNKNOWN
+declare void @__bennett_rt_memmove(ptr, ptr, i64)
+
+define void @f(ptr %d, ptr %s) {
+  call void @__bennett_rt_memmove(ptr %d, ptr %s, i64 8)
+  ret void
+}
+```
+
+### 3.6 The positive legality requirement and attributes
+
+A marker is an external declaration that may read and write any memory, may unwind and may not
+return: exactly an unknown external function to LLVM. Stock passes then preserve the dynamic
+sequence of marker calls on every executed path (spike findings §1: every standard pipeline of
+LLVM 18, 20 and 23, all 50 legal cases; the four negative controls are detected). No attribute
+is needed and none may be added that licenses elimination, commoning, speculation or motion.
+
+Every attribute, keyword and calling convention on a marker declaration or marker call site is
+in exactly one of three lists:
+
+- **Forbidden** (`BD-E-MARKER-ATTRIBUTE`): attributes that license motion or elimination:
+  `memory(...)` in any form, `readnone`, `readonly`, `writeonly`, `argmemonly`,
+  `inaccessiblememonly`, `inaccessiblemem_or_argmemonly`, `willreturn`, `speculatable`,
+  `noreturn`, `returned`, `nocapture`, `captures(...)`, `dereferenceable(...)`,
+  `dereferenceable_or_null(...)`, `align`, `nofpclass(...)`, `byval`, `sret`, `writable`,
+  `initializes(...)`, `dead_on_unwind`, `nosync`, `nofree`, `norecurse`, `mustprogress`,
+  `musttail`, any non-default calling convention, `extern_weak` linkage. *(non-normative)* The
+  first eight are the spike's L2 forbidden set; `noreturn` would delete the code after a marker;
+  `returned` would replace a marker result by an argument; the parameter-effect attributes would
+  let LLVM move stores to an environment across a region call; `dereferenceable` would let it
+  speculate loads through a handle.
+- **Benign** (ignored): function position `nounwind`, `nonlazybind`, `uwtable` (any form),
+  `strictfp`, `cold`, `hot`, `nomerge`, `noinline`, `convergent`, `builtin`, `nobuiltin`,
+  `optsize`, `minsize`, `optnone`, and every string attribute; return and parameter position
+  `noundef`, `nonnull`, `range(...)`, `zeroext`, `signext`; declaration linkage and keywords
+  external linkage, `dso_local`, `dso_preemptable`, `unnamed_addr`, `local_unnamed_addr`, any
+  visibility; call-site keywords `tail`, `notail`; instruction metadata of any kind. The first
+  group is the spike's L2 evidence (findings §1, §4: front ends add `nounwind`, `nonlazybind`,
+  `uwtable`, `noundef`, `nonnull`, `zeroext` and string attributes; passes add
+  `local_unnamed_addr`, `nonnull`, `noundef`, `range`, `tail`). `strictfp` through `optnone`
+  are added by build flags NS §0 allows (`-ffp-model=strict`, `-Os`, `-O0`) or restrict
+  motion; none licenses elimination, commoning, speculation or motion of an unknown call.
+  Before this version freezes, a corpus run confirms each of them on the three majors (§21.2,
+  bd `.21`).
+- **Unknown**: every other attribute is `BD-E-MARKER-ATTRIBUTE` until corpus evidence moves it
+  to one of the lists above with a version change. This is required by NS §3.1 (the positive
+  legality requirement: an attribute the dialect has not classified may license motion).
+
+Attribute groups (`#N`) are resolved before the check.
+
+```llvm example=attr-rust-style verdict=accept
+declare ptr @__bennett_qalloc(i64 noundef, i64 noundef) unnamed_addr #0
+declare void @__bennett_gate(i32 noundef, ptr noundef, i64 noundef) unnamed_addr #0
+declare void @__bennett_qfree(ptr noundef) unnamed_addr #0
+
+define void @prep() unnamed_addr #1 {
+  %h = tail call noundef nonnull ptr @__bennett_qalloc(i64 noundef 0, i64 noundef 1) #2
+  tail call void @__bennett_gate(i32 noundef 2, ptr noundef nonnull %h, i64 noundef 0) #2
+  tail call void @__bennett_qfree(ptr noundef nonnull %h) #2
+  ret void
+}
+
+attributes #0 = { nounwind nonlazybind uwtable "probe-stack"="inline-asm" "target-cpu"="x86-64" }
+attributes #1 = { nounwind nonlazybind uwtable }
+attributes #2 = { nounwind }
+```
+
+Call sites under `-ffp-model=strict` carry `strictfp`; a `cold` declaration is benign too:
+
+```llvm example=attr-strictfp-cold verdict=accept
+declare void @__bennett_rot(i32, ptr, i64, double) #0
+
+define void @r(double %t) #1 {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_rot(i32 3, ptr %h, i64 0, double %t) #1
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+
+attributes #0 = { cold nounwind }
+attributes #1 = { strictfp }
+```
+
+```llvm example=attr-memory-none verdict=reject:BD-E-MARKER-ATTRIBUTE
+declare void @__bennett_gate(i32, ptr, i64) #0
+
+define void @g() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+
+attributes #0 = { nounwind willreturn memory(none) }
+```
+
+```llvm example=attr-callsite-read verdict=reject:BD-E-MARKER-ATTRIBUTE
+define void @g() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0) #0
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+
+attributes #0 = { memory(read) }
+```
+
+The benign, forbidden and unknown marker-attribute classification MUST retain the accepted list and be checked against dynamic marker-sequence preservation on every supported LLVM major. [deps: DLT-3.6, DLT-21.1, DLT-21.2, ISA-13]
+
+### 3.7 Unwinding of markers
+
+Markers never unwind. Before any other analysis (§4.1 step S1) the plugin rewrites every
+`invoke` of a marker into a `call` with the same operands followed by `br label %normal`,
+removes the invoking block from the phi nodes of the unwind destination, and then deletes every
+block not reachable from the function's entry. *(non-normative)* This is Enzyme's practice
+(enzyme survey §1.1); C++ with `-fexceptions` and Rust `extern "C-unwind"` produce such invokes
+(emission summary item 3). Front ends SHOULD declare markers non-unwinding (`noexcept`, Rust
+`extern "C"`). Unwinding through every other call of device code is the explicit-propagation
+transform of §14.4; 0.1's `BD-E-EH` is deleted.
+
+```llvm example=unwind-invoke verdict=accept
+declare i32 @__gxx_personality_v0(...)
+
+define void @eh() personality ptr @__gxx_personality_v0 {
+entry:
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  invoke void @__bennett_gate(i32 2, ptr %h, i64 0)
+          to label %ok unwind label %lp
+
+ok:
+  call void @__bennett_qfree(ptr %h)
+  ret void
+
+lp:
+  %e = landingpad { ptr, i32 } cleanup
+  resume { ptr, i32 } %e
+}
+```
+
+### 3.8 Front-end emission routes
+
+- **clang (C, C++)** and **rustc** emit markers as direct calls to the declaration (emission
+  summary). Rust MUST declare each marker with one ABI per crate (`extern "C"`); mixed
+  `"C"`/`"C-unwind"` declarations are merged by rustc into one declaration with `invoke` call
+  sites, which §3.7 accepts.
+- **Julia** MUST emit markers with `ccall("extern __bennett_<name>", llvmcall, …)` or with
+  `Base.llvmcall((module_ir, "entry"), …)` whose module contains the `declare`. Both give a
+  direct call to an attribute-free declaration; `ccall("extern __bennett_measure", llvmcall,
+  Bool, …)` gives `declare i1 @__bennett_measure(ptr, i64)`, exactly the §3.2 signature
+  (verified with Julia 1.13.3). A plain `ccall(:__bennett_x, …)` or `@ccall` is an indirect call
+  through a `jlplt` GOT global and is not a marker call. The plugin MUST reject a module
+  containing a global variable whose name matches `jlplt___bennett_<name>_<digits>_got` or that
+  carries the attribute `"julia.fname"="__bennett_<name>"` (`BD-E-JULIA-CCALL`), so that this
+  mistake fails at compile time instead of at a lazy binding at run time; the `llvmcall` route
+  keeps the full capability (audit B-13, L).
+- **Region functions** are passed as `ptr @f` or as any value whose value set §7.2 resolves.
+  Bennett.jl emits `ptr @f` in its own module (LLVM.jl), which keeps the full capability (audit
+  B-14). A Julia `@cfunction` pointer is an `inttoptr` constant of an address of the Julia
+  process; like every region pointer with value set ⊤ it is dispatched by value against the
+  address-taken functions of the required type (§7.2), and an execution on which it equals no
+  A(F) traps (`T-REGION`).
+- **Descriptors and budget records** are built by plain stores into an `alloca` or global
+  (C: the header macros; Rust: `#[repr(C)]` structs; Julia: `Ref` of an `isbits` struct), which
+  survive `default<O3>` as constant stores that §5.3 reads (corpus cases, §21.2).
+- **Source effect lies** (spike F5). A device function definition carrying any of
+  `memory(none)`, `memory(read)` (any `memory(...)` whose effects exclude a write to any
+  location), `readnone`, `readonly`, `willreturn` or `speculatable`, from which a marker call is
+  reachable through the call graph of §4.1 (the function itself included), is
+  `BD-E-EFFECT-LIE`. *(non-normative)* LLVM cannot infer these attributes for a function that
+  reaches an unknown external call, so they come from the source; the front end's own optimiser
+  may already have deleted marker calls on their strength, which is why this is a diagnostic and
+  not a guarantee (definedness assumption, NS §3.2).
+
+```llvm example=julia-jlplt verdict=reject:BD-E-JULIA-CCALL
+@jlplt___bennett_gate_528_got = external global ptr #0
+
+define void @j(ptr %h) {
+  %f = load atomic ptr, ptr @jlplt___bennett_gate_528_got unordered, align 8
+  call void %f(i32 1, ptr %h, i64 2)
+  ret void
+}
+
+attributes #0 = { "julia.fname"="__bennett_gate" "julia.libidx"="0" }
+```
+
+```llvm example=effect-lie verdict=reject:BD-E-EFFECT-LIE
+define internal void @kick(ptr %h) #0 {
+  call void @__bennett_gate(i32 2, ptr %h, i64 0)
+  ret void
+}
+
+define void @top() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @kick(ptr %h)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+
+attributes #0 = { willreturn }
+```
+
+## 4. Processing order, device program, tiers, variants, function addresses
+
+### 4.1 Processing order
+
+A plugin processes the whole-program module (after the driver's link and post-link pipeline,
+§19.1) in this order; the first failing rule gives the verdict (§1.6):
+
+| Step | Rules |
+|---|---|
+| S1 | §3.1 reserved names; §3.5 recognition; §3.6 attributes; §3.8 Julia check; §3.7 marker invokes; §3.8 effect lies; §19.9 version checks |
+| S2 | the device analysis (§5): one fixpoint for points-to, value sets, region candidates (§7.2), indirect-call candidates (§14.2), handle provenance (§6.2) and descriptor kinds (§8.4) |
+| S3 | tier assignment and variants (§4.2–§4.4); calls out of the device program (§4.5) |
+| S4 | handle rules (§6) |
+| S5 | region well-formedness (§7.5) |
+| S6 | the TDL partition and the may-Co analysis (§10) |
+| S7 | normalisation of every device variant (§12) and the residual-poison validator (§12.4); dispatch domains (§3.4) |
+| S8 | lifting (§16) of every oracle shape and coherent slice; in-place verification (§8.7) |
+| S9 | lowering to ISA objects (§17; plugin-defined, constrained by §18.7); lowering reports (§25.1) |
+
+Within a step, rules apply in the order listed; within a rule, to instructions in module text
+order. Blocker reports are collected during S2–S8 and issued in S9 in that order.
+
+The **call graph** has an edge F → G when F contains a direct `call` or `invoke` of G (after
+resolving aliases), an edge F → R for every candidate R of every region operand of a marker
+call in F (a **region edge**), and an edge F → C for every candidate C of every indirect call in
+F (§14.2). Only functions with a definition are nodes. The **closure** of a function is the set
+of functions reachable from it by direct and indirect-candidate edges (region edges start a new
+region and are not followed).
+
+### 4.2 Tier assignment
+
+Every defined function reachable from the program's roots gets a set of tiers. The **host
+roots** are the functions with non-local linkage and the functions whose address host code
+uses; the **device roots** are the region candidates and the whole-program entry of §19.2.
+
+- **CC**: a function that contains a marker call, receives a handle (a parameter or a loaded
+  value whose provenance contains a root, §6.2), is a candidate of an action region operand
+  (its classical part is the generation, §18.4), is a device entry, is in the CC closure of
+  one of these, or is promoted by §19.4.
+- **R**: a function in the closure of a `reversible` region operand, or every function under
+  `--bennett-tier=reversible` (§19.2).
+- **L**: a function in the closure of an oracle or in-place region operand, or of a coherent
+  slice (§10, TDL-3).
+- **H**: every other function reachable from a host root, and every function reachable from a
+  host root through host code only. A function in no device tier stays H only.
+
+A function may get several tiers; it then has one variant per tier (§4.3). *(non-normative)*
+SQLite in the rung-4 program is H (the host builds and serialises the database) and L (the
+oracle runs the query), so it has two variants and one set of globals (SQLite §5.2(i)).
+
+### 4.3 Polyvariant cloning
+
+A **variant** is a (function, tier, coherence signature) triple, where the coherence signature
+is the tuple of coherence states of the function's parameters and of the may-Co objects it
+reads (§10, TDL-2) and is empty outside TDL. The H variant is the original function; every
+device variant is a clone. **Clones share every global: data is never cloned.** There is one
+classical memory (NS §3.2), shared by H, CC, R and the entry state of every L invocation
+(§8.5). Calls inside a variant call the variant of the callee with the caller's tier and the
+coherence signature at the call. 0.1's `BD-E-DEVICE-ADDRESS` is deleted: a host function may
+take the address of any function (audit B-16).
+
+### 4.4 Function addresses
+
+Every function whose address is used has the **function address** A(F): its address in the
+driver's **comparison link** (§19.5: non-PIE, fixed section addresses, identical-code folding and
+constant merging off; NS §3.2, SQLite §5.2(ii)). A(F) is the value of `ptr @F` in every tier:
+
+- in host code, by linking the production host image with the comparison layout whenever an
+  address may cross the host–device boundary (§19.5);
+- in CC and R code, as `const` plus `inttoptr` (ISA §4.1);
+- in lifted code, as `lift.const` (ISA §4.2);
+- in every data image: global initialisers, vtables, function tables (SQLite's `aBuiltinFunc`,
+  VFS and pcache method tables).
+
+So `ptrtoint`, comparison, hashing and storage of function pointers equal native execution.
+Each tier maps A(F) to its own variant of F by the dispatch of §14.2. Two functions never have
+equal A(F) (identical-code folding is off), so the map is well defined. A `blockaddress`
+constant is §14.9.
+
+Host and device variants MUST retain a common comparison-link function address and shared global data, while dispatch selects the variant for the caller's tier and coherence signature. [deps: DLT-4.3-P1, DLT-4.4, DLT-19.5, ISA-4.1, ISA-4.2, ISA-9.1]
+
+### 4.5 Calls out of the device program
+
+A call in a device variant of a function with no definition resolves, in this order:
+
+1. a marker (§3.2) or a primitive (§3.1);
+2. a **runtime shim**: a definition of the symbol in `bennett-runtimes` or `bennett-arith`
+   bitcode, which the driver links before S2 (§19.1): libc and libm (musl-derived), libpthread
+   with one thread, the Julia shim runtime, Rust's `core::panicking::*` targets and the platform
+   shims of §20. The shim is an ordinary device function (coverage class `shimmed`, with its
+   `shim_hash`, ISA §13);
+3. in a CC variant only, a **host call** through `hostcall` (§11.4);
+4. otherwise **trapped**: the call is replaced by F(8) (§12.3) and the coverage report has a
+   `trapped` line for it (NS §3.3: "Calls with no bitcode are coverage-report lines (*trapped*),
+   never silent").
+
+An R or L variant never makes a host call (ISA §4.1: `hostcall` is CC only; NS §4.2: coherent
+regions are closed). *(non-normative)* Item 4 is the only fault the dialect introduces for a
+call, and it occurs only on the executions that reach the call; it is the north star's own rule.
+
+## 5. The device analysis (one fixpoint)
+
+The device analysis is a whole-program, flow-insensitive, inclusion-based (Andersen-style),
+field-sensitive points-to and value-set analysis over every device variant and every host
+function that exchanges data with one (passes it a pointer, or shares a global it accesses). It
+is specified exactly: **every verdict, candidate set and dispatch domain of this document is
+computed from the reference analysis below.** A plugin MAY use a more precise analysis to shrink
+dispatch domains or arena placement in its lowering, never to change a verdict (the run-time
+value is always a member of the reference set, so the results are unchanged).
+
+### 5.1 Abstract objects and atoms
+
+The **abstract objects** are:
+
+- each `alloca` instruction;
+- each global variable;
+- each **allocation site**: a call of a function that carries `allockind("alloc")` or
+  `allocsize(...)`, or whose name is one of `malloc`, `calloc`, `realloc`, `aligned_alloc`,
+  `posix_memalign` (the object is the one written through its first argument), `memalign`,
+  `strdup`, `strndup`, `_Znwm`, `_Znam`, `_ZnwmRKSt9nothrow_t`, `_ZnamRKSt9nothrow_t`,
+  `_ZnwmSt11align_val_t`, `_ZnamSt11align_val_t`, `__rust_alloc`, `__rust_alloc_zeroed`,
+  `__rust_realloc`, `julia.gc_alloc_obj`, `ijl_gc_alloc_typed`, `jl_gc_alloc`,
+  `ijl_gc_small_alloc`, `ijl_gc_big_alloc`, or `__bennett_nz_alloc`;
+- the pseudo-object `EXT` (memory of unknown provenance: host memory reached through a pointer
+  the analysis did not create).
+
+Heap objects are context-insensitive: one object per allocation-site instruction of the variant
+in which it occurs. The list above is the reference list; `bennett-runtimes` declares its
+allocator entry points with `allockind("alloc")` so that they are covered by the first rule.
+
+An **offset** is an integer byte offset, a **residue class** (r mod s)[lo, hi) with s ≥ 2 (every
+offset o with o ≡ r (mod s) and lo ≤ o < hi), or `*` (any offset). An **atom** is one of:
+
+- `(X, o)`: a pointer into object X at offset o;
+- `FN(F)`: the address A(F) of a defined function F;
+- `ROOT(r)`: a handle with root r (the allocation site of a `qalloc`/`qborrow` call, §6.5);
+- `INT(c)`: the integer constant c (of the value's width).
+
+Every SSA value v (per lane for vectors, per index path for aggregates) has an **abstract
+value** AV(v) = (A, t): a finite set A of atoms and a flag t; t = ⊤ means "and any other integer
+or address". ⊤ never stands for a `ROOT` atom (handle provenance is always explicit); for a
+function-pointer operand it stands for "any function of the operand's type whose address is
+used" (§7.2, §14.2). Every slot (X, o) of memory has a content AV(X, o) of the same form. When A
+holds more than **K = 4096** `INT` atoms they are dropped and t is set (a normative constant: it
+decides dispatch and realisation choices, so §24 does not defer it). "AV(v) = ⊤" below means t is
+set; unions and inclusions are taken component-wise.
+
+Abstract-object and return propagation MUST cover attributed allocator calls and defined allocator wrappers through their underlying allocation sites without requiring the wrapper's name in a whitelist. [deps: DLT-5.1-P4, DLT-5.1-P6, DLT-5.2-P10, ISA-7.1, ISA-7.2]
+
+### 5.2 Rules
+
+Before the fixpoint, seed the initialiser atoms of every global, mutable or constant,
+into its slots. For each alloca and allocation-site object, also represent every extent
+whose initial contents are zero under §§17.1/17.3 as a zero-byte initial image; represent a
+nonconstant extent symbolically over its possible allocated bytes. Subsequent stores union
+additional possibilities and never erase these initial possibilities. This is an initial
+image, not a claim that the object remains immutable.
+The analysis is the least fixpoint of the following rules over AV. "Copies" means AV(result) ⊇
+AV(operand) lane by lane; ⊤ absorbs. S2 models the value effects of the specified
+normalisation before verdicts and dispatch domains freeze; pre-normalisation syntax does
+not permit omitting a value produced by the materialised execution.
+
+| Rule | Instruction or source | Effect |
+|---|---|---|
+| PT1 | `alloca`, global `@G`, allocation-site call | AV ∋ (X, 0); zero-filled initial extents are seeded as above |
+| PT2 | `getelementptr T, ptr p, idx…` | uses P(a), I(a) and the complete finite-width computation of §16.4, also for constant expressions: sequential indices are sign-extended/truncated to I(a), scaling and offset accumulation wrap modulo 2^I(a), and addition preserves pointer bits above I(a). Zero accumulated offset copies AV(p). For every (X,o), include the image of all represented base addresses and index values (unknown base bits range over patterns consistent with DataLayout and X's alignment), using integer/residue-class/`*` offset unions. Unbounded mathematical addition is not a substitute. If an address may leave X, include (EXT, `*`) and the non-handle top flag; PT6 propagates this unknown-address alternative. The unknown-address alternative does not by itself establish host escape (§6.4): retain the original base provenance for that test; actual host/unknown origins keep their restrictions. ROOT provenance and §6.2 restrictions remain explicit. Array dimensions determine stride, never an index bound |
+| PT3 | `phi`, `select` (value operands), `freeze`, `addrspacecast`; `bitcast` | the first four copy (union). A bitcast copies lane by lane only when source and destination have identical lane counts and per-lane representation widths, treating a scalar as one lane. Otherwise use the virtual N21 bitcast expansion of §12.6: pack source-lane bit patterns into its prescribed bit string in DataLayout order, then resegment at the destination representation width. Compute output AV through PT4/PT5 transfers of that expansion; finite INT lane sets denote their full Cartesian product, and K applies per resulting lane. Never copy a source-lane INT atom as the value of a packed destination scalar. Unknown bits propagate non-handle top through those transfers. Explicit object and ROOT provenance follows the same expansion and remains subject to §6.2; top never substitutes for ROOT. Apply also to constant expressions and fixed-vscale forms during S2 before verdicts, candidate sets, shapes and dispatch domains freeze. Direct finite bit-string evaluation is equivalent; no LLVM optimisation is required |
+| PT4 | `ptrtoint`, `inttoptr`, `zext`/`sext`/`trunc` | copy only bit-preserving conversions. Otherwise apply the actual source/destination-width bit-vector conversion (§16.4): ptrtoint/inttoptr zero-extend or truncate at P(a), sext sign-extends. Use PT2’s represented-address image construction, retaining originating object and ROOT provenance. A narrowed representation that cannot be reassociated with its original object adds (EXT, `*`) and non-handle ⊤; numerical uncertainty is not host escape. Apply also to constant expressions |
+| PT5 | `add`/`sub` of a value with pointer atoms and an `INT` set | computes address bits modulo 2^W at the integer operation’s width W, never unbounded offset addition. Relative displacements from the originating base are modular too: zero net displacement represents that base again, including after an inttoptr truncation to P(a). Use PT2’s represented-address image construction at W bits (full-width arithmetic, no preserved high GEP bits), retaining original object and ROOT provenance. Keep modular displacement alternatives even outside the allocation, and additionally include (EXT, `*`) and non-handle ⊤ when an image may leave it. Residue classes and `*` take the same finite-width image; an unrepresentable image retains (X, `*`) for each originating X plus (EXT, `*`) and non-handle ⊤. Other integer operations on pointer atoms use that conservative image. Widening a pointer-derived integer by zext/sext uses that conservative image too (fixed reference fallback); ptrtoint zero-extension retains its base representation. Numerical uncertainty does not itself establish host escape (PT2). The rules apply also to constant expressions, before candidate/dispatch domains freeze; on finite `INT` sets, every LLVM integer operation, cast and `icmp` is evaluated elementwise; with x ⊤ and a constant m, `and x, m` gives the submasks of m and `urem x, m` gives {0, …, m−1} (each still subject to K); a range attribute or `!range` metadata removed by N3/N4 is not a bound on materialised execution and MUST NOT restrict any verdict, candidate set, descriptor shape or dispatch domain. Only bounds independently established by materialised instructions restrict the set; otherwise retain ⊤ and apply the ordinary operation rules, including finite masks/remainders |
+| PT6 | `load T, ptr p` | for each (X,o) ∈ AV(p): memory atoms carry their storage interval and representation width; copy a whole-value atom only for that identical interval with a compatible representation. A known immutable byte image decodes exactly the accessed bytes using DataLayout and T (including initialisers). For a partial, spanning or overlapping access whose result bits are not represented exactly, the non-handle value is ⊤, never the union of component INT values. X=EXT gives ⊤. A non-handle top flag on p contributes the same unknown-address load alternative even when explicit object offsets overlap no known slot; it MUST NOT be dropped. ROOT provenance remains explicit and §6.2's partial-handle restrictions still apply. For a possibly valid load wholly contained in a zero-filled initial extent, include the all-zero value of the load’s representation and width, unioned with values from every overlapping store or copy under these interval rules. PT8 propagates these initial byte possibilities when copying memory. Zero contributes no ROOT. Region inputs, replayed caller bytes and other nonzero-initialised contents retain their specified sources; this rule does not replace them with zeros |
+| PT7 | `store v, ptr p` | retain each written interval and representation width; partial writes overlapping a larger load participate in PT6's conservative fallback. AV(X, o + d_k) ⊇ AV(v_k) for each (X, o) ∈ AV(p) and each lane or field k at byte offset d_k |
+| PT8 | memory copy (`llvm.memcpy`/`memmove`/`memcpy.inline`, `__bennett_rt_memmove`) of (dst, src, len); memory fill (`llvm.memset`, `__bennett_rt_memset`) of (dst, v, len) | copy: propagate zero-byte initial images over the copied byte ranges, including their symbolic extents; for each slot (Y, s) of each (Y, o_s) ∈ AV(src) and (Z, o_d) ∈ AV(dst): when offsets and len are constants and the atom's entire storage interval [s, s + size(atom)) lies in the copied range, copy its atom and representation width to (Z, o_d + s − o_s). Every partially overlapping atom instead contributes non-handle ⊤ and explicit ROOT provenance to the affected destination interval (unknown offsets/len use `*`); do not copy the whole component INT. Fill: every slot in [o_d, o_d + len) of each (Z, o_d) ∈ AV(dst) (all of Z when an offset or len is not constant) gets the `INT` atoms of the byte v repeated to the slot's width (⊤ when v is not constant) |
+| PT9 | direct call of G, or indirect call with candidate G (§14.2) | AV(parameter i of G) ⊇ AV(argument i); AV(result) ⊇ the union of AV over G's `ret` operands; `byval` arguments copy the pointee's slots into the callee's copy object |
+| PT10 | `insertelement`/`extractelement`/`shufflevector`/`insertvalue`/`extractvalue` | extraction/insertion use N15’s total unsigned index semantics. Constant in-range extraction copies its lane; constant out-of-range extraction gives the element type’s zero. Dynamic extraction unions every source lane selected by a represented index, plus zero iff the index set includes an unsigned value >= L (including top when 2^K > L). No zero is added if every represented index is in range; zero adds no ROOT. In-range insertion replaces the selected lane; out-of-range insertion preserves the vector. Dynamic insertion includes each old lane unless it is certainly replaced, and the inserted value whenever that lane can be selected. Valid shuffle indices and aggregate paths move atoms unchanged (handle-table reads, audit B-23) |
+| PT11 | a parameter of a function with a host caller, a device entry, or a function whose address host code uses | AV ⊇ {(EXT, `*`)} for `ptr` parameters, ⊤ for integer parameters, plus the atoms of the device-side arguments by PT9; for a pointer parameter i of a device entry E, also the candidate atom ROOT(E, i) of §6.6 |
+| PT12 | a `qalloc`/`qborrow` call; a call of a function with no definition that resolves to a host call (§4.5) or is trapped; an `atomicrmw`/`cmpxchg` (before N9) | `qalloc`/`qborrow`: AV ∋ ROOT(site) (§6.5). An undefined callee: the result is ⊤ and every slot reachable from its pointer arguments gets ⊤. Before domains freeze, PT12 MUST apply PT6 to the old value, the PT5 transfers of the full N9 update, and PT7 to the actual stored value, with cmpxchg returning its old-value and success fields and storing the selected new-or-old value. [deps: DLT-5.2-P1, DLT-5.2-P6, DLT-5.2-P7, DLT-5.2-P8, DLT-5.2-P13, DLT-12.2-P11, ISA-4.1, ISA-4.2] |
+
+An `inttoptr` of a constant gives (EXT, `*`) and, for function-pointer purposes, ⊤: function
+addresses are symbolic `FN` atoms during the analysis, and their numeric values A(F) are fixed
+only by the comparison link (§19.5), after normalisation (S7) and before lifting (S8).
+
+
+**PT12 N9 update witnesses (DB/DN/DS; non-normative).** The global starts at 1. Xor by 2 alternates 1 and 3 in the flow-insensitive least fixpoint; a single execution allocates width 3. Cmpxchg against 1 first succeeds and writes 3; subsequent abstract iterations include failure on old 3. Against 9 it always fails and leaves 1. Native LLVM 18/23 materialised O0/O3 checks old/success, actual width, clean free, liveness and code 0.
+
+```llvm example=pt12-xor verdict=accept
+@cell = internal global i64 1
+@observed_old = global i64 0
+@observed_success = global i64 0
+define void @top() {
+  %old = atomicrmw xor ptr @cell, i64 2 seq_cst
+  store i64 %old, ptr @observed_old
+  %width = load i64, ptr @cell
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt12-xor at=return
+{"domains": {"%old": [1, 3], "%width": [1, 3]}, "native": [1, 0, 3, 1, 0, 0]}
+```
+
+```llvm example=pt12-cmpxchg-success verdict=accept
+@cell = internal global i64 1
+@observed_old = global i64 0
+@observed_success = global i64 0
+define void @top() {
+  %pair = cmpxchg ptr @cell, i64 1, i64 3 seq_cst seq_cst
+  %old = extractvalue { i64, i1 } %pair, 0
+  %ok = extractvalue { i64, i1 } %pair, 1
+  store i64 %old, ptr @observed_old
+  %ok64 = zext i1 %ok to i64
+  store i64 %ok64, ptr @observed_success
+  %width = load i64, ptr @cell
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt12-cmpxchg-success at=return
+{"domains": {"%ok": [0, 1], "%old": [1, 3], "%width": [1, 3]}, "native": [1, 1, 3, 1, 0, 0]}
+```
+
+```llvm example=pt12-cmpxchg-failure verdict=accept
+@cell = internal global i64 1
+@observed_old = global i64 0
+@observed_success = global i64 0
+define void @top() {
+  %pair = cmpxchg ptr @cell, i64 9, i64 3 seq_cst seq_cst
+  %old = extractvalue { i64, i1 } %pair, 0
+  %ok = extractvalue { i64, i1 } %pair, 1
+  store i64 %old, ptr @observed_old
+  %ok64 = zext i1 %ok to i64
+  store i64 %ok64, ptr @observed_success
+  %width = load i64, ptr @cell
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt12-cmpxchg-failure at=return
+{"domains": {"%ok": [0], "%old": [1], "%width": [1]}, "native": [1, 0, 1, 1, 0, 0]}
+```
+
+**PT12 spelling witnesses (non-normative).** Explicit address spaces, volatile/weak qualifiers, syncscope and alignment retain the same N9 value effects and native materialised outcomes; the pointer operand keeps its address-space type in the generated load and store.
+
+```llvm example=pt12-xor-as1 verdict=accept
+@cell = internal global i64 1
+@observed_old = global i64 0
+@observed_success = global i64 0
+define void @top() {
+  %p = addrspacecast ptr @cell to ptr addrspace(1)
+  %old = atomicrmw volatile xor ptr addrspace(1) %p, i64 2 syncscope("singlethread") seq_cst, align 8
+  store i64 %old, ptr @observed_old
+  %width = load i64, ptr @cell
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt12-xor-as1 at=return
+{"domains": {"%old": [1, 3], "%width": [1, 3]}, "native": [1, 0, 3, 1, 0, 0]}
+```
+
+```llvm example=pt12-cmpxchg-as1 verdict=accept
+@cell = internal global i64 1
+@observed_old = global i64 0
+@observed_success = global i64 0
+define void @top() {
+  %p = addrspacecast ptr @cell to ptr addrspace(1)
+  %pair = cmpxchg weak volatile ptr addrspace(1) %p, i64 1, i64 3 syncscope("singlethread") seq_cst seq_cst, align 8
+  %old = extractvalue { i64, i1 } %pair, 0
+  %ok = extractvalue { i64, i1 } %pair, 1
+  store i64 %old, ptr @observed_old
+  %ok64 = zext i1 %ok to i64
+  store i64 %ok64, ptr @observed_success
+  %width = load i64, ptr @cell
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt12-cmpxchg-as1 at=return
+{"domains": {"%ok": [0, 1], "%old": [1, 3], "%width": [1, 3]}, "native": [1, 1, 3, 1, 0, 0]}
+```
+
+PT12 checked ROOT propagation: `make` returns the fresh qalloc ROOT to its caller;
+the caller uses that same identity for a gate and free. This is a direct handle
+realisation, so no stored-instance bound is required. The checked verdict is accept.
+
+```llvm example=pt12-root-return verdict=accept
+define internal ptr @make() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  ret ptr %h
+}
+define void @top() {
+  %h = call ptr @make()
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+**Zero initial images (DB/DN/DS).** Before any conditional store, the stack
+allocation's eight bytes are zero under N24. The path storing 1 adds a second
+possibility, so AV(raw)=AV(idx)={INT(0),INT(1)} and VS(width)={1,3}.
+The heap companion uses a zero-filled calloc allocation-site object with the
+same derivation. The PT8 companion copies the stack image to a mutable global
+whose initial value is 1: zero must come from the source, not the destination.
+All accept. LLVM 18/23 verify source O0; N24/N8/N15/N21 materialisation and
+native O0/O3 runs for false/true observe widths 1/3, one clean free each,
+live_after=0 and code 0. Source uninitialised LLVM loads are not execution oracles;
+the comparison executes the specified zero-filled materialised program.
+
+```llvm example=pt6-zero-stack verdict=accept
+target datalayout = "e-p:64:64-i64:64-n8:16:32:64"
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+define void @top(i1 %set) {
+entry:
+ %p = alloca i64
+ br i1 %set, label %store, label %read
+store:
+ store i64 1, ptr %p
+ br label %read
+read:
+ %raw = load i64, ptr %p
+ %idx = freeze i64 %raw
+ %width = extractelement <2 x i64> <i64 1, i64 3>, i64 %idx
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt6-zero-stack at=0
+{"domains":{"%raw":[0,1],"%idx":[0,1],"%width":[1,3]},"value_set":[1,3],"inputs":[0,1],"widths":[1,3],"gates":0,"index":0,"frees":1,"final_bit":0,"live_after":0,"code":0}
+```
+
+```llvm example=pt6-zero-heap verdict=accept
+target datalayout = "e-p:64:64-i64:64-n8:16:32:64"
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+declare ptr @calloc(i64, i64)
+declare void @free(ptr)
+define void @top(i1 %set) {
+entry:
+ %p = call ptr @calloc(i64 1, i64 8)
+ br i1 %set, label %store, label %read
+store:
+ store i64 1, ptr %p
+ br label %read
+read:
+ %raw = load i64, ptr %p
+ %idx = freeze i64 %raw
+ %width = extractelement <2 x i64> <i64 1, i64 3>, i64 %idx
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ call void @free(ptr %p)
+ ret void
+}
+```
+
+```text state=pt6-zero-heap at=0
+{"domains":{"%raw":[0,1],"%idx":[0,1],"%width":[1,3]},"value_set":[1,3],"inputs":[0,1],"widths":[1,3],"gates":0,"index":0,"frees":1,"final_bit":0,"live_after":0,"code":0}
+```
+
+```llvm example=pt8-zero-copy verdict=accept
+target datalayout = "e-p:64:64-i64:64-n8:16:32:64"
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+@copy = internal global i64 1
+declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
+define void @top(i1 %set) {
+entry:
+ %p = alloca i64
+ br i1 %set, label %store, label %read
+store:
+ store i64 1, ptr %p
+ br label %read
+read:
+ call void @llvm.memcpy.p0.p0.i64(ptr @copy, ptr %p, i64 8, i1 false)
+ %raw = load i64, ptr @copy
+ %idx = freeze i64 %raw
+ %width = extractelement <2 x i64> <i64 1, i64 3>, i64 %idx
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt8-zero-copy at=0
+{"domains":{"%raw":[0,1],"%idx":[0,1],"%width":[1,3]},"value_set":[1,3],"inputs":[0,1],"widths":[1,3],"gates":0,"index":0,"frees":1,"final_bit":0,"live_after":0,"code":0}
+```
+
+**PT3 geometry-changing bitcast witnesses (DB/DN/DS).** On this little-endian
+layout, <1,1> packs to 1 | (1 << 8) = 257, and <0,1> packs to 256.
+Each result is one scalar INT atom, never two source-lane atoms. The inverse
+probe splits 769 = 1 + (3 << 8) into <1,3>, then selects 3. All three
+are accepted with finite dispatch; no run-time-width lowering applies. The state checks verify
+source O0, instcombine and virtual-N21 materialisation on LLVM 18/23, then
+execute the source and materialised forms with native width-domain guards at
+O0/O3. The first flips wire 256 twice; every allocation frees cleanly, code 0.
+
+```llvm example=pt3-pack257 verdict=accept
+target datalayout = "e-p:64:64"
+define void @top() {
+ %v0 = insertelement <2 x i8> zeroinitializer, i8 1, i32 0
+ %v1 = insertelement <2 x i8> %v0, i8 1, i32 1
+ %bits = bitcast <2 x i8> %v1 to i16
+ %n = zext i16 %bits to i64
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %n)
+ call void @__bennett_gate(i32 1, ptr %h, i64 256)
+ call void @__bennett_gate(i32 1, ptr %h, i64 256)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt3-pack257 at=0
+{"domains":{"%bits":[257],"%n":[257]},"value_set":[257],"widths":[257],"gates":2,"index":256,"frees":1,"final_bit":0,"live_after":0,"code":0}
+```
+
+```llvm example=pt3-pack256 verdict=accept
+target datalayout = "e-p:64:64-i64:64-n8:16:32:64"
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+define void @top() {
+ %a = insertelement <2 x i8> zeroinitializer, i8 1, i32 1
+ %b = bitcast <2 x i8> %a to i16
+ %width = zext i16 %b to i64
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt3-pack256 at=0
+{"domains":{"%b":[256],"%width":[256]},"value_set":[256],"widths":[256],"gates":0,"index":0,"frees":1,"final_bit":0,"live_after":0,"code":0}
+```
+
+```llvm example=pt3-unpack verdict=accept
+target datalayout = "e-p:64:64-i64:64-n8:16:32:64"
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+define void @top() {
+ %packed = add i16 0, 769
+ %v = bitcast i16 %packed to <2 x i8>
+ %b = extractelement <2 x i8> %v, i32 1
+ %width = zext i8 %b to i64
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt3-unpack at=0
+{"domains":{"%b":[3],"%width":[3]},"value_set":[3],"widths":[3],"gates":0,"index":0,"frees":1,"final_bit":0,"live_after":0,"code":0}
+```
+
+**PT10 totalised lane domain.** The dynamic extraction from <1,3>
+has domain {0,1,3}, so adding one gives finite width dispatch {1,2,4}.
+Indices 0,1,2,-1 allocate 2,4,1,1 wires and free cleanly; no precondition
+excludes the out-of-range host inputs.
+
+```llvm example=pt10-lane-zero verdict=accept
+define void @top(i32 %index) {
+ %v0 = insertelement <2 x i64> zeroinitializer, i64 1, i32 0
+ %v1 = insertelement <2 x i64> %v0, i64 3, i32 1
+ %lane = extractelement <2 x i64> %v1, i32 %index
+ %frozen = freeze i64 %lane
+ %width = add i64 %frozen, 1
+ %h = call ptr @__bennett_qalloc(i64 0, i64 %width)
+ call void @__bennett_qfree(ptr %h)
+ ret void
+}
+```
+
+```text state=pt10-lane-zero at=0
+{"lane_set":[0,1,3],"value_set":[1,2,4],"inputs":[0,1,2,-1],"widths":[2,4,1,1],"live_after":0,"trap":0}
+```
+
+**Pointer-integer wrap witnesses.** Two i64 additions of −2^63 have net
+zero displacement modulo 2^64, so p=@tab and f=@body. Modular displacement
+alternatives are retained alongside unknown-address alternatives, never lost at
+an intermediate out-of-object value. A ptrtoint to i128 followed by +2^64 and
+inttoptr to a 64-bit pointer likewise returns @tab. The third witness computes
+the address of a different allocation: unknown-address loading must retain its
+possible function value. With adequate budgets dispatch succeeds exactly once.
+
+```llvm example=pt5-int-wrap verdict=accept candidates=body
+target datalayout = "e-p:64:64"
+@tab = internal constant [1 x ptr] [ptr @body]
+declare void @__bennett_adj(ptr, ptr, ptr)
+define internal void @body(ptr %e) {
+ ret void
+}
+define void @top() {
+ %a = ptrtoint ptr @tab to i64
+ %b = add i64 %a, -9223372036854775808
+ %c = add i64 %b, -9223372036854775808
+ %p = inttoptr i64 %c to ptr
+ %f = load ptr, ptr %p, align 8
+ call void @__bennett_adj(ptr %f, ptr null, ptr null)
+ ret void
+}
+```
+
+```text state=pt5-int-wrap at=0
+{"candidates":["body"],"calls":1,"trap":0}
+```
+
+```llvm example=pt4-wide-wrap verdict=accept candidates=body
+target datalayout = "e-p:64:64"
+@tab = internal constant [1 x ptr] [ptr @body]
+declare void @__bennett_adj(ptr, ptr, ptr)
+define internal void @body(ptr %e) {
+ ret void
+}
+define void @top() {
+ %a = ptrtoint ptr @tab to i128
+ %b = add i128 %a, 18446744073709551616
+ %p = inttoptr i128 %b to ptr
+ %f = load ptr, ptr %p, align 8
+ call void @__bennett_adj(ptr %f, ptr null, ptr null)
+ ret void
+}
+```
+
+```text state=pt4-wide-wrap at=0
+{"candidates":["body"],"calls":1,"trap":0}
+```
+
+```llvm example=pt6-unknown-address verdict=accept candidates=body
+target datalayout = "e-p:64:64"
+@other = internal constant [1 x ptr] [ptr @body]
+@tab = internal constant [1 x ptr] [ptr @body]
+declare void @__bennett_adj(ptr, ptr, ptr)
+define internal void @body(ptr %e) {
+ ret void
+}
+define void @top() {
+ %a = ptrtoint ptr @tab to i64
+ %o = ptrtoint ptr @other to i64
+ %delta = sub i64 %o, %a
+ %c = add i64 %a, %delta
+ %p = inttoptr i64 %c to ptr
+ %f = load ptr, ptr %p, align 8
+ call void @__bennett_adj(ptr %f, ptr null, ptr null)
+ ret void
+}
+```
+
+```text state=pt6-unknown-address at=0
+{"candidates":["body"],"calls":1,"trap":0}
+```
+
+**PT6 byte reconstruction witnesses.** Immutable bytes [1,1] decode as
+1+256=257 under e-p:64:64, never the union {1}. A two-byte subrange of a
+mutable four-byte store of 66049 (bytes 01 02 01 00) concretely gives 513,
+but has no exact whole-interval atom: its fixed abstract result is TOP, not {66049}.
+The fallback executes width 513 without claiming a finite reference dispatch set.
+
+```llvm example=pt6-byte-width verdict=accept
+target datalayout = "e-p:64:64"
+@width = internal constant [2 x i8] [i8 1, i8 1]
+define void @top() {
+  %w = load i16, ptr @width, align 1
+  %n = zext i16 %w to i64
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %n)
+  call void @__bennett_gate(i32 1, ptr %h, i64 256)
+  call void @__bennett_gate(i32 1, ptr %h, i64 256)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt6-byte-width
+{"value_set":[257],"width":257,"wire":256,"live_after":0,"trap":0}
+```
+
+```llvm example=pt6-subrange verdict=accept lowering=K1
+target datalayout = "e-p:64:64"
+define void @top() {
+  %p = alloca i32
+  store i32 66049, ptr %p
+  %w = load i16, ptr %p, align 1
+  %n = zext i16 %w to i64
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %n)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text lowering-report=pt6-subrange
+K1 %n: partial mutable load has TOP width; T-SIZE check, then qreg.new any n : qreg[*]
+```
+
+```text state=pt6-subrange
+{"value_set":"TOP","width":513,"live_after":0,"trap":0}
+```
+
+A constant-byte fill carries its complete filled interval and byte value; a load
+contained in that interval decodes the repeated byte at the load's width. Other
+overlapping writes still participate in PT6 (a fill does not erase them).
+PT8 copies preserve storage intervals/representation widths only for fully copied
+atoms. Partial copies and fills add overlapping affected intervals; PT6 then returns
+⊤ for any load whose whole bits are not represented exactly. These are fixed
+reference rules, not optional precision improvements.
+
+Handle-array propagation MUST retain field intervals and finite-width address images so that a disjoint integer counter is not handle-derived, without treating an array type as a proof that indices stay in bounds. [deps: DLT-5.1-P7, DLT-5.2-P3, DLT-5.2-P7, DLT-5.2-P8, ISA-4.1, ISA-4.2]
+
+**Compatible allocation/collection witness (non-normative).** A defined wrapper
+returns an attributed fresh allocation whose name is not a built-in allocator.
+A two-level heap header carries a handle through a shared global; a disjoint
+counter remains ordinary integer data. Two indirect candidates return different
+ROOTs. An i1 vector index selects exactly one live lane without an out-of-range
+zero alternative. Both inputs execute four X gates, two clean frees and code0;
+LLVM18/23 source and materialised O0/O3 execute independently of the analysis.
+
+```llvm example=compatible-allocator-graph verdict=accept callees=first,second
+@shared = internal global { ptr, i64 } zeroinitializer
+@observed_old = global i64 0
+@observed_success = global i64 0
+declare ptr @custom_alloc(i64) allocsize(0)
+declare void @free(ptr)
+define internal ptr @make_node(ptr %h) {
+  %node = call ptr @custom_alloc(i64 16)
+  store ptr %h, ptr %node
+  %link = getelementptr i8, ptr %node, i64 8
+  store ptr null, ptr %link
+  ret ptr %node
+}
+define internal ptr @first(ptr %a, ptr %b) {
+  ret ptr %a
+}
+define internal ptr @second(ptr %a, ptr %b) {
+  ret ptr %b
+}
+define void @host_count() {
+  %counter = getelementptr { ptr, i64 }, ptr @shared, i64 0, i32 1
+  store i64 9, ptr %counter
+  ret void
+}
+define void @top(i1 %choose) {
+  %a = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %b = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %node = call ptr @make_node(ptr %a)
+  %header = call ptr @custom_alloc(i64 8)
+  store ptr %node, ptr %header
+  store ptr %header, ptr @shared
+  %loaded_header = load ptr, ptr @shared
+  %loaded_node = load ptr, ptr %loaded_header
+  %from_node = load ptr, ptr %loaded_node
+  %f = select i1 %choose, ptr @first, ptr @second
+  %from_callback = call ptr %f(ptr %from_node, ptr %b)
+  call void @__bennett_gate(i32 1, ptr %from_callback, i64 0)
+  call void @__bennett_gate(i32 1, ptr %from_callback, i64 0)
+  %v0 = insertelement <2 x ptr> zeroinitializer, ptr %a, i32 0
+  %v1 = insertelement <2 x ptr> %v0, ptr %b, i32 1
+  %lane = extractelement <2 x ptr> %v1, i1 %choose
+  call void @__bennett_gate(i32 1, ptr %lane, i64 0)
+  call void @__bennett_gate(i32 1, ptr %lane, i64 0)
+  call void @host_count()
+  %counter = getelementptr { ptr, i64 }, ptr @shared, i64 0, i32 1
+  %count = load i64, ptr %counter
+  store i64 %count, ptr @observed_old
+  call void @free(ptr %node)
+  call void @free(ptr %header)
+  call void @__bennett_qfree(ptr %a)
+  call void @__bennett_qfree(ptr %b)
+  ret void
+}
+```
+
+```text state=compatible-allocator-graph at=return
+{"roots":{"%from_node":["top%a"],"%from_callback":["top%a","top%b"],"%lane":["top%a","top%b"]},"counter_roots":[],"native":[[9,2,4,2,0,0],[9,2,4,2,0,0]]}
+```
+
+### 5.3 Value sets
+
+The **value set** VS(v) of an integer or pointer operand is the set of its `INT` and `FN` atoms
+(pointer atoms denote addresses that are not compile-time constants and make VS(v) = ⊤ for
+dispatch purposes), or ⊤. A value set is a precision tool only:
+
+- an operand with a finite VS is dispatched over it (§3.4, §14.2);
+- an operand with VS = ⊤ is dispatched over its type's whole valid domain where that domain is
+  finite: operation codes and classes (§3.4), binding kinds (§8.4), the function addresses of a
+  type (§7.2, §14.2);
+- otherwise it has a run-time lowering: widths (§3.4, ISA K1), budgets computed on the device
+  (§9.5, ISA K3), parameters of in-place pairs (§8.7, ISA K4 or the CC expansion).
+
+### 5.4 Uses
+
+| Result | Read by |
+|---|---|
+| `FN` atoms of region operands | region candidate sets (§7.2) |
+| `FN` atoms of indirect callees | indirect-call candidate sets (§14.2) |
+| `ROOT` atoms | handle provenance (§6.2), handle containment (§6.4), static register files (§6.5) |
+| `INT` atoms of descriptor and budget fields | descriptor shapes (§8.4), budget pre-minting (§9.5) |
+| slots stored under control | the may-Co analysis and arena placement (§10, TDL-2, TDL-4) |
+| objects loaded by L code | the oracle read set R and entry-state transfer (§8.5) |
+| `INT` atoms of `op`, `cls`, `n` | dispatch domains (§3.4) |
+
+```llvm example=pt-variable-index verdict=accept
+%struct.tab = type { [4 x ptr], i64 }
+
+define void @t(i64 %i) {
+  %s = alloca %struct.tab
+  %h0 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h0, ptr %s
+  %pn = getelementptr %struct.tab, ptr %s, i64 0, i32 1
+  store i64 3, ptr %pn
+  %k = and i64 %i, 3
+  %pk = getelementptr %struct.tab, ptr %s, i64 0, i32 0, i64 %k
+  %hk = load ptr, ptr %pk
+  call void @__bennett_gate(i32 1, ptr %hk, i64 0)
+  %n = load i64, ptr %pn
+  %n2 = add i64 %n, 1
+  store i64 %n2, ptr %pn
+  call void @__bennett_qfree(ptr %h0)
+  ret void
+}
+```
+
+*(non-normative)* In `pt-variable-index`, `%pk` has the offset class (0 mod 8)[0, 32) in `%s`
+(the `[4 x ptr]` array), so the load `%hk` reads the slots 0, 8, 16, 24: AV(`%hk`) =
+{ROOT(`%h0`)}. The count field is at the exact offset 32, outside the class, so AV(`%n`) holds
+INT(3) and, through the store of `%n2`, INT(4), INT(5), … until it exceeds K and becomes ⊤; it
+holds no `ROOT` atom, and the arithmetic on it is legal (audit B-27: 0.1 gave the load offset `*`
+and rejected this program).
+
+**Finite-width and materialised-domain witnesses (round 6).** Under I=32,
+2^32 truncates to zero, so the table load yields FN(body) and dispatch succeeds.
+For the ranged inputs, N3/N4 erase the annotations: `n & 3` gives {0,1,2,3}
+and `| 1` gives {1,3}. At n=2 width 3 admits both X gates on wire 2 and a clean
+free. No new input precondition or fault is introduced.
+
+```llvm example=pt2-wrap verdict=accept
+target datalayout = "e-p:64:64:64:32"
+@tab = internal constant [1 x ptr] [ptr @body]
+declare void @__bennett_adj(ptr, ptr, ptr)
+define internal void @body(ptr %e) {
+ ret void
+}
+define void @top() {
+ %p = getelementptr i8, ptr @tab, i64 4294967296
+ %f = load ptr, ptr %p, align 8
+ call void @__bennett_adj(ptr %f, ptr null, ptr null)
+ ret void
+}
+```
+
+```text state=pt2-wrap
+{"pointer_offset":0,"candidates":["body"],"calls":1,"trap":0}
+```
+
+```llvm example=pt5-range verdict=accept majors=23
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_gate(i32, ptr, i64)
+declare void @__bennett_qfree(ptr)
+define void @top(i64 range(i64 1, 2) %n) {
+  %m = and i64 %n, 3
+  %w = or i64 %m, 1
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %w)
+  call void @__bennett_gate(i32 1, ptr %h, i64 2)
+  call void @__bennett_gate(i32 1, ptr %h, i64 2)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=pt5-range
+{"value_set":[1,3],"input":2,"width":3,"live_after":0,"trap":0}
+```
+
+```llvm example=pt5-range-load verdict=accept
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_gate(i32, ptr, i64)
+declare void @__bennett_qfree(ptr)
+define void @top(ptr %p) {
+  %n = load i64, ptr %p, !range !0
+  %m = and i64 %n, 3
+  %w = or i64 %m, 1
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %w)
+  call void @__bennett_gate(i32 1, ptr %h, i64 2)
+  call void @__bennett_gate(i32 1, ptr %h, i64 2)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+!0 = !{i64 1, i64 2}
+```
+
+```text state=pt5-range-load
+{"value_set":[1,3],"input":2,"width":3,"live_after":0,"trap":0}
+```
+
+## 6. Handles (handles 0.3)
+
+### 6.1 Representation
+
+A handle is an ordinary `ptr` in address space 0. In device memory and in integers a handle is
+its **register tag**: an opaque value below 2^pw assigned to an allocation generation
+(§6.5), nonzero and distinct from every identity still observable through live or stale
+copies. Physical slots are reusable storage, never allocation identity. A tag MUST NOT
+be recycled while an observable stale copy can remain; integer wrap is not permission
+to alias generations. Copies continue to denote their original generation after free. Tags are the
+plugin's and stay pointer-width; ISA ids are `i64` values chosen by the executor (ISA §3.3), which MAY exceed
+2^pw − 1 or equal 0, so a tag is never an id truncated to pw bits: the qreg table (§6.5) maps tags to ids. At the
+host–device boundary a handle is the ISA launch register id (`bennett_qreg`, ISA §10), which the
+launch binds to a `qreg` parameter or result (§6.6). Neither value may influence a result other
+than through §6.3; the rules below make them unobservable. A handle
+denotes a register of n wires, n the `qalloc` operand; wire i of handle h is written h.i.
+
+### 6.2 Provenance (maintainer decision 2)
+
+The **provenance** of a value is the set of `ROOT` atoms of its abstract value (§5). Provenance
+flows through **bitwise copies** only: `ptrtoint`/`inttoptr` at width pw, integer loads and
+stores of width pw, vector lanes (including dynamic lanes, PT10: a dynamically indexed vector of
+handles is a handle table), aggregate fields, memory copies, `phi`, `select`, `freeze`, call
+arguments and returns (PT3–PT10). A handle-derived value (any lane or field) MAY be:
+
+1. a handle operand of a marker (§3.2);
+2. copied by the rules above, including storage in any slot the analysis tracks (§6.4);
+3. an operand of `icmp eq` or `icmp ne` (§6.3);
+4. an argument of a direct or indirect call of a defined function, or a return value.
+
+Every other use is `BD-E-HANDLE-USE` (maintainer decision 2: "any other use of a
+handle-derived integer is rejected fail-loud"; NS §3.1 "never dereferenced"): in particular
+arithmetic, bitwise operations, `icmp` with any other predicate, any cast other than the copies
+above (`trunc`, `zext`, `sext`, `bitcast` to a non-pointer-width type, `ptrtoint` to a width ≠
+pw), `getelementptr` with a handle as base or index, `switch` on it, use as the pointer operand of
+a `load`, `store`, `atomicrmw`, `cmpxchg` or memory intrinsic (dereference), and a load of any
+type whose byte range overlaps a handle-derived slot without being exactly one pw-wide lane of
+it (a partial read).
+
+A handle operand of a marker whose provenance is empty is `BD-E-HANDLE-UNTRACKED` (it cannot be
+a handle of this program). *(non-normative)* A tracked value that at run time is not a live
+handle (a stale copy, a freed register) traps at the marker (`T-DEAD`, §18.3).
+
+Dynamically indexed handle vectors MUST use PT10 lane provenance and N15 total index semantics, retaining explicit ROOT atoms and adding zero only for possible out-of-range extraction. [deps: DLT-5.2-P11, DLT-6.2-P1, DLT-12.2-P17, ISA-4.1, ISA-4.2]
+
+### 6.3 Comparison (maintainer decision 4)
+
+`icmp eq` and `icmp ne` of a handle with `null`, or with another handle-derived value, compare
+**identity**: a live handle is never null, and two handles are equal iff they denote the same
+allocation generation, including when comparing a freed identity with a later allocation
+in the same physical slot. The result is not handle-derived. In CC it lowers to `icmp` on register tags. This
+covers C `if (!q)` and Rust's `Option<Handle>` niche (audit D8). *(non-normative)* A comparison
+is a classical observation of identity, not of the register's content; ids are unique, so it
+equals the native comparison of the two handle values.
+
+Handle equality and null tests MUST compare allocation identity, preserve stale-versus-new inequality and produce a result without handle provenance. [deps: DLT-6.1-P1, DLT-6.3-P1, ISA-3.3-P7, ISA-4.1-P4]
+
+### 6.4 Collections and containment
+
+Handles may be stored in any slot the analysis tracks: tables, vectors, linked structures,
+globals (field-sensitively), heap objects, and objects passed to indirect calls or returned by
+address-taken functions (audit B-22, B-24, B-26, B-29). A handle may **escape** only where code
+the analysis cannot see could read it:
+
+- `BD-E-HANDLE-ESCAPE`: a `ROOT` atom reaches a slot of `EXT`, an argument or a reachable slot of
+  a call that resolves to a host call or is trapped (§4.5), or the return value of a function
+  whose callers are not all in the link, other than a device entry's `QREG` result (§6.6). NS §3.1: "any handle use that survives into host native
+  code is rejected".
+
+H functions in the link that receive launch register ids through §6.6 are analysed like device code:
+they may copy, store, compare and pass them back to device entries (§6.2 items 2–4); any other
+use is `BD-E-HANDLE-USE`.
+
+Handle provenance MUST flow through every indirect-call candidate's parameters and results exactly as through a direct defined call. [deps: DLT-5.2-P10, DLT-6.2-P5, DLT-6.4, ISA-3.3-P21, ISA-4.1-P11]
+
+A tracked object containing handles MUST remain storable and returnable through other tracked objects, with escape decided by the reachable handle slots rather than object escape alone. [deps: DLT-5.2, DLT-6.4-P1, DLT-6.4-P2, ISA-7.1, ISA-3.3]
+
+A global handle field MUST be analysed by reachable byte slots, allowing analysed host transport under the handle rules and retaining rejection only for an actual prohibited use or unknown-reader escape. [deps: DLT-5.2, DLT-6.4, DLT-6.6, ISA-3.3, ISA-10]
+
+### 6.5 Realisation on ISA 0.9: direct values, static files and the qreg table
+
+A `qreg` is not storable in memory, but its id is: `qreg.id` reads it, `qreg.from_id` returns an alias
+and `qreg.width` reads the run-time width (ISA §3.3, K1). CC and R code hold `qreg` values in their classical
+environment (dynamic SSA instances, block parameters, call arguments and results; ISA §3.2, §3.3, §7.4). The plugin
+realises each allocation site s (a `qalloc` or `qborrow` call) in one of three ways:
+
+- **Direct.** If no `ROOT(s)` atom reaches a memory slot (PT7, PT8), the handle is a CC `qreg`
+  value threaded through SSA values, block parameters, call arguments and results
+  (ISA §3.3, E11). Every execution of s creates a new dynamic instance,
+  so loops and recursion need no bound.
+- **Static register file.** Otherwise, when N(s) is finite, the plugin MAY use the qreg table below or a static file: a physical **slot** is a pair (s, instance
+  index k < N(s)); ROOT(s) is static provenance, not run-time identity. For
+  each slot the plugin keeps one CC `qreg` variable, threaded like a direct handle through every
+  CC variant that may use it; `qalloc` at s picks a free instance index at run time and executes
+  `qreg.new cls n` into that variable (one variable per member of the width dispatch domain,
+  §3.4). The default CC table holds each slot's current generation tag and liveness;
+  a fresh-tag allocator gives every allocation a new identity (§6.1), stored in memory.
+  A marker operand is dispatched by matching its full tag against current live candidate
+  slots (compare tree, §14.2); a missing or retired generation traps T-DEAD before
+  changing any register. Free retires the identity even if the slot is immediately reused.
+  Recycle tags only after old copies are proven unobservable, never by slot reuse alone.
+  This table and allocator use ordinary classical operations, without qreg.id.
+  N(s) bounds simultaneous physical slots, not the number of historical identities. A direct handle that is converted to an integer
+  (`ptrtoint`, a store) gets a tag in the same way.
+- **Qreg table.** When N(s) = ∞ the site MUST use the qreg table. Memory-reaching handles with no finite reference instance bound MUST use a persistent lossless tag-to-ledger-id mapping and qreg.from_id at use, preserving pointer-width tags, identity, liveness, ownership and checked widths. [deps: DLT-6.1-P1, DLT-6.4-P1, DLT-6.5-P10, ISA-3.3-P7, ISA-3.3-P13, ISA-3.3-P14, ISA-3.3-P19, ISA-10]
+  The **qreg table** is a plugin-added zero-image global `__bennett_rt_qtab` of `Q_tab` records, each an `i64` id and an `i64` state (0 unassigned, 1 live, 2 retired), indexed by tag, with a next-tag counter; its base lies above `heap_base + heap_limit_max`, so it moves no program address (§19.5). Tag values are 1, 2, … and are never reused, which satisfies §6.1. Device classical code reads and writes it with ordinary `load`/`store`, so R history reverses it (ISA §7.4). The operations are:
+  - `qalloc`: check `T-SIZE`; if the counter has reached `Q_tab`, code 2 before any effect; `q = qreg.new cls n`; `id = qreg.id q`; record (id, live) at a fresh tag. The handle value is the tag.
+  - use of a marker operand with tag v: if v is 0 or not below the counter, or its state is not live, `T-DEAD` before any effect; `q = qreg.from_id id`, then for an indexed gate check i below `qreg.width q` (`T-INDEX`) and `s = qreg.slice q i 1` with the run-time `i` (ISA E12), or transfer q to the fixed-width slot with the ISA's width check. A `from_id` that fails because another run that is not CLOSED owns the register is a CC trap / R fault with code 4 (ISA §3.3, §10), never a silent retry.
+  - `qfree` of tag v: as a use, then `qreg.free q` (`T-CLEAN` on a verifying executor, ISA §3.3) and state retired.
+  - a register that enters through a `QREG` parameter or a call result and reaches memory gets a tag by **interning**: the id's existing live tag if the table has one, else a fresh tag. One register has at most one live tag, so §6.3 equality of tags is identity. The reference lookup is a linear scan of the table; any structure with the same results is permitted.
+  The helper code is not a counted materialised instruction (§17.6) and its accesses are outside the native comparison (§17.7), which holds no quantum state. An oracle or lifted variant never reads the table: handles reach regions only through CC or R region calls (§8.4).
+
+**Reference instance bound** of a site s in function F with a static register file:
+
+Before rules 1–2, augment each function's CFG with N29 continuation edges:
+from every call whose closure may longjmp, add an edge to each setjmp continuation
+in every function that may be an ancestor of that call (including the same function).
+Include the materialised __bennett_rt_setjmp continuations, candidate callees and
+interprocedural call edges. The reference default remains conservative: if a setjmp
+continuation in any may-ancestor A of F (A=F included) can reach s through these CFG
+and call edges, s is not self-disjoint and E(s)=∞. Apply this rule to §7.5(b) R
+R allocation as well. Such a site uses the qreg table, never rejection; ISA K1 supplies
+qreg.width/id/from_id and K2 their execution in R. No witness claims a finite reference bound.
+
+**Entry-boundary liveness (before rules 1–2).** If an instance of s may be
+live at the return of any device entry that may reach s — memory live at that
+return (a global, heap object, or memory reachable from a result or env) may
+hold ROOT(s), and not every path from s through the augmented CFGs and call
+edges to that return passes a qfree with provenance exactly {s} — then s is
+not self-disjoint and E(s)=∞. Use the qreg table,
+never rejection. The host may call entries any number of times: executions per
+entry call do not bound instances that survive return. Under §7.5(b), substitute
+reversible-invocation return; the same boundary test applies.
+An internal callee's return alone is not a device-entry return: a guaranteed
+free in its caller before the entry returns can discharge this condition.
+
+**Parameter and result roots.** Apply the same boundary test to candidate handle
+parameter ROOT(E,i) (§6.6), and to a qalloc instance returned as an entry QREG
+result. Persistent memory (a global, heap object, or memory reachable from result
+or env) or the entry's QREG result may retain it. Include every reusable exit,
+including unwind/resume edges, in the augmented interprocedural graph; an exact-root
+qfree on every path from receipt/allocation discharges liveness. Otherwise E=∞:
+the host may supply or retain unboundedly many distinct live registers across calls.
+Marker uses of such roots loaded from persistent memory use the qreg table by interning,
+never rejection. Persistent parameter and result roots MUST resolve through the program ledger across entry calls without an entry-count or static-file bound, while retaining the ISA's exclusive open-run ownership and same-id reversal rules. [deps: DLT-6.5-P6, DLT-6.5-P7, DLT-6.6, ISA-3.3-P7, ISA-3.3-P14, ISA-3.3-P18, ISA-10]
+A handle parameter used directly only within its receiving entry
+keeps the direct realisation, as does a returned QREG never stored in memory.
+The infinite bound on a returned root is relevant to its static-file realisation
+when it reaches memory; it does not impose a finite bound on direct QREG transport. Under §7.5(b), substitute reversible-invocation exit
+for receipt through env; the table operations are the same in R (ISA K2).
+
+1. s is **self-disjoint** iff the only memory its `ROOT(s)` atom reaches is allocas of F whose
+   address does not escape F (it is not stored, returned, or passed to a call other than a marker
+   call, which includes the `env` of a region-entry marker), and every CFG path of F from s to a `ret`, to s again, or to a call
+   whose callee may reach F through the call graph passes through a `qfree` whose operand's
+   provenance is exactly {s}. Then N(s) = 1.
+2. Otherwise N(s) = E(s), the bound on executions of s per device-entry call: E(s) = TC(s) ×
+   Σ_c E(c) over the device call sites c of F (E = 1 for a device entry), where TC(s) is the
+   product of the constant maximum trip counts of the loops of F's augmented CFG that contain s (LLVM's
+   `ScalarEvolution::getSmallConstantMaxTripCount` on the materialised module of the major in
+   use), and E(s) = ∞ when a containing loop has no constant maximum trip count or F is in a
+   cycle of the call graph. E(c), for a call site c in function C, uses the same
+   recurrence: TC(c) in C's augmented CFG times the sum of E over C's device call sites
+   (entry multiplicity 1). Any unbounded augmented loop, recursive cycle or conservative
+   setjmp-continuation or entry-boundary-liveness case gives infinity; normal CFG
+   loop facts cannot override it.
+3. If N(s) = ∞, every execution of s uses the qreg table (lowering row K1 of §25.1). The analysis
+   chooses a realisation; it is not a verdict and no finite instance count limits the program.
+
+**Cross-entry liveness witness.** The host calls put twice, then use. The first
+instance remains live in @slots when the second is allocated at the same site.
+TC=1 per call does not bound lifetime across calls: E(s)=∞, so the site uses the qreg table,
+which keeps two distinct registers live, flips each twice and frees both clean.
+
+```llvm example=handle-cross-entry verdict=accept lowering=K1
+@n = internal global i64 0
+@slots = internal global [2 x ptr] zeroinitializer
+define void @put() {
+entry:
+  %i = load i64, ptr @n
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %p = getelementptr [2 x ptr], ptr @slots, i64 0, i64 %i
+  store ptr %h, ptr %p
+  %next = add i64 %i, 1
+  store i64 %next, ptr @n
+  ret void
+}
+define void @use() {
+entry:
+  %count = load i64, ptr @n
+  br label %test
+test:
+  %j = phi i64 [0, %entry], [%next, %body]
+  %more = icmp ult i64 %j, %count
+  br i1 %more, label %body, label %done
+body:
+  %p = getelementptr [2 x ptr], ptr @slots, i64 0, i64 %j
+  %h = load ptr, ptr %p
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  %next = add i64 %j, 1
+  br label %test
+done:
+  ret void
+}
+```
+
+```text lowering-report=handle-cross-entry
+K1 @put qalloc: instance may outlive a device-entry return; qreg table with qreg.id/from_id
+```
+
+```text state=handle-cross-entry at=0
+{"verdict":"accept","entry_calls":2,"instances":2,"distinct":true,"live_after":0,"trap":0}
+```
+
+**Ancestor setjmp witness.** P's continuation calls G again after deep longjmps;
+G contains no setjmp. The first handle is still live in slot[0] when the second is
+stored in slot[1]. The reference E(s)=∞ selects the qreg table, which
+executes two distinct clean handles and frees both, max live 2, no trap.
+
+```llvm example=handle-setjmp-interproc verdict=accept lowering=K1
+@jb = global [256 x i8] zeroinitializer
+@slots = global [2 x ptr] zeroinitializer
+declare i32 @setjmp(ptr)
+declare void @longjmp(ptr, i32)
+define internal void @deep(i32 %i) {
+entry:
+ %first = icmp eq i32 %i, 0
+ br i1 %first, label %jump, label %done
+jump:
+ call void @longjmp(ptr @jb, i32 1)
+ unreachable
+done:
+ ret void
+}
+define internal void @G(i32 %i) {
+entry:
+ %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+ %p = getelementptr [2 x ptr], ptr @slots, i32 0, i32 %i
+ store ptr %h, ptr %p
+ call void @deep(i32 %i)
+ ret void
+}
+define void @P() {
+entry:
+ %r = call i32 @setjmp(ptr @jb)
+ call void @G(i32 %r)
+ %h0 = load ptr, ptr @slots
+ %p1 = getelementptr [2 x ptr], ptr @slots, i32 0, i32 1
+ %h1 = load ptr, ptr %p1
+ call void @__bennett_qfree(ptr %h0)
+ call void @__bennett_qfree(ptr %h1)
+ ret void
+}
+```
+
+```text lowering-report=handle-setjmp-interproc
+K1 @G qalloc: ancestor setjmp continuation re-entry; qreg table with qreg.id/from_id
+```
+
+```text state=handle-setjmp-interproc at=0
+{"verdict":"accept","instances":2,"distinct":true,"live_after":0,"trap":0,"max_live":2}
+```
+
+**Reused slot, stale identity.** Both iterations allocate at the same site and
+free before re-entry/return, with ROOT memory only in nonescaping allocas: N(s)=1.
+The saved first-generation handle is unequal to the second and traps T-DEAD/code 4
+at its first gate, before changing the second register. Two X gates cannot hide
+the invalid first use. Runtime fault cleanup then releases the clean second slot.
+
+```llvm example=handle-stale-generation verdict=accept
+@generation_equal = global i32 0
+define void @stale_generation() {
+entry:
+  %saved = alloca ptr
+  %slot = alloca ptr
+  br label %loop
+loop:
+  %i = phi i32 [0, %entry], [%next, %first]
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %slot
+  %isfirst = icmp eq i32 %i, 0
+  br i1 %isfirst, label %first, label %second
+first:
+  store ptr %h, ptr %saved
+  call void @__bennett_qfree(ptr %h)
+  %next = add i32 %i, 1
+  br label %loop
+second:
+  %old = load ptr, ptr %saved
+  %eq = icmp eq ptr %old, %h
+  %e = zext i1 %eq to i32
+  store i32 %e, ptr @generation_equal
+  call void @__bennett_gate(i32 1, ptr %old, i64 0)
+  call void @__bennett_gate(i32 1, ptr %old, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text state=handle-stale-generation at=0
+{"physical_slots":1,"equal":false,"stale_code":4,"second_value":0,"live_after":0}
+```
+
+A width with VS = ⊤ lowers to `qreg[*]` (§3.4). R code allocates the same way (§7.5(b)).
+
+**Setjmp re-entry witness.** The first h remains live across g's longjmp; the
+second execution of the same allocation site produces a distinct h. The simple reference
+default gives N=∞ and the qreg table, not N=1. The table runs these two allocations
+without a trap; each register is flipped twice then freed clean. Native setjmp execution
+checks the two distinct live instance ids and balanced release.
+
+```llvm example=handle-setjmp-reentry verdict=accept lowering=K1
+declare i32 @setjmp(ptr)
+declare void @longjmp(ptr, i32)
+@jb = global [256 x i8] zeroinitializer
+define internal void @g() {
+entry:
+  call void @longjmp(ptr @jb, i32 1)
+  ret void
+}
+define void @F() {
+entry:
+  %slot0 = alloca ptr
+  %slot1 = alloca ptr
+  %r = call i32 @setjmp(ptr @jb)
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c = icmp eq i32 %r, 0
+  %slot = select i1 %c, ptr %slot0, ptr %slot1
+  store ptr %h, ptr %slot
+  br i1 %c, label %first, label %done
+first:
+  call void @g()
+  br label %done
+done:
+  %a = load ptr, ptr %slot0
+  %b = load ptr, ptr %slot1
+  call void @__bennett_gate(i32 1, ptr %a, i64 0)
+  call void @__bennett_gate(i32 1, ptr %b, i64 0)
+  call void @__bennett_gate(i32 1, ptr %a, i64 0)
+  call void @__bennett_gate(i32 1, ptr %b, i64 0)
+  call void @__bennett_qfree(ptr %a)
+  call void @__bennett_qfree(ptr %b)
+  ret void
+}
+```
+
+```text lowering-report=handle-setjmp-reentry
+K1 @F qalloc: setjmp continuation re-entry; qreg table with qreg.id/from_id
+```
+
+```text state=handle-setjmp-reentry at=0
+{"instances":2,"distinct":true,"live_after":0,"trap":0,"verdict":"accept"}
+```
+
+### 6.6 Host–device boundary
+
+A device entry's parameters and results of handle type bind to launch `QREG` arguments and
+results (ISA §10). A `ptr` parameter of a device entry is a **handle parameter** iff its
+candidate atom `ROOT(E, i)` (added by PT11 to every pointer parameter of every device entry)
+reaches a marker handle operand; otherwise the candidate atom is removed before §6.2 is checked.
+A handle parameter binds to `QREG`; host code may copy, store and compare launch register ids and pass
+them back. Leak checking happens at program end and at `bennett_qreg_free`, not at each
+device-entry return, which gives the REPL's lexical lifetime (NS §5; audit B-30). *(non-normative)*
+A register returned to the host stays live across launches until the host frees it or a
+`measure` consumes it (ISA §10: "register ids created by the run remain valid unless measured
+or freed"). QREG parameters and results MUST retain their register identity across entries and may outlive a device-entry return, with persistent lookup subject to the ISA run-ownership and CLOSED rules and leak checking at program end. [deps: DLT-6.5-P7, DLT-6.6-P1, ISA-3.3-P14, ISA-3.3-P20, ISA-3.3-P21, ISA-10]
+
+### 6.7 Copy, XOR and in-place rules
+
+Copying a handle copies a reference. Quantum data moves only by:
+
+- `qload(dst, mem, addr)`: XOR of cell `addr` of `mem` into `dst` (§18.3); a copy when `dst` is
+  clean, the source preserved;
+- `qstore(mem, addr, val)`: XOR of `val` into cell `addr` of `mem` (ISA `qstore`), whatever `mem`
+  holds;
+- `qprep(h, src, n)`: XOR of classical bytes into `h` (§3.2);
+- `inplace(g, ginv, budget, desc)`: x ← g(x), admitted only under §8.7;
+- `oracle(f, budget, desc)`: targets ⊕= outputs, fault ⊕= code, inputs preserved (§8).
+
+The north star's compile-time rule "a store into a register not known to be clean is an error"
+(NS §3.1) is the optional warning **`BD-W-QSTORE-UNCLEAN`**: under `-bennett-warn-qstore`, the
+plugin warns at every `qstore` whose target is not provably clean (no event since its `qalloc`
+other than a `qstore` of the same `addr` and `val`). The warning never changes the verdict, so
+the uncomputing second store stays legal (§1.4).
+
+### 6.8 Handle → wire obligations
+
+The plugin converts handles to ISA wires (ISA §3.3 linear values) when it lowers. Its
+obligations, each a property of every ISA object it emits (ISA suite F), are: every gate's wires
+pairwise distinct; no wire used after its release; every `qalloc`ed bundle released by an
+explicit `qfree` (ISA §5.1); every control context disjoint from the operands it controls (ISA
+§3.3); the uncomputation-validity discipline of ISA §6 for every value it introduces. Where an
+obligation depends on run-time data, the reference semantics checks it dynamically and the plugin
+MUST include the same check (§18.3 traps `T-ALIAS`, `T-DEAD`, `T-LEAK`, `T-CTRL`); `T-CLEAN` is
+checked as ISA `qreg.free` cleanliness is: by simulating executors, with hardware following ISA
+§17 item 14.
+
+### 6.9 Examples
+
+The spike F1 shape (an 8-byte `memcpy` of a handle turned into `ptrtoint`, `store i64`, `load
+i64`, `inttoptr`):
+
+```llvm example=handle-int-roundtrip verdict=accept candidates=rg
+define internal void @rg(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  ret void
+}
+
+define void @top() {
+  %e = alloca i64
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c = ptrtoint ptr %h to i64
+  store i64 %c, ptr %e
+  call void @__bennett_adj(ptr @rg, ptr null, ptr %e)
+  %l = load i64, ptr %e
+  %h2 = inttoptr i64 %l to ptr
+  call void @__bennett_qfree(ptr %h2)
+  ret void
+}
+```
+
+```llvm example=handle-memcpy verdict=accept candidates=rg
+declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1 immarg)
+
+define internal void @rg(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  ret void
+}
+
+define void @top() {
+  %slot = alloca ptr
+  %e = alloca { ptr, i64 }
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %slot
+  call void @llvm.memcpy.p0.p0.i64(ptr %e, ptr %slot, i64 8, i1 false)
+  call void @__bennett_adj(ptr @rg, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=handle-arith verdict=reject:BD-E-HANDLE-USE
+define void @top() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 2)
+  %c = ptrtoint ptr %h to i64
+  %d = add i64 %c, 8
+  %h2 = inttoptr i64 %d to ptr
+  call void @__bennett_gate(i32 1, ptr %h2, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+C `if (!q)` and handle equality are identity (maintainer decision 4):
+
+```llvm example=handle-null-check verdict=accept
+define void @top() {
+entry:
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %z = icmp eq ptr %h, null
+  br i1 %z, label %out, label %use
+
+use:
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  br label %out
+
+out:
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=handle-eq verdict=accept
+define void @swap_if_distinct(ptr %a, ptr %b) {
+entry:
+  %same = icmp eq ptr %a, %b
+  br i1 %same, label %out, label %two
+
+two:
+  call void @__bennett_gate2(i32 3, ptr %a, i64 0, ptr %b, i64 0)
+  br label %out
+
+out:
+  ret void
+}
+```
+
+*(non-normative)* In `handle-eq`, `@swap_if_distinct` is a device entry whose two `ptr`
+parameters reach marker handle operands, so both are handle parameters bound to `QREG` launch
+arguments (§6.6).
+
+```llvm example=handle-deref verdict=reject:BD-E-HANDLE-USE
+define i64 @top() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %v = load i64, ptr %h
+  call void @__bennett_qfree(ptr %h)
+  ret i64 %v
+}
+```
+
+```llvm example=handle-truncate verdict=reject:BD-E-HANDLE-USE
+define i32 @top() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c = ptrtoint ptr %h to i32
+  call void @__bennett_qfree(ptr %h)
+  ret i32 %c
+}
+```
+
+```llvm example=handle-to-external verdict=reject:BD-E-HANDLE-ESCAPE
+declare void @log_handle(ptr)
+
+define void @top() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @log_handle(ptr %h)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=handle-store-host verdict=reject:BD-E-HANDLE-ESCAPE
+define void @put(ptr %out) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %out
+  ret void
+}
+```
+
+A constant address is no handle of this program:
+
+```llvm example=handle-untracked verdict=reject:BD-E-HANDLE-UNTRACKED
+define void @kick() {
+  call void @__bennett_gate(i32 2, ptr inttoptr (i64 4096 to ptr), i64 0)
+  ret void
+}
+```
+
+A host-supplied register (REPL), and a register returned to the host:
+
+```llvm example=handle-host-param verdict=accept
+define void @kick(ptr %h) {
+  call void @__bennett_gate(i32 2, ptr %h, i64 0)
+  ret void
+}
+```
+
+```llvm example=handle-return verdict=accept
+define ptr @mk() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 2, ptr %h, i64 0)
+  ret ptr %h
+}
+```
+
+A slot whose address is stored in an internal global is still tracked (audit B-26):
+
+```llvm example=handle-object-tracked verdict=accept
+@pp = internal global ptr null
+
+define void @top() {
+  %slot = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %slot
+  store ptr %slot, ptr @pp
+  %s = load ptr, ptr @pp
+  %h2 = load ptr, ptr %s
+  call void @__bennett_gate(i32 1, ptr %h2, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+Aggregates carry provenance per field (Rust passes pairs this way), and vector lanes per lane
+(spike F1, `load-store-vectorizer`):
+
+```llvm example=handle-aggregate verdict=accept
+define void @top(i64 %i) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 2)
+  %p0 = insertvalue { ptr, i64 } zeroinitializer, ptr %h, 0
+  %p1 = insertvalue { ptr, i64 } %p0, i64 %i, 1
+  %g = extractvalue { ptr, i64 } %p1, 0
+  %j = extractvalue { ptr, i64 } %p1, 1
+  %k = and i64 %j, 1
+  call void @__bennett_gate(i32 2, ptr %g, i64 %k)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=handle-vector-lane verdict=accept
+define i64 @top(i64 %x) {
+  %m = alloca <2 x i64>
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c = ptrtoint ptr %h to i64
+  %v0 = insertelement <2 x i64> zeroinitializer, i64 %x, i32 0
+  %v1 = insertelement <2 x i64> %v0, i64 %c, i32 1
+  store <2 x i64> %v1, ptr %m
+  %p = getelementptr i8, ptr %m, i64 8
+  %l = load i64, ptr %p
+  %h2 = inttoptr i64 %l to ptr
+  call void @__bennett_gate(i32 1, ptr %h2, i64 0)
+  %l0 = load i64, ptr %m
+  %y = add i64 %l0, 1
+  call void @__bennett_qfree(ptr %h)
+  ret i64 %y
+}
+```
+
+
+**`handle-param-cross-entry`.** Receipt of two distinct live host QREGs followed
+by a later useall call leaves two live instances across entry boundaries; no
+per-entry loop bound limits host repetition. Through the qreg table the two
+X;X pairs and frees succeed.
+
+```llvm example=handle-param-cross-entry verdict=accept lowering=K1
+@n = internal global i64 0
+@slots = internal global [2 x ptr] zeroinitializer
+define void @stash(ptr %h) {
+entry:
+  %i = load i64, ptr @n
+  %p = getelementptr [2 x ptr], ptr @slots, i64 0, i64 %i
+  store ptr %h, ptr %p
+  %next = add i64 %i, 1
+  store i64 %next, ptr @n
+  ret void
+}
+define void @useall() {
+entry:
+  %count = load i64, ptr @n
+  br label %test
+test:
+  %j = phi i64 [0, %entry], [%next, %body]
+  %more = icmp ult i64 %j, %count
+  br i1 %more, label %body, label %done
+body:
+  %p = getelementptr [2 x ptr], ptr @slots, i64 0, i64 %j
+  %h = load ptr, ptr %p
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  %next = add i64 %j, 1
+  br label %test
+done:
+  ret void
+}
+```
+
+```text lowering-report=handle-param-cross-entry
+K1 @stash %h: handle parameter may outlive a device-entry return in persistent memory; interned in the qreg table
+```
+
+```text state=handle-param-cross-entry at=0
+{"verdict":"accept","entry_calls":3,"instances":2,"distinct":true,"live_after":0,"trap":0}
+```
+
+A handle table indexed by a classical value, and a dynamically indexed vector of handles
+(audit B-23):
+
+```llvm example=handle-table verdict=accept
+define void @tab(i64 %i) {
+  %t = alloca [4 x ptr]
+  %h0 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %h1 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h0, ptr %t
+  %p1 = getelementptr [4 x ptr], ptr %t, i64 0, i64 1
+  store ptr %h1, ptr %p1
+  %k = and i64 %i, 1
+  %pk = getelementptr [4 x ptr], ptr %t, i64 0, i64 %k
+  %hk = load ptr, ptr %pk
+  call void @__bennett_gate(i32 1, ptr %hk, i64 0)
+  call void @__bennett_qfree(ptr %h0)
+  call void @__bennett_qfree(ptr %h1)
+  ret void
+}
+```
+
+```llvm example=handle-dynamic-lane verdict=accept
+define void @lanes(i32 %i) {
+  %h0 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %h1 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %v0 = insertelement <2 x ptr> zeroinitializer, ptr %h0, i32 0
+  %v1 = insertelement <2 x ptr> %v0, ptr %h1, i32 1
+  %k = and i32 %i, 1
+  %hk = extractelement <2 x ptr> %v1, i32 %k
+  call void @__bennett_gate(i32 1, ptr %hk, i64 0)
+  call void @__bennett_qfree(ptr %h0)
+  call void @__bennett_qfree(ptr %h1)
+  ret void
+}
+```
+
+A vector of handles filled by a loop with a constant trip count has the instance bound
+N(s) = E(s) = 8 (§6.5 rule 2); the same loop with a trip count from host input uses the qreg table:
+
+```llvm example=handle-vec-bounded verdict=accept
+define void @fill() {
+entry:
+  %v = alloca [8 x ptr]
+  br label %loop
+
+loop:
+  %i = phi i64 [ 0, %entry ], [ %i2, %loop ]
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %p = getelementptr [8 x ptr], ptr %v, i64 0, i64 %i
+  store ptr %h, ptr %p
+  %i2 = add i64 %i, 1
+  %c = icmp ult i64 %i2, 8
+  br i1 %c, label %loop, label %use
+
+use:
+  %p3 = getelementptr [8 x ptr], ptr %v, i64 0, i64 3
+  %h3 = load ptr, ptr %p3
+  call void @__bennett_gate(i32 2, ptr %h3, i64 0)
+  br label %free
+
+free:
+  %j = phi i64 [ 0, %use ], [ %j2, %free ]
+  %q = getelementptr [8 x ptr], ptr %v, i64 0, i64 %j
+  %hq = load ptr, ptr %q
+  call void @__bennett_qfree(ptr %hq)
+  %j2 = add i64 %j, 1
+  %d = icmp ult i64 %j2, 8
+  br i1 %d, label %free, label %out
+
+out:
+  ret void
+}
+```
+
+```llvm example=handle-vec-unbounded verdict=accept lowering=K1
+declare ptr @malloc(i64)
+declare void @free(ptr)
+
+define void @fill(i64 %n) {
+entry:
+  %z = icmp eq i64 %n, 0
+  br i1 %z, label %out, label %alloc
+
+alloc:
+  %bytes = shl i64 %n, 3
+  %v = call ptr @malloc(i64 %bytes)
+  br label %loop
+
+loop:
+  %i = phi i64 [ 0, %alloc ], [ %i2, %loop ]
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %p = getelementptr ptr, ptr %v, i64 %i
+  store ptr %h, ptr %p
+  %i2 = add i64 %i, 1
+  %c = icmp ult i64 %i2, %n
+  br i1 %c, label %loop, label %free
+
+free:
+  %j = phi i64 [ 0, %loop ], [ %j2, %free ]
+  %q = getelementptr ptr, ptr %v, i64 %j
+  %hq = load ptr, ptr %q
+  call void @__bennett_qfree(ptr %hq)
+  %j2 = add i64 %j, 1
+  %d = icmp ult i64 %j2, %n
+  br i1 %d, label %free, label %done
+
+done:
+  call void @free(ptr %v)
+  br label %out
+
+out:
+  ret void
+}
+```
+
+```text lowering-report=handle-vec-unbounded
+K1 @fill %h: qalloc site has no instance bound (stored into a heap object, loop trip count not constant: E = infinity); qreg table with qreg.id/from_id, no instance limit
+```
+
+A handle passed to an indirect call reaches every candidate's parameter (audit B-22):
+
+```llvm example=handle-indirect verdict=accept callees=hx,hz
+@ops = internal constant [2 x ptr] [ptr @hx, ptr @hz]
+
+define internal void @hx(ptr %q) {
+  call void @__bennett_gate(i32 1, ptr %q, i64 0)
+  ret void
+}
+
+define internal void @hz(ptr %q) {
+  call void @__bennett_gate(i32 7, ptr %q, i64 0)
+  ret void
+}
+
+define void @apply(i64 %k) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %i = and i64 %k, 1
+  %p = getelementptr [2 x ptr], ptr @ops, i64 0, i64 %i
+  %f = load ptr, ptr %p
+  call void %f(ptr %h)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+`qstore` twice is the identity on `mem`, so every register is released clean:
+
+```llvm example=qstore-twice verdict=accept
+define void @top() {
+  %mem = call ptr @__bennett_qalloc(i64 0, i64 4)
+  %addr = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %val = call ptr @__bennett_qalloc(i64 0, i64 2)
+  call void @__bennett_qstore(ptr %mem, ptr %addr, ptr %val)
+  call void @__bennett_qstore(ptr %mem, ptr %addr, ptr %val)
+  call void @__bennett_qfree(ptr %val)
+  call void @__bennett_qfree(ptr %addr)
+  call void @__bennett_qfree(ptr %mem)
+  ret void
+}
+```
+
+## 7. Regions (regions 0.3)
+
+### 7.1 Region-entry markers and region kinds
+
+| Marker | Region operand(s) | Interface kind | Required type of a candidate | ISA counterpart |
+|---|---|---|---|---|
+| `ctrl(q, qi, f, budget, env)` | `f` | action | `void (ptr)` | `ctl w action_call` (ISA §4.7, §5.3) |
+| `adj(f, budget, env)` | `f` | action | `void (ptr)` | `adj action_call` |
+| `compute(f, use, budget, env)` | `f`, `use` | action | `void (ptr)` | `action_call`; `action_call`; `adj action_call` |
+| `reversible(f, budget, env)` | `f` | reversible | `void (ptr)` | a call of an R function (ISA §3.1, §7.4) |
+| `oracle(f, budget, desc)` | `f` | oracle | any function type (§8) | `oracle_call @ref tk (ins..) tgt fr (mem..) (args..)` (ISA §4.7, §5.2) |
+| `inplace(g, ginv, budget, desc)` | `g`, `ginv` | oracle pair | any function type whose INOUT parameter and result have equal widths (§8.7) | native `qinplace` (ISA §4.5) or the CC oracle/swap/inverse expansion of §8.7. [deps: DLT-7.1, DLT-8.7, ISA-4.5, ISA-4.7] |
+
+The marker fixes the region's **interface** (TDL-1, §10). The body is partitioned by content
+(§10) and never rejected for containing classical code; the plugin outlines coherent slices of
+action bodies (TDL-3). An **oracle region** is a lifted classical oracle with output targets and
+a fault register (ISA §5.2); an **action region** is a quantum action on the wires its events
+name (ISA §5.3) with no fault outcome of its own: a fault of an oracle it calls lands in a fault
+register the action declares (§10, TDL-8).
+
+### 7.2 Candidate sets and dispatch (maintainer decision 3)
+
+The candidate set RR(v) of a region operand v is computed from its abstract value (§5):
+
+- every `FN(F)` atom of AV(v), resolved by `resolve` below;
+- if AV(v) has the ⊤ flag: in addition every function of the required type of §7.1 (for
+  `oracle`/`inplace`: every function) whose address is used anywhere in the linked program,
+  resolved (decision 3 read literally: "every function whose address can reach a region marker";
+  audit B-33). The set is therefore always bounded by the program.
+
+`resolve(F)` follows aliases to their aliasee and **forwarding thunks** to their target: F is a
+forwarding thunk of G iff F's body is one block holding exactly a call of G (optionally
+`tail`/`musttail`/`notail`, default calling convention, no operand bundles) whose arguments are
+F's parameters in order and whose function type equals F's, followed by `ret void` or `ret` of
+that call's result; then `resolve(F) = resolve(G)`, except that a thunk on a cycle of thunks
+resolves to itself (it is an ordinary defined function whose execution recurses until a budget or
+the host stops it; 0.1's `BD-E-REGION-THUNK` is deleted).
+
+**N0 and resolution order.** Before testing the forwarding-thunk predicate or freezing candidates, the plugin MUST apply the N0 passes of §12.2 to the virtual device bodies used by S2; §7.2 resolution then uses those bodies, and §7.3 hashes their materialised closures.
+
+The plugin MUST retain A(S) for every original source function or alias whose address reaches the region operand, dispatching that address to its post-N0 resolved candidate even when N0 removes the forwarding call; a declaration remaining after N0 is still F(8), but an intrinsic call removed by N0 MUST NOT turn its containing defined body into an external candidate.
+
+**Dispatch.** The region operand is classical data. The plugin compiles a body for every
+candidate. At run time the operand's value is compared, by the compare tree of §14.2 over the
+sorted keys, with A(S) of every **source** S (every function or alias that resolves into the
+candidate set and whose address reaches v, plus every candidate itself); on equality the region
+`resolve(S)` is entered. No match is the run-time trap `T-REGION` (fault code 4). A candidate
+with no definition (an external declaration, a function without bitcode) is entered as a
+trapped call: F(8) with a coverage line (§4.5 item 4).
+
+**Ill-formed candidates.** A candidate that is not well-formed for the marker's kind (a type
+other than §7.1's, or a violation of §7.5) is compiled as a **trap body** (`T-REGION-INVALID`,
+fault code 4) with a coverage line: it may never be dispatched, so it is not a compile-time
+error. It is rejected (`BD-E-REGION-TYPE`, `BD-E-REGION-MEASURE`, `BD-E-REVERSIBLE-MEASURE`)
+only when it is the **unique** candidate, because then every execution of the marker fails
+(outline E14).
+
+0.1's `BD-E-REGION-UNBOUNDED` and `BD-E-REGION-EXTERNAL` are deleted.
+
+Region operands loaded from tracked memory or relative tables MUST use the reference candidate analysis and its type-compatible address-taken fallback, with no blanket TOP rejection. [deps: DLT-5.2, DLT-7.2, DLT-12.8-P10, ISA-4.1, ISA-4.2, ISA-9.2]
+
+### 7.3 Region identity (maintainer decision 1)
+
+A region is identified by its content, never by its symbol. Candidates that resolve to the same
+function are one region. The semantic identity of an **oracle region** in a shape (§8.4) is the
+interface hash (ISA §9.2) of `@ref` in its reference object (§16.2): every lproc, data image and
+layout leaf of the closure is part of it, and `@ref`, `@L<n>`, `@G<n>` are fixed names, so two
+functions with equal materialised bodies have equal identity whatever their source names. Symbol
+names, linkage, aliases and thunks are non-normative: diagnostics and coverage entries MAY print
+them. Budget lookup uses the separate provisional `selection_identity` and the
+once-only staging of §9.2, never a fixed point in this final semantic identity.
+
+The **region key** of any region is the SHA-256 of the text printed by the LLVM printer of the
+major in use for a module that contains the materialised region function and its closure, after
+`strip` (local names), with the functions renamed `f0, f1, …` in depth-first preorder from the
+region along direct calls in instruction order, and without datalayout, triple and module
+metadata. It keys the budget table (§9.2) and is recorded in the certificate and coverage
+entries. It depends on the LLVM major, which the certificate records (§24, D13).
+
+### 7.4 Kinds by content
+
+NS §4.2: "the plugin classifies each outlined region by its contents and the verifier checks the
+declared interface". After the TDL partition (§10):
+
+- an action region whose generated events are all permutation events (X-family gates, `qload`,
+  `qstore`, `qexch`, oracle calls, permutation actions) is emitted as an ISA `perm_action`
+  (ISA §5.3), which certificates can verify by T3; otherwise as an `action`;
+- an oracle region stays an oracle;
+- a `reversible` marker call reached from an action region's generation or from an L closure is
+  not an R entry: its operand is treated as a direct call of the region function, partitioned by
+  TDL inside actions and lifted inside oracles, with the call's budget record governing its
+  slices (§9.3; audit B-37). 0.1's `BD-E-REGION-TIER` and `T-TIER` are deleted.
+
+A reversible marker reached during action generation MUST retain direct-body generation and inherited TDL/effect semantics rather than creating an R entry. [deps: DLT-7.4, DLT-10, DLT-11.5-P2, ISA-3.1, ISA-4.7, ISA-5.3]
+
+### 7.5 Static well-formedness
+
+Only the rules the north star requires:
+
+- **(a) Measurement in a unitary region.** A `measure` call in the closure of an action region
+  is `BD-E-REGION-MEASURE` (NS §3.1: "user measurement inside it is refused"), unless the module
+  requests **deferred measurement** with the module flag `!{i32 1,
+  !"bennett.measure_in_unitary", !"defer"}` (NS §3.1: "or, when the front end asks for it,
+  deferred by the deferred-measurement principle, which the certificate states"). Then a
+  `measure(h, i)` inside a generation becomes a `qcopy` of `h.i` onto a fresh wire w (ISA §4.5),
+  the call's `i1` result is a Co value whose wire is w (§10, TDL-2 seed). Retain this
+  intentional outcome record until the first permitted CC measurement boundary after the
+  outermost action returns, and measure it there before the next source operation. Earlier
+  removal requires the complete instrument (outcomes and correlations included) to be
+  unchanged; an open window alone never justifies quncopy. These channel outputs are
+  separate from clean workspace (TDL-7). Standalone adj uses the deterministic
+  latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
+  `lowered` entry with source `dialect-0.3:7.5a` for every such call, and the certificate lists
+  the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
+  records the wording item). [deps: DLT-7.5, DLT-19.9, DLT-25.2]
+- **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
+  markers on handles received through `env`: they lower to R-tier `action_call`/`oracle_call`
+  (ISA §3.1, §4.7), recorded in the R history and reversed by re-application or adjoint (ISA
+  §7.4). A `measure` call in the closure is `BD-E-REVERSIBLE-MEASURE` (ISA §10: a run that
+  measured is not reversible; ISA §3.3: a `measure` frame is never reversed). A `qalloc`,
+  `qborrow` or `qfree` in the closure lowers in place to the R-tier `qreg.*` instructions (ISA §3.3,
+  §4.1, K2), by the realisations of §6.5. R allocations, releases, slices and concatenations MUST use the ISA ledger-frame semantics, restoring original ids and alias states on reversal without a static hoisting-instance bound. [deps: DLT-7.5, DLT-25.1-P5, ISA-3.3-P7, ISA-3.3-P18, ISA-4.1-P15, ISA-7.4]
+  `qfree` raises `T-CLEAN` on a verifying executor; on a non-verifying one the free is
+  unverified, which ends reverse eligibility but changes no forward result (ISA §7.4, §17 item 14, K7).
+- **(c) In-place pairs** are verified by §8.7.
+
+Deferred measurement is a channel on adjoint paths as well: the special §18.2 rule
+creates fresh retained records for standalone adj and retains E_f records through compute.
+An open window never authorises quncopy of these records.
+
+Front-end-requested deferred measurement MUST retain its channel records through the declared observation boundary, including the accepted standalone-adjoint and compute placement rules. [deps: DLT-7.5, DLT-18.2, ISA-4.4, ISA-4.6, ISA-12.1]
+
+### 7.6 Outlining conventions
+
+- Regions are functions on arrival: the front end outlines (a Julia macro, a clang attribute, a
+  Rust closure trampoline); the dialect imposes no source syntax. The plugin additionally
+  outlines coherent slices (TDL-3), which is not observable beyond §18.
+- Action and reversible regions have type `void (ptr env)`. `env` points to classical memory the
+  front end owns (an `alloca` or heap object) that is live for the duration of the marker call;
+  the region reads and writes it as classical memory (§18.4). Handles reach a region through
+  `env` (PT9 binds a region's parameter to the marker's env argument).
+- Oracle regions are arbitrary functions bound by a descriptor (§8); no packing wrapper is
+  needed (audit D21).
+- A region body MUST be referenced by the region operand (directly or through §7.2); a body
+  referenced only from a side-table global is not a region (enzyme survey implication 5).
+- Region functions SHOULD have internal linkage, so that they are not device entries. C++
+  lambdas pass their static `__invoke` thunk and Rust closures an `extern "C"` trampoline; both
+  are ordinary region functions whose closure contains the closure body.
+
+### 7.7 Examples
+
+Two invalid measuring candidates are both trap bodies, not a module rejection (E14):
+
+```llvm example=region-two-measure-candidates verdict=accept
+define internal void @a(ptr %e) {
+  %q = load ptr, ptr %e
+  %m = call i1 @__bennett_measure(ptr %q, i64 0)
+  ret void
+}
+define internal void @b(ptr %e) {
+  %q = load ptr, ptr %e
+  %m = call i1 @__bennett_measure(ptr %q, i64 0)
+  ret void
+}
+define void @top(i1 %pick) {
+  %q = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %e = alloca ptr
+  store ptr %q, ptr %e
+  %f = select i1 %pick, ptr @a, ptr @b
+  call void @__bennett_ctrl(ptr %q, i64 0, ptr %f, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %q)
+  ret void
+}
+```
+
+```text state=region-two-measure-candidates at=1
+compile=accept; candidates={a,b}; both bodies=T-REGION-INVALID; dispatch either -> code=4
+```
+
+
+```llvm example=region-select verdict=accept candidates=ra,rb
+define internal void @ra(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  ret void
+}
+
+define internal void @rb(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 2, ptr %h, i64 0)
+  ret void
+}
+
+define void @top(i1 %c) {
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  %f = select i1 %c, ptr @ra, ptr @rb
+  call void @__bennett_adj(ptr %f, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+The SimplifyCFG switch-to-lookup shape (`region-switch-fnptr-table` after `default<O3>`):
+
+```llvm example=region-switch-table verdict=accept candidates=ra,rb,rc,rd
+@switch.table.top = private unnamed_addr constant [3 x ptr] [ptr @ra, ptr @rb, ptr @rc]
+
+define internal void @ra(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  ret void
+}
+
+define internal void @rb(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 2, ptr %h, i64 0)
+  ret void
+}
+
+define internal void @rc(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 3, ptr %h, i64 0)
+  ret void
+}
+
+define internal void @rd(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 4, ptr %h, i64 0)
+  ret void
+}
+
+define void @top(i64 %i) {
+entry:
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  %in = icmp ult i64 %i, 3
+  br i1 %in, label %look, label %dflt
+
+look:
+  %p = getelementptr [3 x ptr], ptr @switch.table.top, i64 0, i64 %i
+  %ft = load ptr, ptr %p
+  br label %join
+
+dflt:
+  br label %join
+
+join:
+  %f = phi ptr [ %ft, %look ], [ @rd, %dflt ]
+  call void @__bennett_adj(ptr %f, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+The `reg2mem` shape (a region pointer in a stack slot):
+
+```llvm example=region-stack-slot verdict=accept candidates=ra,rb
+define internal void @ra(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  ret void
+}
+
+define internal void @rb(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 2, ptr %h, i64 0)
+  ret void
+}
+
+define void @top(i1 %c) {
+entry:
+  %slot = alloca ptr
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  br i1 %c, label %a, label %b
+
+a:
+  store ptr @ra, ptr %slot
+  br label %join
+
+b:
+  store ptr @rb, ptr %slot
+  br label %join
+
+join:
+  %f = load ptr, ptr %slot
+  call void @__bennett_adj(ptr %f, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+Merged twins resolve to one region (spike F2; `mergefunc` makes `@k2` a forwarding thunk,
+`-mergefunc-use-aliases` makes an alias):
+
+```llvm example=region-twins verdict=accept candidates=k1
+@k3 = internal alias void (ptr), ptr @k1
+
+define internal void @k1(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  ret void
+}
+
+define internal void @k2(ptr %0) {
+  tail call void @k1(ptr %0)
+  ret void
+}
+
+define void @top(i1 %c) {
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  %f = select i1 %c, ptr @k2, ptr @k3
+  call void @__bennett_adj(ptr %f, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+A region pointer from host input (a parameter of an externally visible function) has AV = ⊤,
+so its candidates are every address-taken `void (ptr)` function of the program: here `@ra` and
+`@rb`, whose addresses `@menu` returns to the host (audit B-33, decision 3):
+
+```llvm example=region-host-param verdict=accept candidates=ra,rb
+define internal void @ra(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  ret void
+}
+
+define internal void @rb(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 2, ptr %h, i64 0)
+  ret void
+}
+
+define ptr @menu(i1 %c) {
+  %f = select i1 %c, ptr @ra, ptr @rb
+  ret ptr %f
+}
+
+define void @top(ptr %f) {
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  call void @__bennett_adj(ptr %f, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+An `inttoptr` constant is dispatched the same way, and traps (`T-REGION`) on an execution where
+it equals neither A(`@ra`) nor A(`@rb`); an external declaration is entered as a trapped call
+(F(8)):
+
+```llvm example=region-inttoptr verdict=accept candidates=ra
+define internal void @ra(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  ret void
+}
+
+@keep = internal global ptr @ra
+
+define void @top() {
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  call void @__bennett_adj(ptr inttoptr (i64 127079231243584 to ptr), ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=region-external verdict=accept candidates=elsewhere
+declare void @elsewhere(ptr)
+
+define void @top() {
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  call void @__bennett_adj(ptr @elsewhere, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+A unique ill-formed candidate is rejected; one ill-formed member of a larger set is a trap body:
+
+```llvm example=region-wrong-type verdict=reject:BD-E-REGION-TYPE
+define internal i8 @inc(i8 %x) {
+  %r = add i8 %x, 1
+  ret i8 %r
+}
+
+define void @top() {
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  call void @__bennett_adj(ptr @inc, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```llvm example=region-mixed-types verdict=accept candidates=inc,ra
+define internal i8 @inc(i8 %x) {
+  %r = add i8 %x, 1
+  ret i8 %r
+}
+
+define internal void @ra(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  ret void
+}
+
+define void @top(i1 %c) {
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  %f = select i1 %c, ptr @inc, ptr @ra
+  call void @__bennett_adj(ptr %f, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+Measurement inside `ctrl` is refused, unless the module asks for deferral:
+
+```llvm example=region-measure-in-ctrl verdict=reject:BD-E-REGION-MEASURE
+define internal void @body(ptr %e) {
+  %h = load ptr, ptr %e
+  %m = call i1 @__bennett_measure(ptr %h, i64 0)
+  ret void
+}
+
+define void @top() {
+  %e = alloca ptr
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %t, ptr %e
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @body, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %t)
+  call void @__bennett_qfree(ptr %c)
+  ret void
+}
+```
+
+```llvm example=region-measure-deferred verdict=accept candidates=body
+define internal void @body(ptr %e) {
+entry:
+  %h = load ptr, ptr %e
+  %p = getelementptr i8, ptr %e, i64 8
+  %t = load ptr, ptr %p
+  %m = call i1 @__bennett_measure(ptr %h, i64 0)
+  br i1 %m, label %flip, label %out
+
+flip:
+  call void @__bennett_gate(i32 1, ptr %t, i64 0)
+  br label %out
+
+out:
+  ret void
+}
+
+define void @top() {
+  %e = alloca [2 x ptr]
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %a = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %a, ptr %e
+  %p = getelementptr i8, ptr %e, i64 8
+  store ptr %t, ptr %p
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @body, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %t)
+  call void @__bennett_qfree(ptr %a)
+  call void @__bennett_qfree(ptr %c)
+  ret void
+}
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 1, !"bennett.measure_in_unitary", !"defer"}
+```
+
+*(non-normative)* In `region-measure-deferred` the branch on `%m` is a Co branch (TDL-2), so the
+gate on `%t` is issued under `qpred` of the copy wire (TDL-10): the action is
+`ctl c (qcopy a.0 → w; cx w t.0)` with w retained and measured at the CC boundary of §7.5(a), including adj/compute paths.
+
+A `reversible` call inside an action is a direct call of its body (§7.4); gate markers inside a
+reversible closure act on handles from `env` (§7.5b); measurement there is refused:
+
+```llvm example=region-reversible-in-action verdict=accept candidates=classical
+define internal void @classical(ptr %e) {
+  %p = getelementptr i8, ptr %e, i64 8
+  %v = load i64, ptr %p
+  %v2 = add i64 %v, 1
+  store i64 %v2, ptr %p
+  ret void
+}
+
+define internal void @body(ptr %e) {
+  call void @__bennett_reversible(ptr @classical, ptr null, ptr %e)
+  ret void
+}
+
+define void @top() {
+  %e = alloca { ptr, i64 }
+  call void @__bennett_adj(ptr @body, ptr null, ptr %e)
+  ret void
+}
+```
+
+```llvm example=region-reversible-in-action-top-first verdict=accept candidates=body
+define void @top() {
+  %e = alloca { ptr, i64 }
+  call void @__bennett_adj(ptr @body, ptr null, ptr %e)
+  ret void
+}
+
+define internal void @classical(ptr %e) {
+  %p = getelementptr i8, ptr %e, i64 8
+  %v = load i64, ptr %p
+  %v2 = add i64 %v, 1
+  store i64 %v2, ptr %p
+  ret void
+}
+
+define internal void @body(ptr %e) {
+  call void @__bennett_reversible(ptr @classical, ptr null, ptr %e)
+  ret void
+}
+
+```
+
+
+
+```llvm example=region-reversible-marker verdict=accept lowering=K5 candidates=body
+define internal void @body(ptr %e) {
+  %h = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  ret void
+}
+
+define void @top() {
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  call void @__bennett_reversible(ptr @body, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+```text lowering-report=region-reversible-marker
+K5 R entry: pre-instruction step checks lower to fault 1 (§17.6); terminal record, intact reversible prefix
+```
+
+```llvm example=region-reversible-measure verdict=reject:BD-E-REVERSIBLE-MEASURE
+define internal void @body(ptr %e) {
+  %h = load ptr, ptr %e
+  %m = call i1 @__bennett_measure(ptr %h, i64 0)
+  ret void
+}
+
+define void @top() {
+  %e = alloca ptr
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr %e
+  call void @__bennett_reversible(ptr @body, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+A register allocated in R and freed before the next allocation, and one allocated per activation
+of a recursion whose depth comes from host data, both lower to R `qreg.*` frames; no instance bound
+is involved (ISA K2):
+
+```llvm example=region-reversible-qalloc-static verdict=accept lowering=K2,K5 candidates=body
+define internal void @body(ptr %e) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+
+define void @top() {
+  %e = alloca i64
+  call void @__bennett_reversible(ptr @body, ptr null, ptr %e)
+  ret void
+}
+```
+
+```text lowering-report=region-reversible-qalloc-static
+K5 R entry: pre-instruction step checks lower to fault 1 (§17.6); terminal record, intact reversible prefix
+K2 @body qalloc/qfree: R ledger frames
+```
+
+```llvm example=region-reversible-qalloc-dynamic verdict=accept lowering=K2,K5
+define internal void @rec(i64 %d) {
+entry:
+  %z = icmp eq i64 %d, 0
+  br i1 %z, label %out, label %more
+
+more:
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  %d2 = sub i64 %d, 1
+  call void @rec(i64 %d2)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_qfree(ptr %h)
+  br label %out
+
+out:
+  ret void
+}
+
+define internal void @body(ptr %e) {
+  %d = load i64, ptr %e
+  call void @rec(i64 %d)
+  ret void
+}
+
+define void @top(i64 %n) {
+  %e = alloca i64
+  store i64 %n, ptr %e
+  call void @__bennett_reversible(ptr @body, ptr null, ptr %e)
+  ret void
+}
+```
+
+```text lowering-report=region-reversible-qalloc-dynamic
+K2 @rec %h: qalloc in a reversible closure, recursive, live across the recursive call: R ledger frames, no instance bound
+K5 R entry: pre-instruction step checks lower to fault 1 (§17.6); terminal record, intact reversible prefix
+```
+
+## 8. The oracle interface (oracle-abi 0.3)
+
+`__bennett_oracle(f, budget, desc)` applies the lifted oracle of region function f, under the
+budget of §9, to the registers and classical values that the **descriptor** `desc` binds to f's
+parameters, result and device models. `__bennett_inplace(g, ginv, budget, desc)` applies an
+in-place bijection (§8.7). The descriptor is classical data in the caller's memory, built by
+plain stores (§3.8); its kinds are classical values dispatched over their finite domains (§8.4).
+
+### 8.1 Descriptor layout
+
+The descriptor is the LLVM struct `{ H, [nparam x Bind], [ndev x DevBind] }` laid out by the
+module's datalayout, where (C view in `bennett_markers.h`, §3.3):
+
+| Type | LLVM | Fields (C names) |
+|---|---|---|
+| H | `{ i32, i32, i32, i32, ptr, ptr }` | `version` (= 2), `nparam`, `ndev`, `flags` (= 0), `tgt`, `fault` |
+| Bind | `{ i32, i32, ptr, i64, i64 }` | `kind`, `mode`, `q`, `value`, `size` |
+| DevBind | `{ i32, i32, ptr, i64 }` | `model`, `mode` (= 0), `q`, `value` |
+
+On x86-64, AArch64 and RISC-V64 (pw = 64) H is 32 bytes, Bind 32 bytes (`kind` at 0, `mode` 4,
+`q` 8, `value` 16, `size` 24) and DevBind 24 bytes, so `param[i]` is at 32 + 32i and `dev[j]` at
+32 + 32·nparam + 24j. The plugin reads the descriptor at the marker call, in the caller's tier,
+with ordinary loads. `nparam` MUST equal the number of flattened scalar fields of the dispatched region
+function after N21/N22 and ABI lowering, using §8.2 carriers (one field for a scalar). A descriptor whose `version`, `flags`, `nparam`
+or any kind, mode or model is not one this section defines, or whose binding does not fit the
+parameter's type (below), traps (`T-IFACE`, fault code 4) when the marker is called.
+
+### 8.2 Parameter bindings
+
+Let the dispatched region function have IR parameters p_0 … p_{m−1} and return type R (`void`
+or a first-class type of at most 128 payload bits after N25, §12.2). Before binding,
+represent each floating-point scalar by its §13.1 integer carrier (half/bfloat i16, float
+i32, double i64, x86_fp80 i80, fp128/ppc_fp128 i128). IN and ARG bind carrier bits.
+Flatten aggregate/vector parameters depth-first in field/lane order, one Bind per scalar
+field; apply N21/N22 first. `param[i]` binds flattened field i. Results concatenate fields
+in the same order, field 0 in the lowest bits, no padding; width is the sum of scalar
+carrier widths. N25 demotes results whose packed width exceeds 128 bits. Memory accesses
+retain datalayout padding; this padding is never part of the packed return payload:
+
+| Kind | Code | Parameter type | Register | Meaning | ISA lowering (§16.2) |
+|---|---|---|---|---|---|
+| `IN` | 1 | `iW` or `ptr addrspace(a)` (W = P(a)) | q with n(q) ≤ W | the parameter's value is the basis value of q, zero-extended (`mode` = ZEXT 0) or sign-extended (`mode` = SEXT 1) to W; a `ptr` parameter may be `IN` (a superposed pointer) | an `ins` bundle `x<k>:wire[n(q)]` (a pseudo-location, ISA §3.7), extended by `lift.zext`/`lift.sext` in the wrapper |
+| `ARG` | 2 | `iW` (W ≤ 128) or `ptr` | none (`q` ignored) | a classical value: bits 0–63 from `value`, bits 64–127 from `size`; a `ptr` ARG is an address in the caller's classical memory, which the oracle reads through its entry state (§8.5) | an `args` entry `a<k>:i<W>` (W = P(a) for `ptr addrspace(a)`; ISA §4.7, §5.1) |
+| `MEM_IN` | 3 | `ptr` | q with n(q) = 8·2^A, `size` = 2^A | the parameter is the base address of an interface region of 2^A bytes whose cell i is byte i of q (bits [8i, 8i + 8)); its contents may be superposed; role `in` (restored on every basis configuration, ISA §5.1). This is the quantum-addressed memory of NS §8 rung 4 | a `mem` region `m<k>:region[A,8] in`; the argument is `lift.addr @m<k>` |
+| `OUT` | 4 | `ptr` | q with n(q) = 8·`size` | the parameter points to a fresh zero-filled buffer of `size` bytes in the oracle's memory; at exit its final bytes are XORed into q, byte k into wires [8k, 8k + 8) (a declared output, NS §4.2) | `lift.alloc size` in the wrapper; the bytes are part of the payload (§8.6) |
+| `INOUT` | 5 | `iW` | q with n(q) = W | `inplace` only (§8.7): the in-place register x | `qinplace … x` |
+
+The **result**: a non-null `tgt` register receives the return value: payload bits = the return
+value zero-extended to n(tgt) if n(tgt) ≥ R's width; if n(tgt) is narrower, the dropped bits are
+checked and an execution on which they are nonzero faults with code 4 (`FAULT_UB_TRAP`); the
+retained bits are the low n(tgt). A null `tgt` discards the return value. For `oracle`, the
+**fault register** `fault` MUST be a register of exactly 4 wires (ISA §5.4: F = 4) and MUST NOT
+be null (`T-IFACE`).
+Null `tgt` remains valid for a `void` function or a discarded non-void return.
+If there is no `OUT` or non-null `CONSOLE` output either, the shape has zero payload
+outputs; it still executes once and delivers its fault through §8.6's synthetic variant.
+Every register named by the descriptor MUST be live and pairwise distinct (`T-DEAD`, `T-ALIAS`).
+A width mismatch in the table above is `T-SIZE`.
+
+### 8.3 Device bindings
+
+`dev[j]` binds a device model for the lifted (coherent) tier (§11.3):
+
+| Model | Code | Register | Meaning |
+|---|---|---|---|
+| `ENTROPY` | 1 | q with n(q) = 8·2^A | an `in` region `e0:region[A,8]` holding the entropy tape, possibly superposed (NS §8 rung 8: "the entropy device is replaced by a superposed register") |
+| `BLOCK` | 2 | q with n(q) = 8·512·2^A′ | an `in` region `k0` holding the disk image of 2^A′ sectors; writes go to a lifted copy-on-write overlay in the oracle's heap |
+| `CLOCK` | 3 | none | the clock model's initial value is `value` |
+| `CONSOLE` | 4 | q with n(q) = 8·L, or null | the first L bytes the oracle writes to the console are XORed into q as an output (payload, §8.6); with a null q console bytes are discarded with the oracle's other writes |
+
+At most one binding per model. A model without a binding is **unbound**: an effect on it in L
+code faults with code 8 on the executions that reach it (§11.3; NS §4.2).
+
+### 8.4 Shapes and dispatch
+
+A **shape** is the tuple (region candidate F; for each parameter its kind, mode, register width
+n(q) and `size`; n(tgt) or "none"; for each device binding its model and n(q)). The kind, mode,
+model, `size` and `value` fields have value sets (§5.3); register widths come from the register's
+realisation (§6.5): known for a root with a finite width set, else the run-time `qreg.width`. The plugin compiles one reference object (§16.2) per
+shape that the value sets allow, taking every unbounded kind or mode field over its finite
+domain (5 kinds, 2 modes, 4 models), so the number of shapes is always bounded. At run time the
+caller's tier reads the descriptor and selects the compiled shape with the compare tree of
+§14.2; a descriptor that matches no compiled shape traps (`T-IFACE`), which happens only for a
+field outside its table. When an interface width or descriptor extent is not finitely enumerated by AV, the reference dispatch domain MUST include every valid representable shape allowed by the marker's unsigned i64 fields and the existing parameter-binding checks, rather than treating AV top as a runtime interface failure. [deps: DLT-3.2, DLT-8.1, DLT-8.2, DLT-8.4, ISA-3.3-P7, ISA-3.3-P19]
+Each such branch MUST retain the fixed-signature reference-object map and its exact fault and budget semantics, with width selection classical and with no inspection of coherent data to select a shape. [deps: DLT-8.4, DLT-16.2, DLT-9.4, ISA-3.1, ISA-3.3-P19, ISA-5.2] The set of valid widths is finite, so this dispatch is a sound construction; it is not a claim of efficient compilation (§25.3 item G-17 and D34). `value` and `size` of `ARG` bindings are the oracle's classical
+arguments and are not part of the shape. *(non-normative)* With one valid value per shape field there is one shape per
+candidate. Initial zero possibilities still participate in §5; kind 0 is outside the
+five-kind table and takes T-IFACE rather than creating an additional valid shape.
+
+The marker then issues, in the caller's tier, one **oracle invocation** (§8.6) whose operands are
+the static registers the descriptor's handles denote (§6.5), the budget token (§9.5) and the
+classical arguments.
+
+ARG bindings MUST carry the caller's fixed-at-entry values in parameter order without specialising their values into the shape, and pointer arguments MUST retain entry-state semantics. [deps: DLT-8.2-P3, DLT-8.4-P1, DLT-8.5, ISA-4.7-P1, ISA-12.3-P2]
+
+### 8.5 Entry state
+
+**Reference semantics.** The region function runs on a **private copy of the caller's whole
+classical memory at the call**, with the bound inputs; its writes are discarded except through
+`OUT`, `tgt` and the bound device outputs (NS §4.2: "every other write being restored
+workspace"). Constant globals, and mutable globals that only the oracle's own L closure writes,
+equal their initialisers at every call.
+
+**Realisation on ISA 0.9.** Let R be the abstract objects the oracle closure may load (§5.4),
+minus constant globals and mutable globals written by no function outside the L closure.
+Translate source read-set objects after normalisation to runtime backing allocations. If
+R includes a caller alloca/frame, include its live shadow-stack backing storage and metadata,
+bytes and addresses. If reachability is uncertain, include all live caller heap/stack backing
+allocations. Whenever the L closure uses the shadow stack, add its state globals to G and
+its block to Hb with current base, size and stack pointer, even without a source heap object.
+Include the logical frame/allocation table of §17.3, dynamic extents, liveness and
+save/restore state in G whenever stack access or stack operations can execute. Replay
+these bytes before private allocations/accesses and let ss_init adopt them; a live
+backing entry alone does not recreate live program frames. All such metadata mutations
+invalidate snapshot reuse independently of the byte read set.
+Allocator metadata is an independent entry-state dependency: allocation, deallocation,
+allocation-validity checks and observation of allocation-derived addresses read it even
+without an LLVM load. Replay the complete caller allocation history (sizes and live bits)
+whenever any can execute, including when the byte read set R is empty. Bytes are included
+only for byte dependencies; the sound default is the complete table, with a smaller proven
+dependency optional. Only when both byte and allocator-state dependencies are absent may
+transfer be omitted and globals start at their images
+(ISA §3.7), as in rung 4 route A (SQLite §5.2(i)). After replay heap_used, atop and stack-state
+values equal the caller's call-entry values.
+Otherwise the plugin emits an **entry-state transfer**:
+
+1. **Snapshot.** At the call the caller's tier forms the byte string
+   S = k ‖ (size_i ‖ live_i)_{i<k} ‖ G ‖ Hb, where k is an 8-byte little-endian count of heap allocations in the
+   caller's allocation table (in allocation order, ISA §7.1), `size_i` and `live_i` are 8-byte
+   little-endian fields (`live_i` is 0 or 1), G is the bytes of the mutable globals in R in `layout.globals` order,
+   and Hb is the bytes of every live heap allocation in allocation order if R contains a heap
+   object or shadow-stack backing allocation (else empty); each live Hb segment has exactly size_i bytes, even for size_i=0. S is zero-padded to 2^A_s bytes, where A_s is the smallest exponent with
+   2^A_s ≥ 8 + 16·N_alloc + Σ|G| + `heap_limit_max` (N_alloc the allocation-table capacity of
+   the layout, §19.5); A_s is static.
+   The snapshot bytes S are assembled in a plugin-added unnamed CC global of 2^A_s bytes,
+   zero-filled before every build; thus all 16-byte leaf loads, including padding, are valid.
+2. **Register.** The CC tier builds a register of 8·2^A_s wires holding S with a **concat
+   tree** of A_s − 3 static-width CC functions `B_j` (j = 4, …, A_s): `B_4(p)` executes
+   `qreg.new any 128`, loads the 16 bytes at p as two `i64` values and makes the `oracle_call`
+   of the runtime oracle `@xor128` (§16.5) that XORs them into the register (with a token minted
+   at launch for budget (6, 0, 0, 0) and a fresh 4-wire fault register, which stays clean and is
+   freed); `B_j(p)` (j > 4)
+   returns `qreg.concat B_{j−1}(p) B_{j−1}(p + 2^{j−1})`. Every type is static and the cost is
+   2^(A_s−4) region calls. The register is bound as an extra `in` region `s0:region[A_s,8]`.
+3. **Replay.** The wrapper prologue (§16.2) calls the runtimes function
+   `__bennett_rt_entry_replay(s0)`, which for i < k executes `__bennett_nz_alloc(size_i)` (ISA
+   `lift.alloc`) and, if `live_i` = 0, `__bennett_nz_free` of the result. ISA §4.2 `lift.alloc`
+   and ISA §7.1 `alloc` share the rule "bump + max(n, 1) from `heap_base`", so the replay
+   reproduces the caller's heap addresses exactly (audit O-07). It then copies G into the
+   globals (by the driver-generated table `__bennett_rt_entry_table` of their addresses and
+   sizes) and Hb into the replayed live allocations.
+4. **Release.** The snapshot register holds the basis state |S⟩ and is unentangled after every
+   oracle call (an `in` region is unchanged on every basis configuration, ISA §5.2). The caller
+   keeps it for later calls only while its dependent bytes and allocator metadata are unchanged. Relevant alloc/free
+   and shadow-stack push/pop/restore invalidate it as well as stores to R,
+   and releases it by unpreparation: retain the classical S for the register's lifetime,
+   take successive slice views of at most 128 bits, invoke the same @xor128 preparation
+   oracle with the original two i64 arguments on each 128-bit chunk (one view per call),
+   then qreg.free the now-clean whole register. A_s ≥ 4, so every leaf is exactly 128 bits.
+   No whole-register measurement, view measurement or un-concat operation is needed.
+
+The replay's rows, allocations and calls are part of the reference body and count against the
+budget (§9.4). Runtime oracle entry state MUST retain caller bytes and allocator replay in native address order before any wrapper-private allocation, and R callers MUST use reversible register preparation and release for that same snapshot construction. [deps: DLT-8.5, DLT-16.2-P20, ISA-7.1, ISA-7.2, ISA-3.3-P18, ISA-7.4] An R caller executes steps 1, 2 and 4 in R (ISA K2) and passes tokens it holds or mints (§9.5). **Build-time snapshots** (rung 7, §19.6) rewrite the initialisers of
+the mutable globals to snapshot values at link time, so byte transfer may be empty; allocator dependencies still require replay.
+Efficiency: G-12 (§25.3).
+
+### 8.6 Oracle invocations and wide outputs
+
+The **outputs** of a shape are, in order: `tgt` (if non-null), each `OUT` parameter in parameter
+order, and the `CONSOLE` register (if bound and non-null). Each output register is split into **slices** of
+at most 128 bits from its low end (ISA §3.3: payloads are `iN` with N ≤ 128); the slices of all
+outputs are numbered 0, 1, …, k − 1 in that order. Every slice j has an oracle **variant** W_j:
+the same reference body (§16.2) whose `lift.retval` delivers slice j of the payload. Every W_j executes an identical ordered computation and validation of every projection,
+with identical row charges and fault conditions; only its last lift.retval operand differs.
+Thus all variants compute the same fault code, even when budget expires in delivery, and
+all copy-outs are zero on any common failure. For a single slice, retain its existing rows
+and return directly without an extra projection move.
+
+- **k = 0** (no payload outputs): there is one synthetic variant **W_empty**, with
+  T = 1. It executes the same prologue, region body and unwind check as other variants;
+  on success its terminal rows are `p0 = lift.const.i1 0` and `lift.retval p0` (§16.2),
+  charged normally. The caller allocates one clean hidden target bit, invokes
+  `oracle_call @W_empty tk (ins..) hidden fault (mem..) (args..)` exactly once using
+  the caller's required four-wire fault register, then frees the hidden target. The
+  hidden bit remains zero on success and fault; it is workspace, not a payload output.
+  Under invocation controls, predicate the call on all of them; allocation and free
+  remain unconditional. Do not issue a second call to clean the hidden target: that
+  would XOR away the delivered fault code.
+- **k = 1** (every output fits 128 bits in one register): the invocation is `oracle_call @W_0
+  tk (ins..) tgt fault (mem..) (args..)`.
+- **k > 1** (the `wide` event, §18.2): the caller's tier issues, for j = k − 1, …, 1, with
+  slice j at bits [lo_j, lo_j + w_j) of output register o_j:
+
+  ```
+  t_j = qreg.new any w_j ; f_j = qreg.new any 4
+  oracle_call @W_j tk (ins..) t_j f_j (mem..) (args..)
+  s_j = qreg.slice o_j lo_j w_j
+  action_call @xor<w_j> (s_j) (t_j) () ()
+  oracle_call @W_j tk (ins..) t_j f_j (mem..) (args..)
+  qreg.free f_j ; qreg.free t_j
+  ```
+
+  followed by `s_0 = qreg.slice o_0 lo_0 w_0` and `oracle_call @W_0 tk (ins..) s_0 fault (mem..)
+  (args..)`. `@xor<w>` is the permutation action `(mut s:wire[w]) (in t:wire[w]) () ()` with body
+  `qxor t s`; each slice view is the operand of exactly one region call (ISA §3.3).
+
+  Each copy-out pair computes slice j into fresh wires, XORs it into the target and uncomputes it
+  by the identical self-adjoint call, whose inputs no call in between modifies, so `t_j` and `f_j`
+  are clean when freed (ISA §5.2 involution; the ISA §3.3 cleanliness check of `qreg.free`);
+  slice 0 and the fault code are delivered by the last call. The effect is exactly NS's F_B with a
+  wide payload: slice_j ⊕= payload_j(F_B(x)) for every j and fault ⊕= code(F_B(x)). Cost: 2k − 1
+  oracle calls (efficiency item G-15, §25.3). Under a `ctrl` every region call is `ctl`-prefixed
+  (§18.2).
+
+The descriptor MUST retain independent IN, ARG, MEM_IN, OUT and INOUT bindings, packed field order, preserved inputs, common-delivery validation and exactly one synthetic invocation for zero payload outputs. [deps: DLT-8.1, DLT-8.2, DLT-8.6, DLT-16.2-P17, ISA-4.7, ISA-5.2, ISA-7.2]
+
+### 8.7 In-place updates
+
+`inplace(g, ginv, budget, desc)` binds the in-place register x as `INOUT` (exactly one
+parameter of each candidate pair is `INOUT`, of type `iN` with N = n(x); the result type is
+`iN`). g and ginv are oracles in the sense of §8.2 with a **payload equal to the new value of
+x**: their reference objects (§16.2) bind x as an `in` bundle and have an n(x)-bit target. The
+descriptor's `tgt` MUST be null and its `fault` is ignored (`T-IFACE` otherwise): an in-place
+update has no fault outcome (NS §4.2), and the `qinplace` expansion allocates its own clean
+scratch (ISA §4.5).
+
+- **No other bindings**: an exhaustive/library-verified pair lowers to ISA `qinplace @g @ginv tk x` (ISA §4.5) with @g and @ginv the pair's reference oracles. [deps: DLT-8.7-P2, DLT-8.7-P5, DLT-8.7-P6, ISA-4.5, ISA-12.1]
+  A sampled pair uses the CC expansion below with empty preserved-input, memory and argument lists. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-4.7]
+- **Classical `ARG`s with finite value sets**: an exhaustive/library-verified tuple uses one `qinplace` with the pair specialised to those constants (arguments become `lift.const` in the reference bodies), dispatched by §14.2. [deps: DLT-8.7-P3, DLT-8.7-P6, ISA-4.5, ISA-12.1]
+  A sampled tuple retains the CC expansion with those same argument bindings. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-4.7]
+- **Library bijections**: when the pair is a `bennett-arith` library bijection (add or subtract
+  a value, xor, rotate, negate, byte swap, modular addition, modular multiplication by a unit,
+  each with its stated conditions and its g∘ginv = id certificate, NS §3.1), the call lowers to
+  the library's permutation action with `IN`, `MEM_IN` and `ARG` bindings as its `in`, `mem` and
+  `args` operands, which ISA 0.9 expresses directly (ISA §4.7 `action_call`). This is also the
+  TDL-5(b) mechanism (§10).
+- **User pairs with `IN`, `MEM_IN` or arbitrary `ARG`s**: allocate clean n(x)-wire t and
+  4-wire f at the CC boundary. Issue oracle_call @g tk (x, ins..) t f (mem..) (args..),
+  exchange x and t by a swap action, then oracle_call @ginv tk (x, ins..) t f (mem..) (args..),
+  and qreg.free t and f. Preserved parameter bindings are identical in both calls. Under
+  control, predicate every region call including the swap; allocation/free remain
+  unconditional. This is a CC-level expansion like §8.6, not an assertion that a static
+  action passes ISA §6's coarse provenance windows. Universal inverse and fault-free
+  budget obligations below guarantee clean scratch on every basis state, hence on
+  superpositions. Parametrised in-place calls MUST preserve the existing CC expansion for every admitted pair, and native parametrised `qinplace @g @ginv tk x (ins..) (mem..) (args..)` (ISA §4.5, K4) MAY replace that expansion only when its covering ISA inverse-pair entry is verified. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-3.3-P9, ISA-4.5-P5, ISA-4.7, ISA-12.1-P1, ISA-12.3]
+
+**Verification.** For every compiled pair and every argument tuple, when N ≤ the configured
+width (driver option `-bennett-inplace-exhaustive-bits`, default 24, §24), the plugin MUST run
+the reference interpreter on both reference bodies with an unbounded budget and check that for
+every x ∈ [0, 2^N), F^g(x) = (y, 0) and F^ginv(y) = (x, 0); it records the **minimal budget**
+B_min, the componentwise maximum over all those runs of (rows, heap bytes, stack cells, depth).
+Above that width it MUST record a `sampled` evidence claim (ISA §12.1) of the same check and
+B_sample over the sample as an observed lower bound only, and the dynamic net applies: a wrong inverse leaves the scratch register
+of the `qinplace` expansion non-clean, which `T-CLEAN` catches (NS §3.1). F_B is monotone in
+the budget (a run that completes within B completes identically within every B′ ≥ B), so the
+pair is valid for exactly B ≥ B_min only when the check is exhaustive over the full
+input/parameter domain. Sampling cannot establish B_min or universal invertibility. In all
+sampled cases validity assumes mutually inverse total functions and a sound bound B_bound
+covering every input and parameter value. A library or producer-supplied bound is permitted
+with an explicit correctness obligation recorded in the certificate; no mechanised proof
+format is required. B_sample never substitutes for B_bound, and T-CLEAN is not a universal
+budget guarantee. Use B_bound in the following budget checks for sampled pairs. A pair that fails the check, or whose budget
+is static and below B_min in some component, is `BD-E-INPLACE-NOT-INVERSE` (NS §3.1: "an
+in-place update with no inverse fails loud at compile time"; "a fallible or budget-limited
+computation cannot be in-place"); a run-time budget (§9.5) below B_min traps at the marker
+(`T-BUDGET`). *(non-normative)* On a finite set, ginv∘g = id makes g injective, hence a
+bijection, so g∘ginv = id and ginv is fault-free on every input, as ISA `qinplace` requires.
+0.1's `BD-E-INPLACE-UNVERIFIED` is deleted.
+
+Parametrised in-place calls MUST preserve the existing CC expansion for every admitted pair. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-3.3-P9, ISA-4.7]
+
+Pairs admitted with sampled evidence and the recorded universal inverse and sound-bound obligations MUST retain the CC expansion, and MUST NOT be labelled a native qinplace inverse-pair proof on the strength of sampling or T-CLEAN. [deps: DLT-8.7-P5, DLT-8.7-P6, ISA-3.3-P9, ISA-4.7, ISA-4.5-P5, ISA-12.1-P1, ISA-12.1-P2]
+
+### 8.8 Examples
+
+**Zero payload outputs (round 3).** With no payload slices, success still runs
+four charged rows: call, void return, zero constant, retval. Budget 3 therefore
+faults 1; budget 4 succeeds. Explicit fault 4 exits before delivery, but still
+reaches the caller's fault register. A discarded non-void result is not a hidden
+payload or a dropped-bit check. The caller witness executes one call and a real
+clean hidden-target free on success, fault and zero budget; basis controls 0/1
+respectively suppress/preserve fault delivery. It never cleans by calling twice.
+
+The marker form has null `tgt`, zero parameter bindings and a live four-wire
+fault register; it remains accepted:
+
+```llvm example=oracle-empty-marker verdict=accept candidates=empty_region shapes=1
+define internal void @empty_region() {
+  ret void
+}
+define void @top() {
+  %d = alloca [32 x i8], align 8
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store <4 x i32> <i32 2, i32 0, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr null, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  call void @__bennett_oracle(ptr @empty_region, ptr null, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  ret void
+}
+```
+
+```text linkmap=oracle-empty-output
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 32, heap max 0
+```
+
+```llvm lift=oracle-empty-output region=@empty desc=tgt=null
+define void @empty() {
+ ret void
+}
+```
+
+```isa object=oracle-empty-output
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"464cdd1b13d098a2ef0403aef00b67520cbda9d8132094632cf361a840b0b677","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":1,"tier":"q"}},"1":{"interface_hash":"378e7a8dd61682580544fbbfc6f12b79cd0ba987abef6f5e21b439a2336d9b46","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[],"result":1,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref () (tgt:wire[1]) (fault:wire[4]) () ()
+regs { r:reg[1], p0:reg[1] }
+^entry():
+r = lift.call @L1 ()
+p0 = lift.const.i1 0
+lift.retval p0
+lproc @L1 () (r:reg[1]) () () ()
+^b0():
+lift.ret r
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=oracle-empty-output
+input= budget=0,0,32,1 -> code=1 payload=0 steps=0
+input= budget=3,0,32,1 -> code=1 payload=0 steps=3
+input= budget=4,0,32,1 -> code=0 payload=0 steps=4
+input= budget=100,0,32,1 -> code=0 payload=0 steps=4
+```
+
+```text linkmap=oracle-empty-fault
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 32, heap max 0
+```
+
+```llvm lift=oracle-empty-fault region=@empty_fault desc=tgt=null
+define void @empty_fault() {
+ call void @__bennett_nz_fault(i64 4)
+ unreachable
+}
+```
+
+```isa object=oracle-empty-fault
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"f118730465c1b9deb950d3e81ee6c273b2933c2362c906494ae0e6fa8cfb49e7","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":1,"tier":"q"}},"1":{"interface_hash":"ddb79a30a1cc40c56e7be88c69daa81fa8624e9a315dfdcd57a5fe212a53ceab","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[],"result":1,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref () (tgt:wire[1]) (fault:wire[4]) () ()
+regs { r:reg[1], p0:reg[1] }
+^entry():
+r = lift.call @L1 ()
+p0 = lift.const.i1 0
+lift.retval p0
+lproc @L1 () (r:reg[1]) () () ()
+^b0():
+fault 4
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=oracle-empty-fault
+input= budget=0,0,32,1 -> code=1 payload=0 steps=0
+input= budget=100,0,32,1 -> code=4 payload=0 steps=2
+```
+
+```text linkmap=oracle-discard-return
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 32, heap max 0
+```
+
+```llvm lift=oracle-discard-return region=@discard desc=tgt=null
+define i8 @discard() {
+ ret i8 255
+}
+```
+
+```isa object=oracle-discard-return
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"60e12482fdff829570cbf6e311a2b892c25e9b829a9147f13ce05512da5812b1","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":1,"tier":"q"}},"1":{"interface_hash":"95392e449998e2d6b50384698902d58313fe6ae1268ccd2f545205d7ff26de5c","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[],"result":8,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref () (tgt:wire[1]) (fault:wire[4]) () ()
+regs { r:reg[8], p0:reg[1] }
+^entry():
+r = lift.call @L1 ()
+p0 = lift.const.i1 0
+lift.retval p0
+lproc @L1 () (r:reg[8]) () () ()
+regs { c0:reg[8] }
+^b0():
+c0 = lift.const.i8 255
+lift.ret c0
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=oracle-discard-return
+input= budget=100,0,32,1 -> code=0 payload=0 steps=5
+```
+
+```text state=oracle-empty-output at=0
+{"success":[0,0],"fault":[0,4],"zero_budget":[0,1],"hidden_clean":true,"oracle_calls":1}
+```
+
+Round-1 wrapper boundary vectors. The common delivery prefix includes every projection
+before any selected return; a low budget therefore zeros *all* variants.
+
+```text state=wide-delivery at=1
+OUT[20]=11 repeated 20 times; targets initially 00 repeated 20 times
+insufficient common-delivery budget -> all W_j code=1 payload=0; all 20 target bytes unchanged
+sufficient budget -> all W_j code=0; target=1111111111111111111111111111111111111111
+```
+
+```text state=entry-backing at=1
+caller alloca byte=07 at shadow-stack base+offset; ARG points there
+snapshot backing block and stack metadata; replay -> oracle load payload=7; caller byte=07
+snapshot release 32 bytes -> two 128-bit slice xor128 calls, whole qreg clean free; no measure
+```
+
+```text state=inplace-bound at=0
+sample misses rare identity long path needing 1000 steps; B_sample=10 is lower bound only
+declared universal B_bound=1000 covers that path; budget=10 is never admitted from sample alone
+```
+
+
+`inc8` bound by a descriptor with one `IN`, called twice (the oracle is an involution, so every
+register is released clean). The descriptor and budget record are built by merged constant
+stores, as `default<O3>` emits them; the budget record asks for 5 steps, no heap, 7 stack cells
+and depth 1 (§9.1; §16.6 computes these numbers):
+
+```llvm example=oracle-inc8 verdict=accept candidates=inc8 shapes=1
+define internal i8 @inc8(i8 %x) {
+  %r = add i8 %x, 1
+  ret i8 %r
+}
+
+define void @top() {
+  %d = alloca [64 x i8], align 8
+  %b = alloca [40 x i8], align 8
+  %x = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store <4 x i64> <i64 5, i64 0, i64 7, i64 1>, ptr %b, align 8
+  %bf = getelementptr i8, ptr %b, i64 32
+  store ptr null, ptr %bf, align 8
+  store <4 x i32> <i32 2, i32 1, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr %t, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  %p0 = getelementptr i8, ptr %d, i64 32
+  store <2 x i32> <i32 1, i32 0>, ptr %p0, align 8
+  %p0q = getelementptr i8, ptr %d, i64 40
+  store ptr %x, ptr %p0q, align 8
+  %p0v = getelementptr i8, ptr %d, i64 48
+  store <2 x i64> zeroinitializer, ptr %p0v, align 8
+  call void @__bennett_oracle(ptr @inc8, ptr %b, ptr %d)
+  call void @__bennett_oracle(ptr @inc8, ptr %b, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %t)
+  call void @__bennett_qfree(ptr %x)
+  ret void
+}
+```
+
+A two-argument function needs no packing wrapper (audit D21): two `IN` bindings, one 9-bit
+target (the `zext` to `i9` makes the sum exact):
+
+```llvm example=oracle-two-in verdict=accept candidates=add shapes=1
+define internal i9 @add(i8 %a, i8 %b) {
+  %a9 = zext i8 %a to i9
+  %b9 = zext i8 %b to i9
+  %s = add i9 %a9, %b9
+  ret i9 %s
+}
+
+define void @top() {
+  %d = alloca [96 x i8], align 8
+  %qa = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %qb = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 9)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store <4 x i32> <i32 2, i32 2, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr %t, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  %p0 = getelementptr i8, ptr %d, i64 32
+  store <2 x i32> <i32 1, i32 0>, ptr %p0, align 8
+  %p0q = getelementptr i8, ptr %d, i64 40
+  store ptr %qa, ptr %p0q, align 8
+  %p0v = getelementptr i8, ptr %d, i64 48
+  store <2 x i64> zeroinitializer, ptr %p0v, align 8
+  %p1 = getelementptr i8, ptr %d, i64 64
+  store <2 x i32> <i32 1, i32 0>, ptr %p1, align 8
+  %p1q = getelementptr i8, ptr %d, i64 72
+  store ptr %qb, ptr %p1q, align 8
+  %p1v = getelementptr i8, ptr %d, i64 80
+  store <2 x i64> zeroinitializer, ptr %p1v, align 8
+  call void @__bennett_oracle(ptr @add, ptr null, ptr %d)
+  call void @__bennett_oracle(ptr @add, ptr null, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %t)
+  call void @__bennett_qfree(ptr %qb)
+  call void @__bennett_qfree(ptr %qa)
+  ret void
+}
+```
+
+A kind chosen at run time gives two shapes, `ARG` and `IN` for the second parameter; a classical
+value read by the caller from host input is the `ARG` value:
+
+```llvm example=oracle-two-shapes verdict=accept candidates=add shapes=2
+define internal i9 @add(i8 %a, i8 %b) {
+  %a9 = zext i8 %a to i9
+  %b9 = zext i8 %b to i9
+  %s = add i9 %a9, %b9
+  ret i9 %s
+}
+
+define void @top(i1 %quantum_b, i64 %bval) {
+  %d = alloca [96 x i8], align 8
+  %qa = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %qb = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 9)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store <4 x i32> <i32 2, i32 2, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr %t, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  %p0 = getelementptr i8, ptr %d, i64 32
+  store <2 x i32> <i32 1, i32 0>, ptr %p0, align 8
+  %p0q = getelementptr i8, ptr %d, i64 40
+  store ptr %qa, ptr %p0q, align 8
+  %p0v = getelementptr i8, ptr %d, i64 48
+  store <2 x i64> zeroinitializer, ptr %p0v, align 8
+  %k1 = select i1 %quantum_b, i32 1, i32 2
+  %p1 = getelementptr i8, ptr %d, i64 64
+  store i32 %k1, ptr %p1, align 8
+  %p1m = getelementptr i8, ptr %d, i64 68
+  store i32 0, ptr %p1m, align 4
+  %p1q = getelementptr i8, ptr %d, i64 72
+  store ptr %qb, ptr %p1q, align 8
+  %p1v = getelementptr i8, ptr %d, i64 80
+  store i64 %bval, ptr %p1v, align 8
+  %p1s = getelementptr i8, ptr %d, i64 88
+  store i64 0, ptr %p1s, align 8
+  call void @__bennett_oracle(ptr @add, ptr null, ptr %d)
+  call void @__bennett_oracle(ptr @add, ptr null, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %t)
+  call void @__bennett_qfree(ptr %qb)
+  call void @__bennett_qfree(ptr %qa)
+  ret void
+}
+```
+
+A 160-bit output (an `OUT` buffer of 20 bytes) has k = 2 slices, [0, 128) and [128, 160) of the
+`OUT` register, so each invocation is the `wide` event with 2k − 1 = 3 oracle calls (§8.6):
+
+```llvm example=oracle-wide-out verdict=accept candidates=fill20 shapes=1
+define internal void @fill20(ptr %out, i8 %x) {
+entry:
+  br label %loop
+
+loop:
+  %i = phi i64 [ 0, %entry ], [ %i2, %loop ]
+  %ti = trunc i64 %i to i8
+  %v = xor i8 %x, %ti
+  %p = getelementptr i8, ptr %out, i64 %i
+  store i8 %v, ptr %p
+  %i2 = add i64 %i, 1
+  %c = icmp ult i64 %i2, 20
+  br i1 %c, label %loop, label %done
+
+done:
+  ret void
+}
+
+define void @top() {
+  %d = alloca [96 x i8], align 8
+  %qx = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %qo = call ptr @__bennett_qalloc(i64 0, i64 160)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store <4 x i32> <i32 2, i32 2, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr null, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  %p0 = getelementptr i8, ptr %d, i64 32
+  store <2 x i32> <i32 4, i32 0>, ptr %p0, align 8
+  %p0q = getelementptr i8, ptr %d, i64 40
+  store ptr %qo, ptr %p0q, align 8
+  %p0v = getelementptr i8, ptr %d, i64 48
+  store <2 x i64> <i64 0, i64 20>, ptr %p0v, align 8
+  %p1 = getelementptr i8, ptr %d, i64 64
+  store <2 x i32> <i32 1, i32 0>, ptr %p1, align 8
+  %p1q = getelementptr i8, ptr %d, i64 72
+  store ptr %qx, ptr %p1q, align 8
+  %p1v = getelementptr i8, ptr %d, i64 80
+  store <2 x i64> zeroinitializer, ptr %p1v, align 8
+  call void @__bennett_oracle(ptr @fill20, ptr null, ptr %d)
+  call void @__bennett_oracle(ptr @fill20, ptr null, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %qo)
+  call void @__bennett_qfree(ptr %qx)
+  ret void
+}
+```
+
+In-place pairs (§8.7): a verified pair, a wrong inverse, a classical parameter with a finite
+value set (one `qinplace` per value), and a quantum parameter (CC-level expansion). The descriptor of
+`inplace` has `tgt` = null; the INOUT register is `param[0].q`:
+
+```llvm example=inplace-call verdict=accept candidates=add5,sub5
+define internal i8 @add5(i8 %x) {
+  %r = add i8 %x, 5
+  ret i8 %r
+}
+
+define internal i8 @sub5(i8 %x) {
+  %r = add i8 %x, 251
+  ret i8 %r
+}
+
+define void @top() {
+  %d = alloca [64 x i8], align 8
+  %x = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store <4 x i32> <i32 2, i32 1, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr null, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  %p0 = getelementptr i8, ptr %d, i64 32
+  store <2 x i32> <i32 5, i32 0>, ptr %p0, align 8
+  %p0q = getelementptr i8, ptr %d, i64 40
+  store ptr %x, ptr %p0q, align 8
+  %p0v = getelementptr i8, ptr %d, i64 48
+  store <2 x i64> zeroinitializer, ptr %p0v, align 8
+  call void @__bennett_inplace(ptr @add5, ptr @sub5, ptr null, ptr %d)
+  call void @__bennett_inplace(ptr @sub5, ptr @add5, ptr null, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %x)
+  ret void
+}
+```
+
+```llvm example=inplace-wrong-inverse verdict=reject:BD-E-INPLACE-NOT-INVERSE
+define internal i8 @add5(i8 %x) {
+  %r = add i8 %x, 5
+  ret i8 %r
+}
+
+define void @top() {
+  %d = alloca [64 x i8], align 8
+  %x = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store <4 x i32> <i32 2, i32 1, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr null, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  %p0 = getelementptr i8, ptr %d, i64 32
+  store <2 x i32> <i32 5, i32 0>, ptr %p0, align 8
+  %p0q = getelementptr i8, ptr %d, i64 40
+  store ptr %x, ptr %p0q, align 8
+  %p0v = getelementptr i8, ptr %d, i64 48
+  store <2 x i64> zeroinitializer, ptr %p0v, align 8
+  call void @__bennett_inplace(ptr @add5, ptr @add5, ptr null, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %x)
+  ret void
+}
+```
+
+```llvm example=inplace-arg-finite verdict=accept candidates=addk,subk
+define internal i8 @addk(i8 %x, i8 %k) {
+  %r = add i8 %x, %k
+  ret i8 %r
+}
+
+define internal i8 @subk(i8 %x, i8 %k) {
+  %r = sub i8 %x, %k
+  ret i8 %r
+}
+
+define void @top(i1 %big) {
+  %d = alloca [96 x i8], align 8
+  %x = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store <4 x i32> <i32 2, i32 2, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr null, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  %p0 = getelementptr i8, ptr %d, i64 32
+  store <2 x i32> <i32 5, i32 0>, ptr %p0, align 8
+  %p0q = getelementptr i8, ptr %d, i64 40
+  store ptr %x, ptr %p0q, align 8
+  %p0v = getelementptr i8, ptr %d, i64 48
+  store <2 x i64> zeroinitializer, ptr %p0v, align 8
+  %k = select i1 %big, i64 7, i64 1
+  %p1 = getelementptr i8, ptr %d, i64 64
+  store <2 x i32> <i32 2, i32 0>, ptr %p1, align 8
+  %p1q = getelementptr i8, ptr %d, i64 72
+  store ptr null, ptr %p1q, align 8
+  %p1v = getelementptr i8, ptr %d, i64 80
+  store i64 %k, ptr %p1v, align 8
+  %p1s = getelementptr i8, ptr %d, i64 88
+  store i64 0, ptr %p1s, align 8
+  call void @__bennett_inplace(ptr @addk, ptr @subk, ptr null, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %x)
+  ret void
+}
+```
+
+```llvm example=inplace-param-quantum verdict=accept
+define internal i8 @addk(i8 %x, i8 %k) {
+  %r = add i8 %x, %k
+  ret i8 %r
+}
+
+define internal i8 @subk(i8 %x, i8 %k) {
+  %r = sub i8 %x, %k
+  ret i8 %r
+}
+
+define void @top() {
+  %d = alloca [96 x i8], align 8
+  %x = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %y = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store <4 x i32> <i32 2, i32 2, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr null, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  %p0 = getelementptr i8, ptr %d, i64 32
+  store <2 x i32> <i32 5, i32 0>, ptr %p0, align 8
+  %p0q = getelementptr i8, ptr %d, i64 40
+  store ptr %x, ptr %p0q, align 8
+  %p0v = getelementptr i8, ptr %d, i64 48
+  store <2 x i64> zeroinitializer, ptr %p0v, align 8
+  %p1 = getelementptr i8, ptr %d, i64 64
+  store <2 x i32> <i32 1, i32 0>, ptr %p1, align 8
+  %p1q = getelementptr i8, ptr %d, i64 72
+  store ptr %y, ptr %p1q, align 8
+  %p1v = getelementptr i8, ptr %d, i64 80
+  store <2 x i64> zeroinitializer, ptr %p1v, align 8
+  call void @__bennett_inplace(ptr @addk, ptr @subk, ptr null, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %y)
+  call void @__bennett_qfree(ptr %x)
+  ret void
+}
+```
+
+```text tdl=inplace-param-quantum
+prepare clean t:8 f:4; oracle addk(x,y) -> t=x+y mod 256, f=0
+swap x t -> x=x_old+y, t=x_old; oracle subk(x,y) -> t=x_old xor (x-y)=0, f=0
+free t,f; y preserved; every region call controlled under ctrl
+```
+
+```text state=inplace-param-quantum at=3
+x=5,y=7 -> x=12,y=7,t=0,f=0
+x=5,y=(|0>+|1>)/sqrt(2) -> (|5,0>+|6,1>)/sqrt(2); scratch=0
+```
+
+## 9. Budgets
+
+NS §3.1: a region-level classical budget of "dynamic steps, heap bytes and recursion depth,
+passed as ordinary integer operands of the region-entry marker or supplied out of band by the
+host or driver (a project-wide default, a per-function table) … No per-loop source annotation is
+ever required". Budgets are the ISA's four components (ISA §5.4).
+
+### 9.1 The budget record
+
+Every region-entry marker takes a `ptr` to a **budget record** (outline E1, E12), the LLVM struct
+`{ i64, i64, i64, i64, ptr }` under the datalayout (C `bennett_budget`, §3.3):
+
+| Field | Meaning |
+|---|---|
+| `steps` | B: reference-interpreter rows (§9.4) |
+| `heap` | `heap_limit`: heap bytes (ISA §5.4) |
+| `stack` | `stack_limit`: lifted stack cells (ISA §3.7) |
+| `depth` | `depth_limit`: call depth |
+| `fault` | action regions only: the caller's fault register (4 wires) that receives the combined fault of the region's coherent slices (§10, TDL-8), or null |
+
+A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budget table
+(§9.2). A null record means all four budget fields come from the table and `fault` is null. For
+`oracle` and `inplace` the `fault` field is ignored: the descriptor names the fault register
+(§8.2).
+
+### 9.2 The budget table
+
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.3. [deps: DLT-9.2, DLT-23]
+
+The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
+8785 canonical form:
+
+```
+{ "version": "0.2",
+  "defaults": { "steps": D, "heap": D, "stack": D, "depth": D, "sstack": D },
+  "entries": [ { ("identity": HEX64 | "region_key": HEX64 | "symbol": GLOB),
+                 "steps"?: D, "heap"?: D, "stack"?: D, "depth"?: D, "sstack"?: D } … ] }
+```
+
+with D a decimal string. Selectors are `identity` (a provisional shape interface hash,
+**selection_identity**, defined below), `region_key` (§7.3), or a source-symbol glob
+(`*` and `?`). Resolution is staged and MUST NOT seek a fixed point:
+
+1. Resolve baseline values per region, shape and component, ignoring identity entries:
+   the first matching region-key entry naming that component, else the first matching
+   symbol entry naming it, else the default. Missing defaults come from
+   `--bennett-budget-default=<s,h,st,d,ss>`, then 1048576 steps, 1048576 heap bytes,
+   65536 stack cells, depth 256 and `sstack` 65536 (§24). `sstack` is shadow-stack
+   bytes (§17.3), part of the heap budget.
+2. Freeze the link's layout capacities (§16.3) using componentwise maxima of all
+   effective defaults, every raw table entry (including unmatched identity entries),
+   and non-sentinel statically supplied budget fields (the all-ones sentinel is
+   a lookup request, not a capacity). Neither lookup nor final-object generation
+   shrinks or recomputes these capacities.
+3. Construct each shape's provisional reference object under that frozen layout,
+   with baseline `sstack` and other baseline wrapper inputs. Its interface hash is
+   `selection_identity`.
+4. For each component overlay the first identity entry naming that component whose
+   selector equals `selection_identity`, else keep its baseline value. Apply this
+   overlay **once only**. Generate the final object using the resolved values; its
+   hash is the semantic identity of §7.3. Never rematch against this final hash.
+
+Explicit marker-record fields and table sentinels retain §9.1/§9.5 precedence:
+only table-sourced components use this lookup; non-sentinel explicit fields stay
+explicit. Provisionally and finally, the same explicit fields are applied after
+table lookup. The resolved table and build record (§19.9) record per shape both
+`selection_identity` and final `identity`, the resolved components, frozen capacities
+and the resolved-table SHA-256. Launch tokens bind the **final** object identity
+and resolved budget tuple, never the provisional hash. A steps-only overlay leaves
+the object hash unchanged but changes its token. Multiple shapes resolve separately.
+
+```json budget-table=rung4-mini
+{"defaults":{"depth":"64","heap":"0","sstack":"0","stack":"1024","steps":"100000"},"entries":[{"depth":"8","heap":"0","stack":"512","steps":"400","symbol":"q"}],"version":"0.2"}
+```
+
+*(non-normative)* This is the budget table of the reduced rung-4 link of §16.7: the entry names
+the region function `q` by symbol; the defaults govern every other region of that link. Its
+largest heap (0) and stack (1024) fix that link's `heap_limit_max` and `S_cells` (§16.3); the
+entry's 400 steps, 512 cells and depth 8 cover the 112 steps, 126 cells and depth 4 that the
+runs of §16.7 need.
+
+**Staged identity witness (`budget-stage`).** At O0 the 24-byte alloca survives
+on LLVM 18 and 23. N24 emits one 24-byte frame; with its 8-byte saved-sp header,
+the linked runtime below needs 32 bytes. With all layout inputs fixed, baseline
+sstack=16 gives H16; an entry keyed by H16 supplies 32 once, producing H32.
+Reapplying that entry to H32 would choose 16 and is forbidden. The linked helper
+fixture below fixes the runtime/link input for this example (one valid frame, no
+other shadow-frame users); it is not a replacement specification of the runtimes.
+The source pair is N24's canonical output; `budget-stage-runtime` appends those
+fixed helper definitions before mapping. The checked state pins both hashes,
+resolved fields, final wrapper and final-object token outcomes. Inputs are x=7.
+
+```llvm normalise-in=n-budget-stage
+define i8 @f(i8 %x) {
+ %p = alloca [24 x i8], align 8
+ store i8 %x, ptr %p, align 1
+ %v = load i8, ptr %p, align 1
+ ret i8 %v
+}
+```
+
+```llvm normalise-out=n-budget-stage
+define i8 @f(i8 %x) {
+  %nz.fp.f = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %p = getelementptr i8, ptr %nz.fp.f, i64 0
+  store i8 %x, ptr %p, align 1
+  %v = load i8, ptr %p, align 1
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.f)
+  ret i8 %v
+}
+
+declare ptr @__bennett_rt_ss_push(i64, i64)
+
+declare void @__bennett_rt_ss_pop(ptr)
+```
+
+```llvm example=budget-stage-runtime verdict=accept mode=validate
+define i8 @f(i8 %x) {
+  %nz.fp.f = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %p = getelementptr i8, ptr %nz.fp.f, i64 0
+  store i8 %x, ptr %p, align 1
+  %v = load i8, ptr %p, align 1
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.f)
+  ret i8 %v
+}
+
+
+@ss_base = internal global ptr null, align 8
+@ss_size = internal global i64 0, align 8
+@ss_sp = internal global i64 0, align 8
+declare ptr @__bennett_nz_alloc(i64)
+declare void @__bennett_nz_fault(i64)
+define void @__bennett_rt_ss_init(i64 %size) {
+entry:
+  %base = load ptr, ptr @ss_base, align 8
+  %unset = icmp eq ptr %base, null
+  br i1 %unset, label %init, label %done
+init:
+  %p = call ptr @__bennett_nz_alloc(i64 %size)
+  store ptr %p, ptr @ss_base, align 8
+  store i64 %size, ptr @ss_size, align 8
+  store i64 0, ptr @ss_sp, align 8
+  br label %done
+done:
+  ret void
+}
+define ptr @__bennett_rt_ss_push(i64 %n, i64 %a) {
+entry:
+  %sp = load i64, ptr @ss_sp, align 8
+  %meta = add i64 %sp, 8
+  %am1 = sub i64 %a, 1
+  %pad = add i64 %meta, %am1
+  %neg = sub i64 0, %a
+  %start = and i64 %pad, %neg
+  %end = add i64 %start, %n
+  %size = load i64, ptr @ss_size, align 8
+  %too_big = icmp ugt i64 %end, %size
+  br i1 %too_big, label %bad, label %ok
+bad:
+  call void @__bennett_nz_fault(i64 2)
+  unreachable
+ok:
+  %base = load ptr, ptr @ss_base, align 8
+  %prev = sub i64 %start, 8
+  %slot = getelementptr i8, ptr %base, i64 %prev
+  store i64 %sp, ptr %slot, align 8
+  store i64 %end, ptr @ss_sp, align 8
+  %p = getelementptr i8, ptr %base, i64 %start
+  br label %zero
+zero:
+  %i = phi i64 [ 0, %ok ], [ %next, %byte ]
+  %done = icmp eq i64 %i, %n
+  br i1 %done, label %ret, label %byte
+byte:
+  %b = getelementptr i8, ptr %p, i64 %i
+  store i8 0, ptr %b, align 1
+  %next = add i64 %i, 1
+  br label %zero
+ret:
+  ret ptr %p
+}
+define void @__bennett_rt_ss_pop(ptr %p) {
+entry:
+  %slot = getelementptr i8, ptr %p, i64 -8
+  %prev = load i64, ptr %slot, align 8
+  store i64 %prev, ptr @ss_sp, align 8
+  ret void
+}
+```
+
+```json budget-table=budget-stage
+{"defaults":{"depth":"16","heap":"64","sstack":"16","stack":"512","steps":"10000"},"entries":[{"identity":"5c4b58b94843f3568c929c84e30df3887943f0b5c3c985eee4b649f3424d267a","sstack":"32"}],"version":"0.2"}
+```
+
+```text state=budget-stage
+{"baseline_run":{"code":2,"payload":0,"steps":43},"capacities":{"depth":16,"heap":64,"sstack":32,"stack":512,"steps":10000},"final_sstack":32,"identity":"9e54cfc0359c61a4413a5b74cb47e3e3e6191e1244cef878362b96044cfacbb2","resolved":{"depth":16,"heap":64,"sstack":32,"stack":512,"steps":10000},"run":{"code":0,"payload":7,"steps":316},"selection_identity":"5c4b58b94843f3568c929c84e30df3887943f0b5c3c985eee4b649f3424d267a","steps_only_run":{"code":1,"payload":0,"steps":0}}
+```
+
+Per-region budget resolution MUST retain the staged baseline, frozen layout, single selection_identity overlay and final-identity token binding, with explicit non-sentinel marker fields applied after lookup. [deps: DLT-9.1-P7, DLT-9.2-P4, DLT-9.2-P5, DLT-9.2-P6, DLT-9.2-P7, DLT-9.2-P8, ISA-5.4-P3]
+
+### 9.3 What each budget governs
+
+| Region | Budget | Exhaustion |
+|---|---|---|
+| `oracle`, `inplace` | the token of every oracle invocation (ISA §5.4, §10 `bennett_budget`) | F_B = (0, `FAULT_BUDGET_STEPS` / `_HEAP` / `_DEPTH`) on that input (ISA §5.2) |
+| `ctrl`, `adj`, `compute` | generation G has its full record; **every coherent slice** separately gets the full token record (TDL-9, outline E2) | generation or slice code, combined into the action fault output (TDL-8) |
+| `reversible`, and the whole-program R mode | an R-tier step, heap and depth counter (§17.6) | the R run ends with a budget fault record (§17.6) |
+| device CC code outside regions | none: classical control is "genuinely dynamic" (NS §4.2) | – |
+
+### 9.4 The budget unit
+
+Generation G uses the materialised-instruction unit and pre-instruction checks of TDL-9;
+each coherent slice separately uses the reference-row unit below. R uses §17.6.
+
+One step is one reference-interpreter row of the reference object (ISA §14.1): the wrapper of
+§16.2 (including the entry-state replay of §8.5 and the shadow-stack setup of §17.3) and every
+lproc row, so the fault set is a property of the program, the budget, the LLVM version and
+pipeline, the normaliser and mapping versions and the runtimes version, never of the plugin's
+lowering (NS §4.2). Heap bytes are counted by `lift.alloc` (`heap_used + max(n, 1)`), stack cells
+by `lift.call` (R_f cells per call, ISA §3.7, monotonic), depth by `lift.call`/`lift.ret`. The
+R-tier unit is §17.6.
+
+Every oracle budget MUST retain explicit steps, heap, stack and depth components and charge wrapper, replay and helper rows under the canonical map, with shadow-stack backing charged to heap. [deps: DLT-9.1, DLT-9.4, DLT-17.3, ISA-5.4-P2, ISA-3.7]
+
+### 9.5 Run-time budgets
+
+A budget field of a record is resolved, in this order:
+
+1. **Static**: a constant, `BENNETT_BUDGET_TABLE`, or a finite value set (§5.3). The driver's
+   launch stub mints one token per (reference object, budget tuple) with `bennett_budget` (ISA
+   §10) at launch and passes them to the CC entry as `TOKEN` arguments; the CC code selects one
+   by the compare tree of §14.2.
+2. **Launch-supplied**: a field whose abstract value is a bitwise copy of an integer parameter of
+   the device entry (its atoms come only from PT11 for that parameter). The launch stub mints the
+   token from the host's argument value before `bennett_run`, for every reference object the
+   record may reach (a finite set), and passes it as a `TOKEN` argument. A value that
+   `bennett_budget` rejects (ISA §5.4 validation) makes the stub fail the launch with that status.
+3. **Device-computed**: any other field (arithmetic on inputs, values derived from measurement
+   results). A device-computed classical budget tuple MUST be resolved with the existing field precedence and minted by budget.mint before region entry, without rounding or substituting any component. [deps: DLT-9.1-P7, DLT-9.2-P8, DLT-9.5-P4, DLT-9.5-P5, ISA-4.1-P17, ISA-5.4-P3, ISA-7.4-P13]
+   The caller's CC or R tier executes `tk = budget.mint @ref s h st d` for the shape's reference object (ISA §4.1, §5.4, K3). A tuple the ISA's validation refuses is code 4 `FAULT_UB_TRAP` at the marker, before any effect of the region. The token is valid for its run and revoked by reversal; an invocation runs a schedule only when its bindings match the exact tuple (ISA §11).
+
+Exhaustion is always a fault outcome on the inputs that exhaust it (NS §3.1, §4.2), never a
+compile error and never a truncated result. Rounding a run-time budget to a pre-minted value is
+not permitted: it would change F_B (outline B5).
+
+```llvm example=budget-launch-arg verdict=accept candidates=inc8 shapes=1
+define internal i8 @inc8(i8 %x) {
+  %r = add i8 %x, 1
+  ret i8 %r
+}
+
+define void @run(i64 %steps) {
+  %d = alloca [64 x i8], align 8
+  %b = alloca [40 x i8], align 8
+  %x = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store i64 %steps, ptr %b, align 8
+  %b1 = getelementptr i8, ptr %b, i64 8
+  store <2 x i64> <i64 -1, i64 -1>, ptr %b1, align 8
+  %b3 = getelementptr i8, ptr %b, i64 24
+  store i64 -1, ptr %b3, align 8
+  %bf = getelementptr i8, ptr %b, i64 32
+  store ptr null, ptr %bf, align 8
+  store <4 x i32> <i32 2, i32 1, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr %t, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  %p0 = getelementptr i8, ptr %d, i64 32
+  store <2 x i32> <i32 1, i32 0>, ptr %p0, align 8
+  %p0q = getelementptr i8, ptr %d, i64 40
+  store ptr %x, ptr %p0q, align 8
+  %p0v = getelementptr i8, ptr %d, i64 48
+  store <2 x i64> zeroinitializer, ptr %p0v, align 8
+  call void @__bennett_oracle(ptr @inc8, ptr %b, ptr %d)
+  call void @__bennett_oracle(ptr @inc8, ptr %b, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %t)
+  call void @__bennett_qfree(ptr %x)
+  ret void
+}
+```
+
+```llvm example=budget-device-computed verdict=accept lowering=K3
+define internal i8 @inc8(i8 %x) {
+  %r = add i8 %x, 1
+  ret i8 %r
+}
+
+define void @run() {
+entry:
+  %d = alloca [64 x i8], align 8
+  %b = alloca [40 x i8], align 8
+  %c = call ptr @__bennett_qalloc(i64 0, i64 64)
+  br label %coin
+
+coin:
+  %i = phi i64 [ 0, %entry ], [ %i2, %next ]
+  %acc = phi i64 [ 0, %entry ], [ %acc2, %next ]
+  call void @__bennett_gate(i32 2, ptr %c, i64 %i)
+  %m = call i1 @__bennett_measure(ptr %c, i64 %i)
+  %mz = zext i1 %m to i64
+  %sh = shl i64 %mz, %i
+  %acc2 = or i64 %acc, %sh
+  br i1 %m, label %reset, label %next
+
+reset:
+  call void @__bennett_gate(i32 1, ptr %c, i64 %i)
+  br label %next
+
+next:
+  %i2 = add i64 %i, 1
+  %more = icmp ult i64 %i2, 64
+  br i1 %more, label %coin, label %go
+
+go:
+  %steps = add i64 %acc2, 5
+  %x = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  store i64 %steps, ptr %b, align 8
+  %b1 = getelementptr i8, ptr %b, i64 8
+  store <2 x i64> <i64 -1, i64 -1>, ptr %b1, align 8
+  %b3 = getelementptr i8, ptr %b, i64 24
+  store i64 -1, ptr %b3, align 8
+  %bf = getelementptr i8, ptr %b, i64 32
+  store ptr null, ptr %bf, align 8
+  store <4 x i32> <i32 2, i32 1, i32 0, i32 0>, ptr %d, align 8
+  %dt = getelementptr i8, ptr %d, i64 16
+  store ptr %t, ptr %dt, align 8
+  %df = getelementptr i8, ptr %d, i64 24
+  store ptr %f, ptr %df, align 8
+  %p0 = getelementptr i8, ptr %d, i64 32
+  store <2 x i32> <i32 1, i32 0>, ptr %p0, align 8
+  %p0q = getelementptr i8, ptr %d, i64 40
+  store ptr %x, ptr %p0q, align 8
+  %p0v = getelementptr i8, ptr %d, i64 48
+  store <2 x i64> zeroinitializer, ptr %p0v, align 8
+  call void @__bennett_oracle(ptr @inc8, ptr %b, ptr %d)
+  call void @__bennett_oracle(ptr @inc8, ptr %b, ptr %d)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %t)
+  call void @__bennett_qfree(ptr %x)
+  call void @__bennett_qfree(ptr %c)
+  ret void
+}
+```
+
+```text lowering-report=budget-device-computed
+K3 @run call @__bennett_oracle(@inc8): budget field steps = 5 + a 64-bit value assembled from 64 measurement outcomes (value set TOP); tk = budget.mint @ref s h st d before the region call
+```
+
+*(non-normative)* In `budget-device-computed` the oracle's budget depends on measurement outcomes:
+NS §4.2 "run-time budgets come from the host or from measurement results". `%acc2` is a loop phi
+over 64 measured bits, so its value set is ⊤ (it has 2^64 possible values, beyond K = 4096 atoms);
+it is neither static nor a bitwise copy of a launch argument, and no launch-time set of tokens
+covers it. Each wire of `%c` measured 1 is reset by an `x`, so `%c` is clean at its `qfree`
+(ISA §3.3).
+
+## 10. Taint-driven lifting under control (tdl 0.3)
+
+NS §0: "a way to condition a region on a qubit. Everything else is inferred"; NS §3.1 taint row:
+a context-sensitive interprocedural analysis "over data dependence, control dependence and
+memory effects, from marker results and region entries … with polyvariant specialisation". This
+section replaces 0.1's generation-only semantics, in which classical stores of a `ctrl` body
+happened on both branches of the control (audit 1.4-d, R1). Rule ids TDL-1 to TDL-12 are
+normative anchors. ISA 0.9 expresses every construct below: actions call oracles (ISA §5.3,
+§4.7) and CC issues controlled region calls (ISA §4.7 `ctl w <call>`).
+
+**TDL-1 Interface vs body.** The marker fixes the interface: `ctrl`, `adj` and `compute` give an
+action; `oracle` and `inplace` give an oracle. The body of an action region is partitioned by
+content (TDL-3) and is never rejected for containing classical code.
+
+**TDL-2 Coherence states.**
+
+- **Object state.** Every instance of an abstract object X has a dynamic state K(X) ∈ {Cl, M,
+  Co}, kept by the CC tier (a runtimes table for globals, the coherent allocator's bookkeeping
+  for heap objects; §11, §17): Cl (the CC **shadow** holds X's bytes; X's arena cells are |0⟩),
+  M (materialised: the arena cells hold the same bytes as a basis state; both are valid), Co
+  (the arena is the truth and may be superposed; the shadow is invalid). Every instance starts
+  Cl. Transitions: Cl → M by **materialisation** (an uncontrolled XOR of the shadow into the
+  arena cells, TDL-4); M → Cl by the same XOR (dematerialisation, before a CC store to X); M or
+  Cl → Co when an event is applied (§18.2) that writes X's cells with a non-empty control set or
+  with a Co value; Co → Cl by `__bennett_observe` of all of X's bytes (TDL-11); partial observe leaves
+  K=Co and the observed cells in their measured basis state. Coverage is tracked since each
+  byte's last write; writes invalidate coverage except a permitted TDL-11 CC store to
+  already-covered bytes. That store writes a known classical value to both arena and
+  shadow, so the bytes remain covered with that store as their covering write. Release never changes Co to Cl by fiat:
+  first restore the cells to the basis value equal to the shadow with the invocation's
+  own events, then dematerialise to Cl and release. Otherwise release traps
+  T-TAINT-HOST (code 4), inside or outside generation, before reuse.
+- **Value state.** During a generation (§18.4) every executed SSA value instance is Cl or Co:
+  Co iff it is a deferred measurement result (§7.5a), a load of a byte whose **view** (below) is
+  Co, the result of an instruction with a Co operand, or a `phi` at the join of a Co branch.
+- **View.** A generation sees outliving memory through a **view**: a byte of object X has view
+  Co if K(X) = Co, or if the generation's recorder (or a recorder of an enclosing generation of
+  the same invocation) holds an event that writes it with a non-empty control set or with a Co
+  value; otherwise its view is Cl. A child generation inherits the invoking generation's
+  current speculative view: apply visible enclosing recorders' classical updates in
+  execution order, then the child's updates, to the invocation-entry shadow. The enclosing
+  invocation control is added only at event composition, not to this inherited view.
+  This applies to nested ctrl, adj and compute; sibling arm recorders stay isolated until join. For `compute`, retain gen(f)'s recorder after it ends: it is visible
+  to gen(use) and adjoint(E_f) construction as part of the same invocation. Its classical
+  events update use's Cl view; its predicated or Co-valued writes give use a Co view.
+  *(non-normative)* Inside `ctrl(q, f)` the body's own stores are recorded
+  without q (q is added when the generation ends, TDL-6), so f sees its own writes classically,
+  as the q = 1 branch must; an inner `ctrl(q2, g)` records g's writes with q2, so f's later reads
+  of them are Co.
+- **Static may-Co analysis MC** (decides partitions, arena placement and the verdict rules
+  below; flow-sensitive, interprocedural over the CC call graph with one summary per (function,
+  coherence signature), merge by union, least fixpoint):
+  - MC1: the state at a program point is the set of abstract objects that may have K = Co there;
+  - MC2: after an action region invocation (`ctrl`, `adj`, `compute`, or a `reversible` call
+    reached from a generation, §7.4), add every outliving object (TDL-5) that a store in the
+    closure of a candidate may write, if the invocation is `ctrl` or the store may be under an
+    inner control, may store a may-Co value, or may be control-dependent on a may-Co branch;
+  - MC3: `__bennett_observe(p, len)` removes an object X when AV(p) = {(X, 0)} and len is a
+    constant ≥ size(X); otherwise no change;
+  - MC4: an instruction is may-Co if an operand may be Co, it is a load whose AV(p)
+    contains a may-Co object, or it is control-dependent on a may-Co branch (stores and
+    calls included). A value is may-Co if its instruction is; an object written by a
+    may-Co store is may-Co after the store;
+  - MC5: calls bind the coherence signature of the callee (which parameters may be Co, and the
+    may-Co set at entry); every distinct signature is a variant (§4.3).
+- **Interprocedural and context-sensitive** by coherence signature (MC5; NS §3.1).
+
+**TDL-3 Partition.** For each variant of an action region and of its CC callees:
+
+- **G (generation)**: the instructions MC does not mark may-Co. G runs in CC, once per
+  invocation (§18.4).
+- **Slices**: every maximal single-entry single-exit region of may-Co instructions other than
+  stores to outliving objects and marker calls is outlined (LLVM `CodeExtractor`) into a
+  **slice function** S_k, with: classical live-ins → `ARG` parameters; Co live-ins → `IN`
+  parameters; may-Co objects it loads → the arena, bound as a `MEM_IN` region `coh`; Co
+  live-outs → outputs (§8.6). An irreducible may-Co region is outlined as a whole function. S_k
+  is normalised (§12) and lifted (§16) like any oracle region; its entry state is the
+  generation's view (§8.5: the arena for may-Co objects, the shadow for the rest). Each slice
+  also keeps its original instructions as a **classical twin** in G.
+- At run time the generation runs the classical twin when every live-in of the slice is Cl and
+  every object it may load has view Cl; otherwise it records a **slice invocation**: before it,
+  every live instance of a may-Co object the slice may load whose state is Cl is materialised
+  (Cl → M); the invocation computes the Co live-outs into fresh registers (`compute` events,
+  §18.2).
+- **Stores to outliving objects** and **marker calls** are never inside slices: they become
+  events (TDL-5, TDL-10). A store or marker call that is control-dependent on a Co branch is
+  recorded under the branch's condition wire (TDL-10). A Co branch is if-converted: the
+  generation constructs both arms from separate copies of the pre-branch view. Within
+  each arm its own classical updates are interpreted conditional on that arm being taken;
+  the other arm's recorder is invisible. Only instructions not control-dependent on the Co
+  branch run classically (none in a plain diamond); all others run in slices or as predicated
+  events. Views merge only at the join, whose `phi`s become slice-computed selects. May-Co
+  stores to non-outliving workspace and subsequent dependent reads stay together inside the
+  slice's private memory through the join.
+
+**TDL-4 Coherent arena.**
+
+- The objects in any may-Co set of MC are placed in the **arena**: a static address range
+  [A_coh, A_coh + 2^A) of the layout, disjoint from CC globals and heap (ISA §7.1, §7.2; G-13
+  would lift the restriction). Globals in the set are relocated into the arena by the layout
+  (§19.5) in both builds, so their addresses stay native-equal; heap objects of may-Co allocation
+  sites are allocated by the runtimes' **coherent allocator** in the arena range in both builds.
+- The arena's contents are a CC-held register of 8·2^A wires, bound to every slice and arena
+  action as `region[A,8]` (ISA §3.3 binding); cell i is the byte at address A_coh + i.
+- The **shadow** of the arena is the CC global `__bennett_rt_shadow` of 2^A bytes at
+  A_coh + Δ_sh (a layout constant); CC loads and stores whose abstract address may lie in the
+  arena are rewritten to address + Δ_sh when the object's state is Cl or M, after
+  dematerialising an M object for a store; when the state is Co, TDL-11 applies.
+- **Writing at a run-time address.** A cell write of a classical mask m at a classical run-time
+  address a (an `xmask` event, a materialisation) lowers to an action that calls the runtime
+  oracle `@xorargs` (§16.5) to XOR the classical `args` (a, m) into fresh wires a_w, m_w, then
+  `qstore coh a_w m_w` (ISA §4.6: XOR into the addressed cell; O(2^A) gates unless the target has
+  QRAM, NS §4.3), then `@xorargs` again to uncompute a_w and m_w. Objects at static offsets MAY
+  use a static slice (`qreg.slice` with a literal `lo`) and X gates instead.
+
+The physical `coh` interface range is storage, not a logical allocation. Maintain
+(base, size, live) for every arena global and coherent heap object. Before every program
+memory access of n bytes at p, require the entire nonwrapping [p,p+n) to lie in one
+live logical allocation. Otherwise produce fault 7 before access, including event-producing
+stores, whose mutation is gated on success. The pinned ISA interface entry never satisfies
+this additional check. The default is an ordinary materialised runtime helper
+`__bennett_rt_coh_check(p,n,table)` over the metadata: visit entries in allocation order,
+OR their live-and-contained predicates, fault 7 when false, then access. All helper rows
+are charged. A statically proven contained access may omit the helper. Coherent alloc/free
+update the same table before subsequent access; snapshot/slice entry transfers metadata
+along with the corresponding arena view, using preserved `in` metadata for a slice.
+Superposed addresses use this same lifted helper, without classical inspection.
+
+**TDL-5 Stores to outliving objects (the store rule).** An object **outlives** an invocation if
+it is live after it: a global, an object reachable from `env`, or a heap object not freed in the
+invocation. A store `store v, ptr p` executed during a generation to an outliving object X is
+realised by cases on the view of the bytes it writes:
+
+- **(a) View Cl** (the old bytes c are known to CC).
+  - v and p Cl: the event `xmask X+o, c ⊕ v` (o = p − X's base).
+  - v or p Co: a slice invocation O computes the address and the mask c ⊕ v into fresh
+    registers (c is a classical argument of O); the event `xstore coh a_w m_w` XORs the mask
+    into the addressed cells (`qstore`); a second identical invocation of O uncomputes the
+    registers. O never loads X's written bytes from the arena (their view is Cl, so O receives
+    them as arguments), and no instruction between the two invocations writes anything O reads,
+    so the second invocation cleans them exactly (ISA §5.2 involution).
+  - Exact; no history.
+- **(b) View Co, and the update is a library bijection** in the old value: the materialised IR
+  is `x = load X+o; y = op(x, k…); store y, X+o` with no intervening store to X, where op is one
+  of: add or sub of k (wrapping at the access width), xor with k, rotate by a constant, negate,
+  `bswap`, add of k modulo a constant m (with x < m), multiply by a constant k modulo m with
+  gcd(k, m) = 1 (with x < m); or a declared `inplace` pair (§8.7). k may be Cl or Co (an
+  `IN` binding of a slice output); k MUST NOT depend on X's written bytes. The event is the
+  `bennett-arith` permutation action for op on the arena cells X+o with k as `in` or `args`
+  (ISA §4.7), preceded by the slice invocation that computes a Co k and followed by its
+  uncomputation. The complete predicated update MUST be a total bijection on the
+  declared mutable interface, with bounded inverse and clean non-fault workspace. A
+  bijective op alone is insufficient when its condition depends on the changed bytes.
+- **(c) View Co, inside the `f` part of `compute(f, use, budget, env)`**: history. A slice
+  invocation computes the new bytes into a fresh register t; the event `xchg coh a t` exchanges t
+  with the cells (`qexchm`); t now holds the displaced bytes and is kept until adjoint(E_f)
+  replays the events in reverse (`xchg` again, then the slice invocation again), which cleans it
+  (NS §3.1 compute-with-uncompute; Bennett). `use` MUST NOT write bytes that f wrote by case (c)
+  (`BD-E-COHERENT-OVERWRITE` otherwise: the replay would not restore them).
+- **(d) Otherwise**: `BD-E-COHERENT-OVERWRITE`, decided statically: a store to an outliving
+  object that MC says may be Co at the store, and that is neither (b) nor (c). NS §4.2: "writing
+  a register not known to be clean is a compile-time error … an in-place update x ← g(x) requires
+  a total bijection with a bounded inverse … else it fails loud". The diagnostic names the store
+  and the object.
+
+Stores to objects that do not outlive the invocation are workspace: G runs them on the
+generation's view only when Cl; may-Co workspace stores and dependent reads run in slices
+in their private memory (§8.5); at exit the objects are
+released. Allocation in a generation is unconditional, like every allocation in the ISA (ISA
+§3.5); the release of an object that outlives the invocation is TDL-12.
+
+**TDL-6 Control and adjoint.** `ctrl(q, qi, …)` adds wire q.qi to every event's control set
+(ISA §4.7 `ctl w`). `oracle_call`, `qexch`, `qexchm`, `qstore`, X and `xmask` are self-adjoint
+(ISA §5.3 adjoint table); `adj(f)` generates f from the current classical state and applies the
+adjoint of the event list; `compute` reuses the recording E_f for its uncompute, so masks and
+history match exactly.
+
+**TDL-7 Workspace and declared outcomes.** Non-fault workspace, including temporary Co conditions
+and slice data, MUST be cleaned by the adjoint of its exact computing sequence
+before the invocation returns; `compute` f may retain it only until adjoint(E_f). It is
+never implicitly made an output or measured. Predicate and parameter computation are part
+of TDL-5(b)'s total-bijection check. An uncleanable non-bijective coherent overwrite follows
+TDL-5(d), as ratified E3 requires; an out-of-place oracle or compute/use/uncompute retains
+that computation. Per-slice codes and Φ are retained fault outcomes with TDL-8 lifetime, not incidental workspace.
+Continuation flags, per-iteration conditions and preserved trajectory records are control
+workspace, including in a standalone adjoint; declaring compiler outputs does not exempt them. Intentional deferred-measurement records (§7.5a) are separate channel
+outputs retained until their declared observation boundary, never a cleanup substitute.
+
+**TDL-8 Faults.** NS §4.2: "a quantum action has no fault outcome of its own: any fallible
+computation it needs is a lifted oracle it calls, whose fault register it declares among its
+outputs". Every slice invocation k gets a fresh 4-wire fault register f_k; the uncomputing
+invocation uses a second fresh register f′_k, which is then cleaned by `qxor f_k f′_k` (both hold
+the same code) and freed, so f_k holds the slice's code and is retained (TDL-7). At the end of
+the invocation a runtime combine oracle `@firstfault` (§16.5) XORs the first nonzero code of
+f_1, …, f_K in event order (including generation-budget and virtual-device fault
+registers, not just slice codes) into the action's **declared fault register** Φ: the budget
+record's `fault` field (§9.1), or, when that is null, a register the plugin allocates and
+retains (TDL-7); f_k, compute copies g_k and a plugin-allocated Φ are declared fault outputs owned
+by CC. They are exempt from invocation T-LEAK and are neither measured nor freed at
+invocation return or device-entry return. No f_k is freed by firstfault. adjoint(E_f)
+reuses the same f_k wires (f9 in tdl-d); a cleaned f_k may be freed after that reuse.
+The CC epilogue means program end: copy successive chunks of at most 128 bits of
+each remaining declared output into fresh non-view registers and measure those copies
+(ISA measure consumes the copies). The original output wires now hold the known
+basis outcome and remain live for correction and clean free. Report the
+invocation's combined Φ statistics (deduplicate correlated code copies, do not sum their
+rates), apply outcome-conditioned X corrections and free clean. Caller-supplied Φ remains
+caller-owned under §6.6. The certificate reports the rate (`fault_rate`, ISA §12.3). On a
+faulting basis input a slice's payload is the canonical 0 (ISA §5.2). Every event
+consuming a fallible slice result is additionally predicated on that slice's code being zero;
+if multiple results are required, all their codes must be zero. This includes xchg, negative
+branch predicates and dependent slices: failure selects neither arm. Success flags are
+computed reversibly from retained codes, kept until their last dependent use, then
+uncomputed. These predicates do not gate the producing slice's compute/uncompute or fault
+collection. Thus failed results leave dependent arena writes and gates unchanged. A nonzero rate is a reported quantity (NS §4.2), not an error.
+
+**TDL-9 Budget.** Generation G receives its own full region budget. Before each executed
+materialised LLVM instruction other than phi/debug/mark it checks and consumes one step;
+heap and depth are checked before mutation. Exhaustion is invocation failure, not a
+source leak. No further source instruction executes. Compiler finalisation runs without
+consuming the exhausted generation budget: before applying any recorded event, discard
+the failed invocation's speculative views and recorders, cancel all invocation-owned
+provisional allocations (including nested ones), preserve foreign handles, and emit only
+the corresponding declared fault event under the invocation/path controls. Failed gen(f)
+does not run use; failure of either compute part cancels the still-unapplied composite.
+Normal T-LEAK checks apply only to successfully completed source generation. Nested G execution consumes the enclosing remaining generation limits as well as
+its own limits, so nesting cannot evade a finite bound. Classical twins charge their executed
+instructions. Compilation never runs G to completion to discover an event list: G is a
+bounded CC routine executed at invocation. Every slice invocation's token comes from the region-entry marker's budget
+record, each field completed from the budget table (§9); each slice gets the full record
+(outline E2). Exhaustion is that slice's `FAULT_BUDGET_*` and reaches TDL-8.
+
+**TDL-10 Co control of quantum operations and stores.**
+
+- A marker call or outliving store that is control-dependent on a Co branch, or a marker call
+  with a Co index or op code: a slice invocation computes the condition (and the index or code)
+  into fresh wires; the event is issued under `qpred` of the condition wire, once per member of
+  the index or code dispatch domain under the predicate "value = member" (ISA §3.5, §4.6); then
+  the wires are uncomputed.
+- A Co rotation angle is predicated per value when its value set is finite. Otherwise it is
+  `BD-E-COHERENT-ANGLE`: NS promises predication, not superposed parameters, and ISA §3.1 "angles
+  are literals or classical arguments fixed at region entry".
+- A loop whose trip count is Co is unrolled in the event list up to N = the `steps` field of the
+  budget record: iteration i is predicated on the flag c_i (c_1 = the first continuation
+  condition, c_{i+1} = c_i ∧ condition_i, computed by `ccx` into fresh wires). Flags c_i, per-iteration conditions and preserved trajectory records are
+  control workspace subject to TDL-7: clean them within their dependency-validity windows
+  and before successful action return. For preserved inputs compute bounded conditions
+  out of place, apply the controlled bodies, then reverse their exact computing slices.
+  For overwritten inputs the complete bounded transition must meet TDL-5(b)'s total-
+  bijection and bounded-inverse obligation: use that inverse on a copy of the output to
+  reconstruct the entry, recompute the forward trajectory on copies, erase the original
+  control records against it, then reverse the reconstruction and its copies. All these
+  slices preserve their inputs; all trajectory workspace is restored. In compute, history
+  may instead survive through use and be cleaned by the matching adjoint(E_f), TDL-5(c).
+  A non-bijective data-only update follows the existing TDL-5(d), with out-of-place oracle
+  and compute interfaces still available. A Co trip count alone never rejects a loop.
+  No trip-count record is measured at program end.
+  A loop is a structured event; its adjoint is the special rule of §18.2, not flat ccx reversal; if c_{N+1} may be 1 the invocation records `FAULT_BUDGET_STEPS` under c_{N+1}
+  into Φ. G-14 (§25.3) is the efficient form.
+- A `qalloc`/`qborrow` whose n is Co allocates the maximum of n's value set, padded to its bound
+  (NS §4.2: "an allocation whose size depends on a qubit is padded to its bound"); gates on wires
+  at or beyond the run-time n are predicated off. A coherent width MUST allocate unconditionally to a sound bound derived from materialised instructions or, absent a tighter bound, the full unsigned marker-width domain, with out-of-range wire operations predicated off. [deps: DLT-3.4, DLT-10-P42, DLT-18.3, ISA-3.3-P7, ISA-3.3-P8, ISA-3.3-P19, ISA-3.5]
+  The bound is classical and fixed before entry; a bound the device cannot provide is `FAULT_BUDGET_HEAP` at the allocation, the ISA's resource outcome. K1 adds no quantum-valued allocation operand (ISA §3.3), so `qreg.new` always takes the padded classical bound.
+
+**TDL-11 After the region.**
+
+- Code that reads an object whose state is Co, inside the closure of a later region entry, is
+  part of that region's slices (TDL-3).
+- Code outside every generation that may load from, store to, free or otherwise release a may-Co object is compiled in two variants (Cl and
+  Co signatures, §4.3), selected by the object's dynamic state. Its Co variant at host or CC
+  level traps (`T-TAINT-HOST`, fault code 4), and statically the plugin warns
+  (`BD-W-TAINT-HOST`, naming `__bennett_observe`): NS §4.2, classical outputs of coherent memory
+  leave only through measurement. A CC store is legal after observation of every byte it
+  writes; for a partial observation while K=Co, permit only the covered basis bytes,
+  update their authoritative arena cells and shadow together and retain that coverage.
+  Unobserved Co bytes still trap. Release requires full restoration/dematerialisation
+  as TDL-2 states, even inside a generation; it never silently reuses dirty cells.
+- `__bennett_observe(p, len)` observes successive chunks of at most sixteen bytes:
+  copy each chunk's cells into a fresh non-view register of at most 128 wires and ISA
+  `measure` it. Sequential basis measurements preserve the joint distribution. No whole
+  arena register or slice view is measured. Write the outcome into the shadow. For partial
+  observation of X leave its observed cells in |m⟩ and K(X)=Co: the arena stays authoritative.
+  When every byte of X is covered since its last write other than such a permitted CC
+  covering store, XOR the whole measured X out of the
+  arena and set K(X)=Cl. Cl bytes are read from the shadow; M objects are dematerialised
+  first. len=0 changes nothing.
+
+**TDL-12 Effects in action regions.** Generations inherit the run's virtual device bindings,
+established by the CC launch stub from `--bennett-dev` (§19.9) using §8.3 model codes and
+widths; nested generations inherit the same bindings. Marker signatures stay unchanged.
+The build/launch record includes bindings, initial images, capacities and state registers.
+Mutable model state (console buffer/length, clock counter, entropy cursor, block overlay and
+presence bits) is a declared mutable action interface, allocated in the arena at run entry
+and shared across invocations; entropy/disk images are preserved `in` registers. The model's
+bounded undo log, containing saved overwritten bytes/presence bits needed for inversion, is
+explicit declared device state, not invocation workspace. Initialisation is classical
+preparation outside control. A bound operation is a controlled reversible transition of
+this state with the read values of §11.3. Reads into program memory obey TDL-5; capacity
+exhaustion is a budget fault before mutation. Slices compute parameters and validation,
+TDL-8 success predicates gate the permutation transition, and its adjoint restores state
+and cleans parameter workspace. External effects wait for explicit CC observation of model
+state; adjoint/compute uncompute virtual transitions exactly. CONSOLE appends without
+silently discarding action output; its finite capacity is a declared bound. Clock, entropy
+and block use §11.3 values and cursor/overlay rules. Only unbound/unmodelled operations or
+genuine host calls have `fault 8` and a trapped coverage line. Release of outliving Co objects
+requires clean/restored state, not unconditional fault 8. Oracle device state stays private
+under §11.3, with declared outputs under §8.6.
+
+An action body containing classical code MUST retain the Cl/M/Co partition, classical twins, predicated outliving stores and clean-workspace obligations of TDL-1 through TDL-12. [deps: DLT-10, DLT-18.2, ISA-4.7, ISA-5.2, ISA-6]
+
+## 11. Effects and device models per tier (effects 0.3)
+
+### 11.1 Tier table
+
+NS §4.2's effects table, made concrete. The four device models are the ISA's (ISA §7.3):
+`console`, `clock`, `entropy`, `block`.
+
+| Tier | Realisation of an effect marker (§3.2) | Other effects |
+|---|---|---|
+| H | – (host code calls its own libc; markers are never called from H) | real |
+| CC | `hostcall bennett.dev.<model>.<op>` (ISA §10): a genuine host effect, since ISA `effect` is R-only (ISA §4.1); the host's reply carries the bytes a read returns | host functions by `hostcall` (§11.4) |
+| R | ISA `effect <model>.<op>` on the effect tape, reversed by whole-run reversal (ISA §7.3, §10) | – (R makes no host calls) |
+| L | the lifted device model of §11.3 over state bound by the descriptor (§8.3) | – |
+| action regions | inherited virtual bindings: controlled reversible transitions (TDL-12); external effects deferred | unbound/unmodelled: F(8) |
+| unmodelled | F(8) with a `trapped` coverage line (§4.5) | same |
+
+### 11.2 Effect markers in the R tier
+
+`__bennett_effect_<model>_<op>(…)` lowers to ISA `effect <model>.<op> …` with the operands in
+ISA §7.3 order: `console.write(ptr, len)`, `clock.read(ptr)`, `entropy.read(ptr, len)`,
+`block.read(sector, ptr)`, `block.write(sector, ptr)`. A failing ISA validation (operands out of
+range, entropy tape exhausted) is the ISA's fault record (ISA §7.3, code 10 for entropy). The
+driver declares the models in `devices.models` (ISA §9.1) and supplies `block_image` from
+`--bennett-disk=<file>` (§19.2). `bennett-runtimes`' musl maps system calls onto the markers:
+
+| musl | Effect |
+|---|---|
+| `write(1, …)`, `write(2, …)`, `writev` on fds 1 and 2 | `console.write` |
+| `clock_gettime`, `gettimeofday`, `time` | `clock.read`: the 8-byte counter c; `CLOCK_REALTIME` and `CLOCK_MONOTONIC` both give tv_sec = c / 10^9, tv_nsec = c mod 10^9 |
+| `getrandom`, reads of `/dev/urandom` and `/dev/random` | `entropy.read` |
+| block-device reads and writes (the platform's virtio-blk, §20.3) | `block.read`, `block.write` |
+| files | a runtimes VFS over the block device, or over a data-image file system linked as a global |
+
+**Console syscall framing.** For virtual stdout/stderr, runtimes MUST implement `writev` by validating the vector count and total length before the first effect, then emitting one `console.write` per nonempty vector in source order (zero-length writes emit no record), returning the total byte count; the descriptor ABI limits are 0..1024 vectors and total at most target SSIZE_MAX, with invalid counts/overflow returning EINVAL and a null nonempty vector table returning EFAULT.
+
+The console shim MUST return ENOTTY for `ioctl(TIOCGWINSZ)`, ESPIPE for seeking, and success for closing a virtual stdout/stderr descriptor, with no extra device effect or terminal metadata; this close releases no host resource and does not disable the virtual byte sink.
+
+Device models beyond the four arrive with an ISA version (ISA §17 item 3, a mechanics
+deferral, §24): until then an effect on another device is `FAULT_EFFECT_UNMODELLED`.
+
+### 11.3 Coherent tier: lifted device models
+
+In an L variant, an effect marker call becomes a call of the runtimes function
+`__bennett_dev_<model>_<op>` with the same operands. These are ordinary C functions of
+`bennett-runtimes`, lifted like any code, over the **device state**: runtimes globals
+`__bennett_dev_<model>_*` that the oracle wrapper's prologue (§16.2) initialises from the
+descriptor's device bindings (§8.3) before the region function runs. Their contract:
+
+| Model | State set by the prologue | Operation |
+|---|---|---|
+| `entropy` | base = `lift.addr @e0`, size = 2^A bytes, pos = 0 | `read(p, len)`: if len > size − pos, `__bennett_nz_fault(10)` (`FAULT_ENTROPY_EXHAUSTED`); else copy [base + pos, base + pos + len) to p and pos += len |
+| `block` | base = `lift.addr @k0`, nsect = 2^A′; an empty overlay | `read(s, p)`: the overlay's 512 bytes for sector s if present, else sector s of the region if s < nsect, else 512 zero bytes (ISA §7.3: absent sectors read as zero); `write(s, p)`: copy 512 bytes into the overlay entry for s (a heap allocation by `malloc`, lifted to `lift.alloc`) |
+| `clock` | c = `value` | `read(p)`: store c (8 bytes, little-endian) at p, then c += 1 |
+| `console` | L = n(q)/8 (0 for a null q), a buffer of L bytes in the oracle's heap, n = 0 | `write(p, len)`: copy the first min(len, L − n) bytes to buffer[n…], n += that count; further bytes are discarded with the oracle's other writes |
+
+A model without a binding is unbound: every operation on it is `__bennett_nz_fault(8)` on the
+executions that reach it (NS §4.2). The `entropy` fault code 10 in an oracle: ISA §4.2 admits
+`fault C` for every C < 2^F; ISA §5.4 labels code 10 "(R only)", which §25.2 records as a wording
+item. The bound console buffer's bytes are output slices (§8.6).
+
+Modelled libc effects MUST retain the tier-specific host, reversible-tape or lifted-state realisation, and coherent device state MUST be initialised from the descriptor and reversed with the oracle prefix. [deps: DLT-4.5, DLT-11.1, DLT-11.2, DLT-11.3, ISA-7.3, ISA-7.4, ISA-5.4-P4]
+
+**Model history.** R console writes MUST use only the ISA effect tape, while L model state is ordinary reversible memory initialised from descriptor bindings, private and discarding only under the oracle rules of §11.3; action console capacity exhaustion MUST fault before mutation under TDL-12, and a standalone native-model test undo log MUST NOT substitute for either tier's history. No second production model-history ABI is required.
+
+### 11.4 Host calls from CC
+
+A CC variant's call of an H function (§4.5 item 3) becomes `hostcall bennett.call/<h>` where
+`<h>` is the hex SHA-256 of the callee's symbol name: the argument block holds the scalar
+arguments (little-endian, in order) and, for each pointer argument whose pointee the analysis
+proves pointer-free (no slot holds a pointer atom, §5), the pointee's byte range as an
+(offset, length) pair and the bytes themselves. The host-side stub calls the function on a copy,
+writes back the bytes of pointer arguments, and replies with the result and the written bytes.
+A pointer argument whose pointee may contain pointers read by device code does not become a host
+call: the callee is **promoted** to a CC variant (§19.4; ISA-11 would let it stay native, an
+efficiency item). Every service is declared in `devices.services` (ISA §9.1, §10).
+
+### 11.5 Fault codes reported from CC
+
+`__bennett_nz_fault(C)` lowers in CC and in R to the ISA instruction `fault C` (ISA §4.1, §4.9, K5): one terminal
+record with the exact code (C = 0 reports 4), run `FAILED`, no successor in this activation or any caller, no results, prefix history
+retained. No host service is involved. Implicit causes map by ISA §4.9, which agrees with §17.5. On the ISA 0.9 target, an R entry MUST report the exact effective fault cause through the launch result, preserve its entire logical prefix and stop without returning results or running its CC caller's successor. [deps: DLT-11.5-P3, DLT-17.6-P5, ISA-4.1-P14, ISA-4.9-P1, ISA-4.9-P12, ISA-4.9-P13, ISA-10]
+
+### 11.6 Examples
+
+The R-tier console: a whole program in the reversible tier writes three bytes and returns 0;
+the tape holds one `console.write`; whole-run reversal restores the entry state:
+
+```llvm example=effect-console-r verdict=accept lowering=K5 rmode=@main
+@msg = private unnamed_addr constant [3 x i8] c"hi\0A"
+
+define i32 @main() {
+  call void @__bennett_effect_console_write(ptr @msg, i64 3)
+  ret i32 0
+}
+```
+
+```text lowering-report=effect-console-r
+K5 R entry: pre-instruction step checks lower to fault 1 (§17.6); terminal record, intact reversible prefix
+```
+
+```text cc-run=effect-console-r
+driver: --bennett-tier=reversible --bennett-entry=main
+run: status=COMPLETED results=[INT(32):0] faults=[]
+tape: console write args=[A(@msg), 3] bytes=68690a
+reverse: status=REVERSED console=empty memory=entry
+```
+
+The same marker in a CC device function is a host effect:
+
+```llvm example=effect-console-cc verdict=accept
+@msg = private unnamed_addr constant [3 x i8] c"ok\0A"
+
+define void @report() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_qfree(ptr %h)
+  call void @__bennett_effect_console_write(ptr @msg, i64 3)
+  ret void
+}
+```
+
+```text cc-run=effect-console-cc
+run: status=COMPLETED results=[] faults=[]
+hostcall: service=bennett.dev.console.write payload=6f6b0a reply=empty
+```
+
+The ENTROPY-bound oracle of rung 8 is §16.8.
+
+## 12. Materialised normalisation (norm 0.2.8)
+
+### 12.1 Scope, order and naming
+
+The normaliser rewrites every device variant (§4.3) and the initialisers of every global a
+device variant references; H variants are untouched. It applies the rules of §12.2 in table
+order, each to the whole module before the next, with one exception: N33 is applied immediately
+before N32 so any floating-point instructions introduced by its expansions are processed
+by N32; own-format carrier calls and bit-exact reconstruction remain as specified in §13.4. After N27 and N32, re-apply N22
+to every instruction they created with an integer side wider than 128 bits. Only
+width legalisation repeats; no other rule re-runs. Width lowering may be fused
+with an expansion when the resulting canonical limb rows are identical. The result is the **materialised module**: the
+reference semantics (§18), the lifting map (§16) and the native comparison build (§17.7) are all
+defined on it (NS §3.2: "the native comparison binary is built from that materialised bitcode").
+
+**Naming.** A rule that introduces a value names it `%nz.<tag>.<r>`, where `<r>` is the name of
+the instruction being rewritten without its `%` (a number for an unnamed value). For a rewritten
+instruction without a result (a `void` call, a `store`, an `invoke` of a `void` function), `<r>`
+is `<f>.<k>`: f the enclosing function's name and k the 0-based count, in instruction order, of
+the result-less instructions of f that the same rule rewrites. A value introduced once per
+function is `%nz.<tag>.<f>`. A constant global a rule needs is `@nz.<tag>.<f>.<r>`. A
+declaration a rule needs is appended at the end of the module, and a global after the module's
+globals, in order of first use. Each rule
+states its tags.
+
+### 12.2 The rules
+
+**Fault replacement F(C)** (§12.3) and the 35 rules. N13, N17, N18 and N20 are 0.1 ids whose
+rules are replaced (outline §12.2); they are kept as anchors.
+
+| Id | Source | Replacement |
+|---|---|---|
+| N0 | the intrinsic families that LLVM defines by its own lowering passes: `llvm.coro.*`; `llvm.matrix.*`; `llvm.type.test`, `llvm.public.type.test`, `llvm.type.checked.load`, `llvm.type.checked.load.relative`, `llvm.icall.branch.funnel`; `llvm.instrprof.*`; `llvm.alloc.token.id`; `llvm.experimental.guard`, `llvm.experimental.widenable.condition` | the normaliser runs, only when the module contains one of them, the passes of the major in use, in this order: `coro-early`, `cgscc(coro-split)`, `coro-cleanup`; `lower-matrix-intrinsics`; `lowertypetests`; `instrprof`; `alloc-token`; `lower-guard-intrinsic`; `lower-widenable-condition` (which gives `true`). Their output is then normalised by N1–N35 |
+| N1 | instruction flags `nsw`, `nuw`, `exact`, `inbounds`, `nusw`, `nneg`, `disjoint`, `samesign`, `inrange` (and `inrange(...)`) | removed: wrapping, inexact, out-of-bounds address arithmetic and the unflagged operation are defined |
+| N2 | fast-math flags `nnan`, `ninf`, `nsz`, `arcp`, `contract`, `afn`, `reassoc`, `fast` | removed |
+| N3 | instruction metadata other than `!dbg` (`!range`, `!nonnull`, `!noundef`, `!align`, `!dereferenceable`, `!dereferenceable_or_null`, `!tbaa`, `!tbaa.struct`, `!alias.scope`, `!noalias`, `!invariant.load`, `!invariant.group`, `!llvm.loop`, `!nontemporal`, `!prof`, `!alloc_token`, …) | removed; N3/N4-removed range information is ignored when computing §5 reference domains |
+| N4 | attributes on device function definitions, their parameters and returns, and on every call site in a device function: `noundef`, `nonnull`, `range(...)`, `align` (except together with `byval`, `byref`, `sret`, `inalloca`, `preallocated`), `dereferenceable(...)`, `dereferenceable_or_null(...)`, `nofpclass(...)`, `noalias`, `nocapture`, `captures(...)`, parameter `readnone`/`readonly`/`writeonly`, `returned`, `writable`, `dead_on_unwind`, `initializes(...)`, `allocalign`, `allocptr`; function attributes `memory(...)`, `readnone`, `readonly`, `writeonly`, `argmemonly`, `inaccessiblememonly`, `inaccessiblemem_or_argmemonly`, `willreturn`, `mustprogress`, `nosync`, `nofree`, `norecurse`, `speculatable`, `personality` (after N28) | removed (attribute groups are rewritten; a group shared with an H function is first duplicated) |
+| N5 | calls with no semantic effect: `llvm.assume`, `llvm.sideeffect`, `llvm.donothing`, `llvm.pseudoprobe`, `llvm.fake.use`, `llvm.dbg.*`, `llvm.experimental.noalias.scope.decl`, `llvm.codeview.annotation`, `llvm.var.annotation`, `llvm.reloc.none`, `llvm.prefetch`, `llvm.pcmarker`, `llvm.clear_cache`, `llvm.experimental.convergence.*`, `llvm.seh.*`, `llvm.xray.*`, `llvm.experimental.stackmap`, `llvm.eh.unwind.init`, `llvm.asan.check.memaccess`, `llvm.hwasan.check.memaccess*` | deleted (a token result is never used after deletion of its users) |
+| N5 | calls that return an operand: `llvm.expect`, `llvm.expect.with.probability`, `llvm.annotation`, `llvm.ptr.annotation`, `llvm.launder.invariant.group`, `llvm.strip.invariant.group`, `llvm.ssa.copy`, `llvm.arithmetic.fence`, `llvm.threadlocal.address`, `llvm.protected.field.ptr`, `llvm.ptrauth.sign`, `llvm.ptrauth.auth`, `llvm.ptrauth.resign`, `llvm.ptrauth.auth.with.pc.and.resign`, `llvm.ptrauth.strip` | every use replaced by operand 0; deleted. *(non-normative)* Pointer authentication is a target feature with no device counterpart; the identity is one deterministic choice, made identically in both builds |
+| N6 | `llvm.lifetime.start`, `llvm.lifetime.end`, `llvm.invariant.start`, `llvm.invariant.end` | deleted (a frame is live for its whole activation, §17.3) |
+| N7 | `undef` and `poison` constants: whole operands, vector lanes, aggregate elements, `shufflevector` mask elements, global initialisers | the zero of the type: `0`, `+0.0`, `null`, `zeroinitializer` for a wholly undefined vector or aggregate; mask element `0` |
+| N8 | `%x = freeze T v` | deleted; every use of `%x` replaced by v |
+| N9 | `atomic` and `volatile` on loads and stores; `fence`; `atomicrmw`; `cmpxchg` | plain load/store; fence deleted; `atomicrmw op ptr p, T v` → `%nz.l.r = load T, ptr p`, `%nz.v.r = <op> T %nz.l.r, v` for `add`/`sub`/`and`/`or`/`xor` (for `xchg`: v; `min`/`max`/`umin`/`umax`: `icmp` + `select` named `%nz.k.r`, `%nz.v.r`; FP `fadd`/`fsub`: ordinary `fadd`/`fsub` then N32; `fmax`/`fmin`, `fmaximum`/`fminimum`, `fmaximumnum`/`fminimumnum`: respectively `llvm.maxnum`/`llvm.minnum`, `llvm.maximum`/`llvm.minimum`, `llvm.maximumnum`/`llvm.minimumnum` then N32; `nand`: `%nz.a.r = and T %nz.l.r, v`, then `%nz.v.r = xor T %nz.a.r, -1` (these two logical instructions, in this order, without flags); `uinc_wrap`: k=`icmp uge old,v`, i=`add old,1`, new=`select k,0,i`; `udec_wrap`: k=`icmp eq old,0`, g=`icmp ugt old,v`, w=`or k,g`, d=`sub old,1`, new=`select w,v,d`; `usub_cond`/`usub_sat`: k=`icmp uge old,v`, s=`sub old,v`, new=`select k,s,old` / `select k,s,0`. Names are `%nz.{k,i,v}.r`, `%nz.{k,g,w,d,v}.r` and `%nz.{k,s,v}.r` respectively, all arithmetic at T without overflow flags), `store T %nz.v.r, ptr p`, uses of `%r` → `%nz.l.r`; `cmpxchg ptr p, T c, T n` → `%nz.l.r = load`, `%nz.e.r = icmp eq T %nz.l.r, c`, `%nz.s.r = select i1 %nz.e.r, T n, T %nz.l.r`, `store T %nz.s.r, ptr p`, `%nz.a.r = insertvalue { T, i1 } zeroinitializer, T %nz.l.r, 0`, `%r = insertvalue { T, i1 } %nz.a.r, i1 %nz.e.r, 1` (single-thread assumption, recorded in the certificate, §24 D24). Volatile accesses in platform-profile code are first routed by N35 (§20.3) |
+| N10 | `llvm.is.constant.*` | `false` |
+| N10 | `llvm.objectsize.*(p, min, nullunknown, dynamic)` | `-1` (all ones) if `min` is `false`, else `0` |
+| N10 | `llvm.allow.runtime.check`, `llvm.allow.ubsan.check` | `true` (checks stay; a failing check is a fault) |
+| N10 | `llvm.allow.sanitize.address`, `.hwaddress`, `.memory`, `.thread` | `false` (no sanitizer runtime exists in either build) |
+| N10 | `llvm.get.dynamic.area.offset` | `0` |
+| N10 | `llvm.vscale` | the constant V of §12.5 |
+| N11 | calls of `llvm.trap`, `llvm.debugtrap`, `llvm.ubsantrap`, `llvm.looptrap` | F(4) |
+| N11 | `llvm.cond.loop(c)` | the block is split after the call; `br i1 c, label %nz.spin.<f>.<k>, label <rest>`; the new block `nz.spin.<f>.<k>` is `br label %nz.spin.<f>.<k>` (the infinite loop LangRef defines; budgets bound it, §9) |
+| N12 | `llvm.abs.*(x, i1 true)`, `llvm.ctlz.*(x, i1 true)`, `llvm.cttz.*(x, i1 true)` | the flag becomes `i1 false` |
+| N13 | (0.1: `memcpy` → `memmove`) | replaced by N26 |
+| N14 | `%r = shl/lshr/ashr iW a, b` with b not a constant | `%nz.c.r = icmp uge iW b, W`; `%nz.s.r = <op> iW a, b`; `%r = select i1 %nz.c.r, iW 0, iW %nz.s.r` (every shift by ≥ W gives 0, as the ISA's shifts do, ISA §4.1) |
+| N14 | the same with b a constant ≥ W | every use of `%r` replaced by `0`; deleted |
+| N15 | `extractelement`/`insertelement` with any integer index i on L lanes | interpret iK index i as unsigned, including negative spellings. A constant i<L is left for N21’s in-range lane renaming. A constant i>=L replaces all result uses by the zero element (extract) or the unchanged input vector (insert), then deletes the instruction. For a non-constant index: let W=max(K,⌈log2(L+1)⌉), zero-extend to `%nz.i.r` when W>K (otherwise use i unchanged); `%nz.c.r = icmp uge iW wide_i, L` with exact L; `%nz.e.r = <the original instruction>`; `%r = select i1 %nz.c.r, T Z, T %nz.e.r` with Z = the zero element (extract) or the unchanged vector operand (insert) |
+| N16 | `%r = call T @llvm.fmuladd.*(a, b, c)` | `%nz.m.r = fmul T a, b`; `%r = fadd T %nz.m.r, c` (no fusion; explicit `llvm.fma` keeps fusion through §13) |
+| N17 | (0.1: FP formats and transcendentals → F(8)) | replaced by §13 (N32, N33): no floating-point construct faults |
+| N18 | (0.1: external calls in oracle and reversible closures → F(8)) | replaced by §4.5: shims first; trapped only without bitcode |
+| N19 | floating-point arithmetic, comparison and conversion of `float` and `double` | the soft-float rewrite of §13.1 (applied by N32) |
+| N20 | (0.1: alloca + memset) | replaced by N24 |
+| N21 | **vector scalarisation**: every instruction of vector type, every vector intrinsic (`llvm.vector.*`, `llvm.experimental.vector.*`, `llvm.vp.*`, `llvm.experimental.vp.*`, `llvm.masked.*`, `llvm.stepvector`, `llvm.experimental.stepvector`, `llvm.get.active.lane.mask`, `llvm.experimental.get.vector.length`, `llvm.experimental.cttz.elts`, `llvm.vp.cttz.elts`, `llvm.loop.dependence.raw.mask`, `llvm.loop.dependence.war.mask`), vector parameters and results of internal device functions | per-lane scalar instructions in lane order, by the rules of §12.6 |
+| N22 | **wide integers and non-byte memory**: an integer type iN with N > 128 in an instruction; a load or store of iN with N not a multiple of 8 or of an aggregate type | iN with N > 128 becomes L = ⌈N/64⌉ i64 limbs (limb 0 the least significant; the top limb is i(N − 64(L−1))) with the expansions of §12.7; a load or store of iN with N mod 8 ≠ 0 becomes a load or store of i(8⌈N/8⌉) with a `trunc` after the load and a `zext` before the store (fixing LangRef's unspecified extra bits as zero); a load or store of an aggregate becomes one access per element in element order at its offset (`%nz.e<k>.<r>`) |
+| N23 | **varargs** | §14.3 |
+| N24 | **allocas → shadow stack**: every `alloca`; `llvm.stacksave`, `llvm.stackrestore`; `llvm.frameaddress`, `llvm.sponentry`, `llvm.addressofreturnaddress`, `llvm.stackaddress`, `llvm.returnaddress`, `llvm.swift.async.context.addr`, `llvm.localescape`, `llvm.localrecover`, `llvm.localaddress`, `llvm.eh.recoverfp`, `llvm.eh.dwarf.cfa`; `llvm.structured.alloca` | §17.3 |
+| N25 | `byval`, `inalloca` and `preallocated` arguments; `llvm.call.preallocated.*`; aggregate returns wider than 128 bits | an explicit caller copy into a shadow-stack slot of the caller's frame (`%nz.bv<j>.<r>` for argument j) passed as a plain `ptr`, and the attribute removed from the callee and the call; a return of a first-class aggregate wider than 128 bits is demoted to a hidden first parameter `ptr %nz.ret` in which the callee stores the value (`sret` semantics) |
+| N26 | **memory intrinsics**: `llvm.memcpy.*`, `llvm.memcpy.inline.*`, `llvm.memmove.*`, `llvm.memset.*`, `llvm.memset.inline.*`, `llvm.memcpy/memmove/memset.element.unordered.atomic.*`, `llvm.experimental.memset.pattern.*` | `call void @__bennett_rt_memmove(ptr d, ptr s, i64 n)`, `call void @__bennett_rt_memset(ptr d, i8 v, i64 n)` (the `i1` volatile flag and element-size operand dropped; a constant length becomes an `i64` constant; a narrower non-constant length is first `%nz.n.<r> = zext … to i64`); `memset.pattern(d, v: T, count)` → a loop storing v at d + i·size(T) for i < count (blocks `nz.mp.<r>.*`) |
+| N27 | **integer intrinsics** | the fixed expansions of §12.8 |
+| N28 | **unwinding: explicit propagation** | §14.4 |
+| N29 | **setjmp/longjmp** | §14.5 |
+| N30 | **rewindable frames** (fibers) | §14.6, only in the functions §14.6 selects |
+| N31 | **inline asm and target intrinsics** | the §15 tables |
+| N32 | **floating point** | the soft-float rewrite of §13.1–§13.2 (after N21) |
+| N33 | **extended FP formats and libm intrinsics** | §13.3–§13.5 |
+| N34 | **R-tier budget instrumentation points** | a call of `__bennett_rt_rstep()` is *not* inserted; N34 marks each counted R instruction with metadata `!bennett.rstep` (kept by N3); lowering checks/charges before that instruction (§17.6). Batching must preserve the same first fault and effect prefix |
+| N35 | **platform hooks** | §20.3 (MMIO routing), §20.4 (interrupt poll points), only under a platform profile |
+
+The other generic intrinsics are rows of §12.8 (integer), §13 (floating point), §14 (control
+transfer) and §15 (target intrinsics). **Completeness obligation:** Appendix C lists every
+generic (target-independent) intrinsic name of LLVM 18, 20 and 23 (546 names) with its rule. No
+generic intrinsic is `trapped`.
+
+*(non-normative)* Division by zero and `sdiv`/`srem` of INT_MIN by −1 are not rewritten: they are
+faults of the reference semantics (§17.5), the ISA's `lift.div` and CC division fault on them
+directly (ISA §4.1, §4.2), and the native comparison build traps (§17.7).
+
+
+Checked boundary witnesses for the previously unindexed normalisation rules. Results below
+are derived before execution; a missing transform remains a P-2 failure.
+
+**`n-lower-widenable`.** N0 replaces the widenable condition by true. The returned value is therefore true for every call.
+
+```llvm normalise-in=n-lower-widenable
+declare i1 @llvm.experimental.widenable.condition()
+define i1 @f() {
+entry:
+  %c = call i1 @llvm.experimental.widenable.condition()
+  ret i1 %c
+}
+```
+
+```llvm normalise-out=n-lower-widenable
+declare i1 @llvm.experimental.widenable.condition()
+define i1 @f() {
+entry:
+  ret i1 true
+}
+```
+
+**`n-defined-zero`.** N12 totalises the flags before N27. This does not exempt abs, ctlz or cttz from expansion: full materialised output contains no calls to these LLVM intrinsics, including false-flag calls. At x=0 both counts are 8, so the sum is 16; at x=1 they are 7 and 0, so the sum is 7.
+
+```llvm normalise-in=n-defined-zero
+declare i8 @llvm.ctlz.i8(i8, i1 immarg)
+declare i8 @llvm.cttz.i8(i8, i1 immarg)
+define i8 @f(i8 %x) {
+entry:
+  %a = call i8 @llvm.ctlz.i8(i8 %x, i1 true)
+  %b = call i8 @llvm.cttz.i8(i8 %x, i1 true)
+  %r = add i8 %a, %b
+  ret i8 %r
+}
+```
+
+```llvm normalise-out=n-defined-zero
+declare i8 @llvm.ctlz.i8(i8, i1 immarg)
+declare i8 @llvm.cttz.i8(i8, i1 immarg)
+define i8 @f(i8 %x) {
+entry:
+  %a = call i8 @__bennett_rt_ctlz_i8(i8 %x, i1 false)
+  %b = call i8 @__bennett_rt_cttz_i8(i8 %x, i1 false)
+  %r = add i8 %a, %b
+  ret i8 %r
+}
+declare i8 @__bennett_rt_ctlz_i8(i8, i1)
+declare i8 @__bennett_rt_cttz_i8(i8, i1)
+```
+
+```text native=n-defined-zero
+f(0)=16; f(1)=7
+```
+
+**Constant lane totalisation.** At index 2 or unsigned -1 no lane of
+<5,9> is selected. N15 therefore returns zero for extraction and the unchanged
+vector for insertion; N8 then erases freeze. The original LLVM sources verify
+and retain the operations at O0 on 18/23. Native results below execute the
+materialised output, since source poison/freeze does not promise these values.
+
+```llvm normalise-in=n-constant-lane
+define i8 @f() {
+ %lane = extractelement <2 x i8> <i8 5, i8 9>, i32 2
+ %v = freeze i8 %lane
+ ret i8 %v
+}
+define i8 @negative() {
+ %lane = extractelement <2 x i8> <i8 5, i8 9>, i32 -1
+ %v = freeze i8 %lane
+ ret i8 %v
+}
+define i8 @g() {
+ %v = insertelement <2 x i8> <i8 5, i8 9>, i8 7, i32 2
+ %f = freeze <2 x i8> %v
+ %r = extractelement <2 x i8> %f, i32 0
+ ret i8 %r
+}
+define i8 @gnegative() {
+ %v = insertelement <2 x i8> <i8 5, i8 9>, i8 7, i32 -1
+ %f = freeze <2 x i8> %v
+ %r = extractelement <2 x i8> %f, i32 0
+ ret i8 %r
+}
+```
+
+```llvm normalise-out=n-constant-lane
+define i8 @f() {
+  ret i8 0
+}
+define i8 @negative() {
+  ret i8 0
+}
+define i8 @g() {
+  ret i8 5
+}
+define i8 @gnegative() {
+  ret i8 5
+}
+```
+
+```text native=n-constant-lane
+{"f":0,"negative":0,"g":5,"gnegative":5,"code":0}
+```
+
+**`n-dynamic-lane`.** N15 chooses zero when unsigned i >= 2; N21 selects lanes in order. Indices 0, 1, 2 and -1 therefore return 5, 9, 0 and 0. The scalar select chain retains the N15 guard.
+
+```llvm normalise-in=n-dynamic-lane
+define i8 @f(i32 %i) {
+entry:
+  %r = extractelement <2 x i8> <i8 5, i8 9>, i32 %i
+  ret i8 %r
+}
+```
+
+```llvm normalise-out=n-dynamic-lane
+define i8 @f(i32 %i) {
+entry:
+  %nz.c.r = icmp uge i32 %i, 2
+  %nz.k0.r = icmp eq i32 %i, 0
+  %nz.l0.r = select i1 %nz.k0.r, i8 5, i8 0
+  %nz.k1.r = icmp eq i32 %i, 1
+  %nz.e.r = select i1 %nz.k1.r, i8 9, i8 %nz.l0.r
+  %r = select i1 %nz.c.r, i8 0, i8 %nz.e.r
+  ret i8 %r
+}
+```
+
+```text native=n-dynamic-lane
+f(0)=5; f(1)=9; f(2)=0; f(-1)=0; code=0
+```
+
+**Narrow unsigned lane indices.** An i1 index denotes 0 or 1, both below L=2.
+W=max(1,ceil(log2(3)))=2 represents L exactly; neither valid input is
+zeroed. Insertion yields [7,9] or [5,7], packed as 2311 or 1797.
+The four-lane probe also prevents unreachable lane constants 2/3 aliasing 0/1.
+
+```llvm normalise-in=n-narrow-lane
+define i8 @f(i1 %i) {
+entry:
+  %r = extractelement <2 x i8> <i8 5, i8 9>, i1 %i
+  ret i8 %r
+}
+define i16 @g(i1 %i) {
+entry:
+  %v = insertelement <2 x i8> <i8 5, i8 9>, i8 7, i1 %i
+  %a = extractelement <2 x i8> %v, i32 0
+  %b = extractelement <2 x i8> %v, i32 1
+  %aa = zext i8 %a to i16
+  %bb = zext i8 %b to i16
+  %hi = shl i16 %bb, 8
+  %r = or i16 %aa, %hi
+  ret i16 %r
+}
+define i8 @h(i1 %i) {
+entry:
+  %r = extractelement <4 x i8> <i8 5, i8 9, i8 17, i8 33>, i1 %i
+  ret i8 %r
+}
+```
+
+```llvm normalise-out=n-narrow-lane
+define i8 @f(i1 %i) {
+entry:
+  %nz.i.r = zext i1 %i to i2
+  %nz.c.r = icmp uge i2 %nz.i.r, 2
+  %nz.k0.r = icmp eq i2 %nz.i.r, 0
+  %nz.l0.r = select i1 %nz.k0.r, i8 5, i8 0
+  %nz.k1.r = icmp eq i2 %nz.i.r, 1
+  %nz.e.r = select i1 %nz.k1.r, i8 9, i8 %nz.l0.r
+  %r = select i1 %nz.c.r, i8 0, i8 %nz.e.r
+  ret i8 %r
+}
+define i16 @g(i1 %i) {
+entry:
+  %nz.i.v = zext i1 %i to i2
+  %nz.k0.v = icmp eq i2 %nz.i.v, 0
+  %nz.l0.v = select i1 %nz.k0.v, i8 7, i8 5
+  %nz.k1.v = icmp eq i2 %nz.i.v, 1
+  %nz.l1.v = select i1 %nz.k1.v, i8 7, i8 9
+  %aa = zext i8 %nz.l0.v to i16
+  %bb = zext i8 %nz.l1.v to i16
+  %hi = shl i16 %bb, 8
+  %r = or i16 %aa, %hi
+  ret i16 %r
+}
+define i8 @h(i1 %i) {
+entry:
+  %nz.i.r = zext i1 %i to i3
+  %nz.c.r = icmp uge i3 %nz.i.r, 4
+  %nz.k0.r = icmp eq i3 %nz.i.r, 0
+  %nz.l0.r = select i1 %nz.k0.r, i8 5, i8 0
+  %nz.k1.r = icmp eq i3 %nz.i.r, 1
+  %nz.l1.r = select i1 %nz.k1.r, i8 9, i8 %nz.l0.r
+  %nz.k2.r = icmp eq i3 %nz.i.r, 2
+  %nz.l2.r = select i1 %nz.k2.r, i8 17, i8 %nz.l1.r
+  %nz.k3.r = icmp eq i3 %nz.i.r, 3
+  %nz.e.r = select i1 %nz.k3.r, i8 33, i8 %nz.l2.r
+  %r = select i1 %nz.c.r, i8 0, i8 %nz.e.r
+  ret i8 %r
+}
+```
+
+```text native=n-narrow-lane
+f(0)=5; f(1)=9; g(0)=2311; g(1)=1797; h(0)=5; h(1)=9; code=0
+```
+
+**`n-byval-copy`.** N25 copies the one-byte argument into the caller frame before the call. N24 gives that slot offset 0 in a one-byte, align-1 frame. The callee writes 9 into the copy; the caller still loads the original byte (7 when p initially holds 7).
+
+```llvm normalise-in=n-byval-copy
+define internal void @change(ptr byval(i8) align 1 %p) {
+entry:
+  store i8 9, ptr %p, align 1
+  ret void
+}
+define i8 @f(ptr %p) {
+entry:
+  call void @change(ptr byval(i8) align 1 %p)
+  %r = load i8, ptr %p, align 1
+  ret i8 %r
+}
+```
+
+```llvm normalise-out=n-byval-copy
+define internal void @change(ptr %p) {
+entry:
+  store i8 9, ptr %p, align 1
+  ret void
+}
+define i8 @f(ptr %p) {
+entry:
+  %nz.fp.f = call ptr @__bennett_rt_ss_push(i64 1, i64 1)
+  %nz.bv0.f.0 = getelementptr i8, ptr %nz.fp.f, i64 0
+  call void @__bennett_rt_memmove(ptr %nz.bv0.f.0, ptr %p, i64 1)
+  call void @change(ptr %nz.bv0.f.0)
+  %r = load i8, ptr %p, align 1
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.f)
+  ret i8 %r
+}
+declare ptr @__bennett_rt_ss_push(i64, i64)
+declare void @__bennett_rt_ss_pop(ptr)
+declare void @__bennett_rt_memmove(ptr, ptr, i64)
+```
+
+**`n-rstep-return`.** With f selected as the R entry, its single return is counted. N34 marks it; it inserts no call. Budget 0 must fault 1 before returning; budget 1 permits return (subject to BLK-5 on ISA 0.9).
+
+```llvm normalise-in=n-rstep-return rmode=@f
+define i8 @f() {
+entry:
+  ret i8 7
+}
+```
+
+```llvm normalise-out=n-rstep-return
+define i8 @f() {
+entry:
+  ret i8 7, !bennett.rstep !0
+}
+!0 = !{}
+```
+
+**`n-platform-mmio`.** Under riscv64-bennett-virt, the function-entry poll precedes the volatile byte load. N35 routes it through the MMIO helper before N9 removes volatile; no raw access to the UART window remains. At UART address 0x10000000, the value comes from the model, not an allocation at that address.
+
+```llvm normalise-in=n-platform-mmio platform=riscv64-bennett-virt
+define i8 @f(ptr %p) {
+entry:
+  %v = load volatile i8, ptr %p, align 1
+  ret i8 %v
+}
+```
+
+```llvm normalise-out=n-platform-mmio
+define i8 @f(ptr %p) {
+entry:
+  call void @__bennett_rt_poll()
+  %v = call i8 @__bennett_rt_mmio_load_i8(ptr %p)
+  ret i8 %v
+}
+declare void @__bennett_rt_poll()
+declare i8 @__bennett_rt_mmio_load_i8(ptr)
+```
+
+
+**N9 NAND and operation sweep.** The ordinary-instruction template applies only to
+add/sub/and/or/xor; all other LLVM 18/23 atomicrmw operations are the explicit
+exceptions above (including the six FP min/max spellings). For old=0xf0 and
+v=0xcc, the canonical two logical rows produce 0xc0 then 0x3f. The old-result
+substitution still returns 240. Both source and output execute on LLVM 18/23.
+
+```llvm normalise-in=n-atomic-nand
+@cell = internal global i8 -16, align 1
+define i8 @f() {
+  %old = atomicrmw nand ptr @cell, i8 -52 seq_cst, align 1
+  %new = load i8, ptr @cell, align 1
+  ret i8 %new
+}
+define i8 @old(ptr %p) {
+  %old = atomicrmw nand ptr %p, i8 -52 seq_cst, align 1
+  ret i8 %old
+}
+```
+
+```llvm normalise-out=n-atomic-nand
+@cell = internal global i8 -16, align 1
+define i8 @f() {
+  %nz.l.old = load i8, ptr @cell, align 1
+  %nz.a.old = and i8 %nz.l.old, -52
+  %nz.v.old = xor i8 %nz.a.old, -1
+  store i8 %nz.v.old, ptr @cell, align 1
+  %new = load i8, ptr @cell, align 1
+  ret i8 %new
+}
+define i8 @old(ptr %p) {
+  %nz.l.old = load i8, ptr %p, align 1
+  %nz.a.old = and i8 %nz.l.old, -52
+  %nz.v.old = xor i8 %nz.a.old, -1
+  store i8 %nz.v.old, ptr %p, align 1
+  ret i8 %nz.l.old
+}
+```
+
+```text native=n-atomic-nand
+f()=63; old(240)=[240,63]; code=0
+```
+
+```llvm lift=atomic-nand region=@f desc=";tgt=8"
+@cell = internal global i8 -16, align 1
+define i8 @f() {
+  %nz.l.old = load i8, ptr @cell, align 1
+  %nz.a.old = and i8 %nz.l.old, -52
+  %nz.v.old = xor i8 %nz.a.old, -1
+  store i8 %nz.v.old, ptr @cell, align 1
+  %new = load i8, ptr @cell, align 1
+  ret i8 %new
+}
+define i8 @old(ptr %p) {
+  %nz.l.old = load i8, ptr %p, align 1
+  %nz.a.old = and i8 %nz.l.old, -52
+  %nz.v.old = xor i8 %nz.a.old, -1
+  store i8 %nz.v.old, ptr %p, align 1
+  ret i8 %nz.l.old
+}
+```
+
+```text linkmap=atomic-nand
+null_size=4096 heap_base=8192 heap_limit_max=0 budget-table: stack max 32, heap max 0
+global @cell -> G1 base=4096 size=1
+```
+
+```isa object=atomic-nand
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"a09624e1ed1bc8c77ceadd67005f73a82e9bbb940572459d2b868093d462715e","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"1878cc5d7a5060a8d74f183b7b4504dce019ec673e2738f3c2f6ec48d5686574","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[],"result":8,"tier":"q","tokens":[]}},"2":{"interface_hash":"f457db36e84176a6a62ed24c400f8f6b5dd24c01088e036f8d98504e1b2d6f6d","kind":"data","name":"G1","signature":{"abi":"0.9","kind":"data","size":1,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) () ()
+regs { r:reg[8] }
+^entry():
+r = lift.call @L1 ()
+lift.retval r
+lproc @L1 () (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[8], c1:reg[8], v1:reg[8], c2:reg[8], v2:reg[8], c3:reg[64], c4:reg[64], v3:reg[8] }
+^b0():
+c0 = lift.addr @G1
+lift.boundscheck c0 1
+v0 = lift.load.i8 c0
+c1 = lift.const.i8 204
+v1 = lift.and v0 c1
+c2 = lift.const.i8 255
+v2 = lift.xor v1 c2
+c3 = lift.addr @G1
+lift.boundscheck c3 1
+lift.store.i8 c3 v2
+c4 = lift.addr @G1
+lift.boundscheck c4 1
+v3 = lift.load.i8 c4
+lift.ret v3
+
+section data
+G1 f0
+
+section layout
+{"A_tab":0,"H":13,"S_cells":5,"globals":{"G1":{"base":4096,"image":"G1","size":1}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=atomic-nand
+ref a09624e1ed1bc8c77ceadd67005f73a82e9bbb940572459d2b868093d462715e
+L1 1878cc5d7a5060a8d74f183b7b4504dce019ec673e2738f3c2f6ec48d5686574
+G1 f457db36e84176a6a62ed24c400f8f6b5dd24c01088e036f8d98504e1b2d6f6d
+```
+
+```text run=atomic-nand
+input= budget=100,0,32,8 -> code=0 payload=63 steps=16
+```
+
+**N9 wrap/subtract forms.** Compare before the wrapping arithmetic; all return
+the old value. At limit 10, increment maps 9→10 and 10/11→0; decrement maps
+0/11→10 and 9→8. Conditional subtraction preserves 9 when subtracting 10;
+saturating subtraction gives zero; both map 11→1. Source forms are verified
+on the LLVM majors that define them (`majors=`); all materialised outputs verify
+on 18/20/23 and execute on clang 18/23.
+
+```llvm normalise-in=n-atomic-wrap
+define i32 @f0(ptr %p, i32 %v) {
+  %old = atomicrmw uinc_wrap ptr %p, i32 %v seq_cst, align 4
+  ret i32 %old
+}
+define i32 @f1(ptr %p, i32 %v) {
+  %old = atomicrmw udec_wrap ptr %p, i32 %v seq_cst, align 4
+  ret i32 %old
+}
+```
+
+```llvm normalise-out=n-atomic-wrap
+define i32 @f0(ptr %p, i32 %v) {
+  %nz.l.old = load i32, ptr %p, align 4
+  %nz.k.old = icmp uge i32 %nz.l.old, %v
+  %nz.i.old = add i32 %nz.l.old, 1
+  %nz.v.old = select i1 %nz.k.old, i32 0, i32 %nz.i.old
+  store i32 %nz.v.old, ptr %p, align 4
+  ret i32 %nz.l.old
+}
+define i32 @f1(ptr %p, i32 %v) {
+  %nz.l.old = load i32, ptr %p, align 4
+  %nz.k.old = icmp eq i32 %nz.l.old, 0
+  %nz.g.old = icmp ugt i32 %nz.l.old, %v
+  %nz.w.old = or i1 %nz.k.old, %nz.g.old
+  %nz.d.old = sub i32 %nz.l.old, 1
+  %nz.v.old = select i1 %nz.w.old, i32 %v, i32 %nz.d.old
+  store i32 %nz.v.old, ptr %p, align 4
+  ret i32 %nz.l.old
+}
+```
+
+```text native=n-atomic-wrap
+f0(9,10)=[9,10]; f0(10,10)=[10,0]; f0(11,10)=[11,0]; f1(0,10)=[0,10]; f1(11,10)=[11,10]; f1(9,10)=[9,8]; code=0
+```
+
+```llvm normalise-in=n-atomic-usub majors=23
+define i32 @f0(ptr %p, i32 %v) {
+  %old = atomicrmw usub_cond ptr %p, i32 %v seq_cst, align 4
+  ret i32 %old
+}
+define i32 @f1(ptr %p, i32 %v) {
+  %old = atomicrmw usub_sat ptr %p, i32 %v seq_cst, align 4
+  ret i32 %old
+}
+```
+
+```llvm normalise-out=n-atomic-usub
+define i32 @f0(ptr %p, i32 %v) {
+  %nz.l.old = load i32, ptr %p, align 4
+  %nz.k.old = icmp uge i32 %nz.l.old, %v
+  %nz.s.old = sub i32 %nz.l.old, %v
+  %nz.v.old = select i1 %nz.k.old, i32 %nz.s.old, i32 %nz.l.old
+  store i32 %nz.v.old, ptr %p, align 4
+  ret i32 %nz.l.old
+}
+define i32 @f1(ptr %p, i32 %v) {
+  %nz.l.old = load i32, ptr %p, align 4
+  %nz.k.old = icmp uge i32 %nz.l.old, %v
+  %nz.s.old = sub i32 %nz.l.old, %v
+  %nz.v.old = select i1 %nz.k.old, i32 %nz.s.old, i32 0
+  store i32 %nz.v.old, ptr %p, align 4
+  ret i32 %nz.l.old
+}
+```
+
+```text native=n-atomic-usub
+f0(9,10)=[9,9]; f0(11,10)=[11,1]; f1(9,10)=[9,0]; f1(11,10)=[11,1]; code=0
+```
+
+### 12.3 Fault replacement F(C)
+
+F(C): the instruction is replaced by `call void @__bennett_nz_fault(i64 C)` followed by
+`unreachable`; the instructions after it in its block are deleted, and the block is removed from
+the incoming lists of the phi nodes of its former successors. `__bennett_nz_fault` is a primitive
+(§3.1): `bennett-runtimes` defines it for the native comparison build (record C and end the
+device entry with fault C); the map gives it the row `fault C` (§16.4); CC and R lower it by
+§11.5.
+
+### 12.4 The residual-poison validator
+
+The validator inspects the materialised device variants and rejects (`BD-E-RESIDUAL`) any of:
+
+| Id | Residue |
+|---|---|
+| V1 | a flag of N1 or N2 |
+| V2 | instruction metadata other than `!dbg` and `!bennett.rstep` |
+| V3 | an attribute N4 removes, on a device function, its parameters or return, or a call site in a device function |
+| V4 | a call of an intrinsic that N0, N5, N6, N10, N11, N16, N21, N24, N26, N27, N32 or N33 removes, or of `llvm.abs`/`ctlz`/`cttz` with a `true` flag |
+| V5 | an `undef` or `poison` constant in a device function or in the initialiser of a global a device function references |
+| V6 | `freeze`, `fence`, `atomicrmw`, `cmpxchg`, an atomic or volatile load or store |
+| V7 | a shift whose amount is not a constant < W, unless the shift's only use is as the false operand of a `select` whose true operand is 0 and whose condition is `icmp uge` of the same amount and the constant W |
+| V8 | `extractelement`/`insertelement` with a non-constant index outside the N15 pattern (only before N21; after N21 no vector remains, V13) |
+| V9 | a floating-point instruction other than `fneg`, `bitcast`, `load`, `store`, `select` and `phi` of a floating-point value, or a call of a floating-point intrinsic other than `llvm.fabs` and `llvm.copysign` (after N32/N33; 0.1's V9 is inverted) |
+| V10 | an operand or result of type `half`, `bfloat`, `x86_fp80`, `fp128` or `ppc_fp128` other than in the bit-exact forms retained by §13.1 (`fneg`, `llvm.fabs`, `llvm.copysign`, `bitcast`, `load`, `store`, `select`, `phi`) or value transport through function parameters, call arguments/results, `ret`, `insertvalue` and `extractvalue` (§16.2–§16.4); calls remain subject to V4, V9 and V12 (after N32/N33) |
+| V11 | an `alloca` (after N24; replaces 0.1's V11) |
+| V12 | in an L or R variant, a call of a function without a definition other than a primitive, a runtime entry point defined in the link, or a trapped call already replaced by F(8) |
+| V13 | a value of vector type |
+| V14 | a value of type iN with N > 128 |
+| V15 | `va_start`, `va_end`, `va_copy`, `va_arg`, `invoke`, `landingpad`, `resume`, `cleanuppad`, `catchpad`, `catchswitch`, `cleanupret`, `catchret`, a call of `setjmp`, `_setjmp`, `sigsetjmp` or `__sigsetjmp` |
+| V16 | inline `asm` or a call of a target intrinsic (`llvm.<target>.*`) |
+
+The plugin's validator and `bennett-conformance`'s are implemented independently (NS §3.2); a
+disagreement on any input is a conformance failure of one of them.
+
+
+Checked validator boundary pairs. Each positive is materialised IR accepted by the
+validator, and each negative retains the named forbidden construct (V8 also has V13).
+These test validation, not producer acceptance or executable result delivery.
+
+**V2.** Only the permitted R charge metadata remains; the return is not hidden by a poison assumption.
+
+```llvm example=validator-v2-clean verdict=accept mode=validate
+define i8 @f() {
+  ret i8 7, !bennett.rstep !0
+}
+!0 = !{}
+```
+
+```llvm example=validator-v2-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(ptr %p) {
+  %v = load i8, ptr %p, !range !0
+  ret i8 %v
+}
+!0 = !{i8 0, i8 8}
+```
+
+**V3.** The pointer parameter and its load carry no N4 attributes.
+
+```llvm example=validator-v3-clean verdict=accept mode=validate
+define i8 @f(ptr %p) {
+  %v = load i8, ptr %p
+  ret i8 %v
+}
+```
+
+```llvm example=validator-v3-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(ptr nonnull %p) {
+  %v = load i8, ptr %p
+  ret i8 %v
+}
+```
+
+**V4.** Both true-flag and false-flag residual count intrinsics are rejected. The materialised runtime helper defines ctlz(0)=8.
+
+```llvm example=validator-v4-clean verdict=accept mode=validate
+define i8 @f(i8 %x) {
+  %v = call i8 @__bennett_rt_ctlz_i8(i8 %x, i1 false)
+  ret i8 %v
+}
+define i8 @__bennett_rt_ctlz_i8(i8 %x, i1 %flag) {
+entry:
+  br label %loop
+loop:
+  %n = phi i8 [0, %entry], [%next, %body]
+  %v = phi i8 [%x, %entry], [%shift, %body]
+  %end = icmp eq i8 %n, 8
+  %sign = icmp slt i8 %v, 0
+  %done = or i1 %end, %sign
+  br i1 %done, label %exit, label %body
+body:
+  %next = add i8 %n, 1
+  %shift = shl i8 %v, 1
+  br label %loop
+exit:
+  ret i8 %n
+}
+```
+
+```llvm example=validator-v4-residue verdict=reject:BD-E-RESIDUAL mode=validate
+declare i8 @llvm.ctlz.i8(i8, i1 immarg)
+define i8 @f(i8 %x) {
+  %v = call i8 @llvm.ctlz.i8(i8 %x, i1 true)
+  ret i8 %v
+}
+```
+
+```llvm example=validator-v4-false-residue verdict=reject:BD-E-RESIDUAL mode=validate
+declare i8 @llvm.ctlz.i8(i8, i1 immarg)
+define i8 @f(i8 %x) {
+entry:
+  %r = call i8 @llvm.ctlz.i8(i8 %x, i1 false)
+  ret i8 %r
+}
+```
+
+**V5.** The formerly undefined byte is an explicit zero; the negative still contains poison.
+
+```llvm example=validator-v5-clean verdict=accept mode=validate
+define i8 @f() {
+  %v = add i8 0, 1
+  ret i8 %v
+}
+```
+
+```llvm example=validator-v5-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f() {
+  %v = add i8 poison, 1
+  ret i8 %v
+}
+```
+
+**V6.** The access is plain, with no freeze, ordering or volatility.
+
+```llvm example=validator-v6-clean verdict=accept mode=validate
+define i8 @f(ptr %p) {
+  %v = load i8, ptr %p, align 1
+  ret i8 %v
+}
+```
+
+```llvm example=validator-v6-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(ptr %p) {
+  %v = load volatile i8, ptr %p, align 1
+  ret i8 %v
+}
+```
+
+**V7.** The shift has exactly one use: false arm of the matching uge/select-zero guard. At s=8, result is zero.
+
+```llvm example=validator-v7-clean verdict=accept mode=validate
+define i8 @f(i8 %x, i8 %s) {
+  %c = icmp uge i8 %s, 8
+  %v = shl i8 %x, %s
+  %r = select i1 %c, i8 0, i8 %v
+  ret i8 %r
+}
+```
+
+```llvm example=validator-v7-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(i8 %x, i8 %s) {
+  %v = shl i8 %x, %s
+  ret i8 %v
+}
+```
+
+**V8.** After N15/N21, dynamic extraction is a scalar select chain: i=0 gives 5, i=1 gives 9, all other indices give 0. No dynamic extract remains.
+
+```llvm example=validator-v8-clean verdict=accept mode=validate
+define i8 @f(i32 %i) {
+  %c0 = icmp eq i32 %i, 0
+  %v0 = select i1 %c0, i8 5, i8 0
+  %c1 = icmp eq i32 %i, 1
+  %r = select i1 %c1, i8 9, i8 %v0
+  ret i8 %r
+}
+```
+
+```llvm example=validator-v8-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(i32 %i) {
+  %v = extractelement <2 x i8> <i8 5, i8 9>, i32 %i
+  ret i8 %v
+}
+```
+
+**V9.** fneg double is the explicitly retained bit operation. fadd is arithmetic requiring N32.
+
+```llvm example=validator-v9-clean verdict=accept mode=validate
+define double @f(double %x) {
+  %v = fneg double %x
+  ret double %v
+}
+```
+
+```llvm example=validator-v9-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define double @f(double %x) {
+  %v = fadd double %x, 1.0
+  ret double %v
+}
+```
+
+**V10.** V10 must permit every bit-exact operation retained by §13.1 and every
+carrier transport admitted by §16, for all seven floating-point formats. For
+`half`, `fneg` maps carrier bits b to b xor 0x8000, preserving NaN payload and
+quiet/signaling bits; it is not arithmetic to rewrite or reject. The positive
+retains it between load and bitcast. The negative instead retains `fadd half`,
+which N32 must rewrite to `__bennett_sf_add_f16` on i16 carriers. The interface
+witness also retains `llvm.fabs`/`llvm.copysign` and transports a half value
+through a defined call, return and aggregate; none is a V10 residue.
+
+```llvm example=validator-v10-clean verdict=accept mode=validate
+define i16 @f(ptr %p) {
+  %v = load half, ptr %p
+  %n = fneg half %v
+  %r = bitcast half %n to i16
+  ret i16 %r
+}
+```
+
+```llvm example=validator-v10-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i16 @f(ptr %p) {
+  %v = load half, ptr %p
+  %n = fadd half %v, %v
+  %r = bitcast half %n to i16
+  ret i16 %r
+}
+```
+
+```llvm example=validator-v10-carriers verdict=accept mode=validate
+declare half @llvm.fabs.f16(half)
+declare half @llvm.copysign.f16(half, half)
+
+define internal half @identity(half %x) {
+  ret half %x
+}
+define half @f(half %x, half %sign) {
+  %a = call half @llvm.fabs.f16(half %x)
+  %c = call half @llvm.copysign.f16(half %a, half %sign)
+  %v = call half @identity(half %c)
+  %agg = insertvalue { half, i1 } zeroinitializer, half %v, 0
+  %r = extractvalue { half, i1 } %agg, 0
+  ret half %r
+}
+```
+
+**V11.** N24 backing is explicit: a defined helper supplies the frame address; there is no alloca.
+
+```llvm example=validator-v11-clean verdict=accept mode=validate
+@frame = internal global i8 0
+define internal ptr @frame_base() {
+  ret ptr @frame
+}
+define ptr @f() {
+  %p = call ptr @frame_base()
+  ret ptr %p
+}
+```
+
+```llvm example=validator-v11-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define ptr @f() {
+  %p = alloca i8
+  ret ptr %p
+}
+```
+
+**V12.** The call has a definition in this materialised L/R module and returns 7. The negative calls an unresolved nonprimitive callee.
+
+```llvm example=validator-v12-clean verdict=accept mode=validate
+define internal i8 @g() {
+  ret i8 7
+}
+define i8 @f() {
+  %v = call i8 @g()
+  ret i8 %v
+}
+```
+
+```llvm example=validator-v12-residue verdict=reject:BD-E-RESIDUAL mode=validate
+declare i8 @missing()
+define i8 @f() {
+  %v = call i8 @missing()
+  ret i8 %v
+}
+```
+
+**V13.** Two vector lanes are now scalar loads at offsets 0 and 1; their scalar sum is retained.
+
+```llvm example=validator-v13-clean verdict=accept mode=validate
+define i8 @f(ptr %p) {
+  %a = load i8, ptr %p
+  %q = getelementptr i8, ptr %p, i64 1
+  %b = load i8, ptr %q
+  %r = add i8 %a, %b
+  ret i8 %r
+}
+```
+
+```llvm example=validator-v13-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(ptr %p) {
+  %v = load <2 x i8>, ptr %p
+  %r = extractelement <2 x i8> %v, i32 0
+  ret i8 %r
+}
+```
+
+**V14.** An i129 load is represented by i64, i64 and one byte truncated to its one-bit top limb; no value exceeds 128 bits.
+
+```llvm example=validator-v14-clean verdict=accept mode=validate
+define i1 @f(ptr %p) {
+  %p1 = getelementptr i8, ptr %p, i64 8
+  %p2 = getelementptr i8, ptr %p, i64 16
+  %a = load i64, ptr %p, align 1
+  %b = load i64, ptr %p1, align 1
+  %c = load i8, ptr %p2, align 1
+  %r = trunc i8 %c to i1
+  ret i1 %r
+}
+```
+
+```llvm example=validator-v14-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i1 @f(ptr %p) {
+  %v = load i129, ptr %p, align 1
+  %r = trunc i129 %v to i1
+  ret i1 %r
+}
+```
+
+**V15.** EH has an explicit state test and ordinary branches, with no invoke/landingpad residue. Active=0 returns 7, otherwise 0.
+
+```llvm example=validator-v15-clean verdict=accept mode=validate
+define i8 @f(ptr %active) {
+entry:
+  %a = load i32, ptr %active
+  %c = icmp ne i32 %a, 0
+  br i1 %c, label %fault, label %ok
+fault:
+  ret i8 0
+ok:
+  ret i8 7
+}
+```
+
+```llvm example=validator-v15-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i8 @f(ptr %ap) {
+  %v = va_arg ptr %ap, i8
+  ret i8 %v
+}
+```
+
+**V16.** The asm result has been replaced by a defined deterministic shim; no target instruction remains.
+
+```llvm example=validator-v16-clean verdict=accept mode=validate
+define internal i64 @clock_value() {
+  ret i64 3
+}
+define i64 @f() {
+  %v = call i64 @clock_value()
+  ret i64 %v
+}
+```
+
+```llvm example=validator-v16-residue verdict=reject:BD-E-RESIDUAL mode=validate
+define i64 @f() {
+  %v = call i64 asm sideeffect "rdcycle $0", "=r"()
+  ret i64 %v
+}
+```
+
+### 12.5 Scalable vectors
+
+A scalable vector type `<vscale x L x T>` has L·V lanes, where V is the constant `vscale` of the
+link: the function attribute `vscale_range(V, V)` when every device function that uses scalable
+vectors carries it with equal bounds, else the driver option `--bennett-vscale=<V>` (default: the
+minimum of the `vscale_range` bounds, §24). The native comparison build is compiled for the same
+V (`-msve-vector-bits=128·V` or `-mrvv-vector-bits`). N10 replaces `llvm.vscale` by V and N21
+scalarises the L·V lanes. *(non-normative)* x86-64 has no scalable vectors; the rule exists so
+that AArch64 SVE and RISC-V V code is liftable.
+
+### 12.6 Vector scalarisation (N21)
+
+For a value `%v` of type `<L x T>`, lane k is the scalar `%nz.l<k>.v` (k = 0 … L − 1). Rules, in
+lane order k = 0, 1, …:
+
+- elementwise instructions (binary, bitwise, `icmp`, `fcmp`, casts, `select` with a vector or
+  scalar condition, unary `fneg`, `freeze`, calls of elementwise intrinsics): one scalar
+  instruction per lane, `%nz.l<k>.r = <op> T %nz.l<k>.a, %nz.l<k>.b`;
+- `bitcast` is elementwise only for equal lane geometries. Otherwise pack the source
+  bit string in datalayout order and resegment it into destination lanes or a scalar.
+  On supported little-endian targets lane 0 occupies the low bits. Zero-extend source
+  carriers to total width, shift by cumulative widths and OR in source-lane order;
+  extract by logical right shift and truncation in destination-lane order. Omit identity
+  casts and zero shifts; N22 legalises total widths above 128. Drop no source memory access.
+- Every vector load/store follows the vector's datalayout bit string: lane k
+  begins at bit k·bitwidth(T), with no scalar allocation padding between lanes.
+  `getelementptr T, ptr p, i64 k` followed by load/store T is permitted only
+  when T's allocation stride equals that lane spacing. Otherwise byte-sized
+  lanes use `getelementptr i8, ptr p, i64 (k·bitwidth(T)/8)`; sub-byte lanes
+  use packed-byte extraction/insertion. Replacement accesses stay within the
+  original vector storage range. At byte offset o, scalar alignment is
+  min(abi-align(T), gcd(original alignment,o)); gcd(a,0)=a. Masked accesses
+  touch only bytes containing active lanes and preserve inactive bits; padding
+  follows N22. This applies also to byte-multiple integer lanes such as i24,
+  not only packed i1. See [LangRef vector layout](https://llvm.org/docs/LangRef.html#vector-type)
+  and [load/store semantics](https://llvm.org/docs/LangRef.html#load-instruction);
+- `insertelement`, `extractelement` with constant in-range indices and `shufflevector` with valid indices: lane renaming; N15 has already removed constant out-of-range extraction/insertion. With a
+  non-constant index (after N15): a `select` chain over the L lanes in lane order,
+  using the same widened unsigned index and exact lane constants as N15. Constants
+  must never wrap to iK. Insertion may fuse the out-of-range unchanged-vector
+  select into per-lane equality selects: all equalities are false out of range.
+  LLVM admits an index of any integer width, independent of L
+  ([extractelement](https://llvm.org/docs/LangRef.html#extractelement-instruction),
+  [insertelement](https://llvm.org/docs/LangRef.html#insertelement-instruction));
+  LangRef out-of-range poison is totalised by N15, not by truncating L;
+- `llvm.vector.reduce.<op>(v)` with op ∈ {add, mul, and, or, xor, smax, smin, umax, umin, fadd,
+  fmul, fmax, fmin, fmaximum, fminimum}: a **left fold** in lane order: `%nz.f1.r = <op> lane0,
+  lane1`, `%nz.f<k>.r = <op> %nz.f<k−1>.r, lane k`, the last named `%r`; the ordered `fadd`/`fmul`
+  forms take the start value as the first operand. Exact for floating point once N2 has removed
+  `reassoc`;
+- Selector/reduction exceptions take precedence over the next bullet. For `vp.select`
+  and `vp.merge`, the condition selects true/false operands within evl; false is not
+  inactivity. Outside evl, merge preserves on_false, select's poison becomes N7 zero.
+  VP reductions fold the start with active lanes only in increasing lane order;
+  inactive lanes contribute no zero (unless zero is the reduction identity).
+- `llvm.vp.*` (vector-predicated) and `llvm.masked.*`: lane k is active iff k < evl and mask[k];
+  an active lane executes the scalar operation, an inactive lane yields the passthrough operand
+  (masked loads) or 0 (N7: LangRef's poison), and a masked or predicated store, scatter or
+  compress-store writes only active lanes, each under a conditional branch (blocks
+  `nz.ml<k>.<r>`); gathers and scatters use the lane's pointer;
+- `llvm.stepvector` lane k is k; `llvm.get.active.lane.mask(base, n)` lane k is base + k < n
+  (unsigned); `llvm.experimental.get.vector.length(cnt, vf, scalable)` is umin(cnt, vf·(V if
+  scalable else 1)); `cttz.elts` is the index of the first nonzero lane (L if none, or the
+  poison-free 0 of N7 when the flag says zero is poison); `loop.dependence.raw/war.mask(a, b,
+  size)` lane k follows LangRef's definition;
+- `vector.extract`, `vector.insert`, `vector.reverse`, `vector.splice*`, `vector.interleave<n>`,
+  `vector.deinterleave<n>`, `experimental.vector.compress`, `experimental.vector.histogram.*`,
+  `experimental.vector.match`, `experimental.vector.extract.last.active`,
+  `vector.partial.reduce.*`: lane permutations and folds by their LangRef definitions;
+- a vector parameter or result of an internal device function becomes L scalar parameters or an
+  aggregate of L scalars in lane order; a vector that crosses an external boundary (a device
+  entry's signature, a call of a function without a definition) is rebuilt with `insertelement`
+  at that boundary, which only H code and the native build see.
+
+**`n-bitcast-lanes` (round-2).**
+
+```llvm normalise-in=n-bitcast-lanes
+define i16 @f(ptr %p) {
+entry:
+  %v = load <2 x i32>, ptr %p, align 1
+  %b = bitcast <2 x i32> %v to <4 x i16>
+  %r = extractelement <4 x i16> %b, i32 1
+  ret i16 %r
+}
+```
+
+```llvm normalise-out=n-bitcast-lanes
+define i16 @f(ptr %p) {
+entry:
+  %nz.p0.v = getelementptr i32, ptr %p, i64 0
+  %nz.l0.v = load i32, ptr %nz.p0.v, align 1
+  %nz.p1.v = getelementptr i32, ptr %p, i64 1
+  %nz.l1.v = load i32, ptr %nz.p1.v, align 1
+  %nz.pack0.b = zext i32 %nz.l0.v to i64
+  %nz.pack1.b = zext i32 %nz.l1.v to i64
+  %nz.ps1.b = shl i64 %nz.pack1.b, 32
+  %nz.or1.b = or i64 %nz.pack0.b, %nz.ps1.b
+  %nz.l0.b = trunc i64 %nz.or1.b to i16
+  %nz.bs1.b = lshr i64 %nz.or1.b, 16
+  %nz.l1.b = trunc i64 %nz.bs1.b to i16
+  %nz.bs2.b = lshr i64 %nz.or1.b, 32
+  %nz.l2.b = trunc i64 %nz.bs2.b to i16
+  %nz.bs3.b = lshr i64 %nz.or1.b, 48
+  %nz.l3.b = trunc i64 %nz.bs3.b to i16
+  ret i16 %nz.l1.b
+}
+```
+
+```text native=n-bitcast-lanes
+bytes=4433221188776655 -> f=4386
+```
+
+**`n-bitcast-scalar` (round-2).**
+
+```llvm normalise-in=n-bitcast-scalar
+define i32 @f() {
+entry:
+  %v = bitcast <2 x i16> <i16 1, i16 2> to i32
+  %b = bitcast i32 %v to <2 x i16>
+  %r = extractelement <2 x i16> %b, i32 1
+  %z = zext i16 %r to i32
+  ret i32 %z
+}
+```
+
+```llvm normalise-out=n-bitcast-scalar
+define i32 @f() {
+entry:
+  %nz.pack0.v = zext i16 1 to i32
+  %nz.pack1.v = zext i16 2 to i32
+  %nz.ps1.v = shl i32 %nz.pack1.v, 16
+  %nz.or1.v = or i32 %nz.pack0.v, %nz.ps1.v
+  %nz.l0.b = trunc i32 %nz.or1.v to i16
+  %nz.bs1.b = lshr i32 %nz.or1.v, 16
+  %nz.l1.b = trunc i32 %nz.bs1.b to i16
+  %z = zext i16 %nz.l1.b to i32
+  ret i32 %z
+}
+```
+
+```text native=n-bitcast-scalar
+f=2
+```
+
+**`n-vp-merge` (round-2).**
+
+```llvm normalise-in=n-vp-merge
+declare <2 x i32> @llvm.vp.merge.v2i32(<2 x i1>, <2 x i32>, <2 x i32>, i32)
+define i32 @f() {
+entry:
+  %v = call <2 x i32> @llvm.vp.merge.v2i32(<2 x i1> <i1 true, i1 false>, <2 x i32> <i32 5, i32 6>, <2 x i32> <i32 7, i32 9>, i32 2)
+  %r = extractelement <2 x i32> %v, i32 1
+  ret i32 %r
+}
+```
+
+```llvm normalise-out=n-vp-merge
+declare <2 x i32> @llvm.vp.merge.v2i32(<2 x i1>, <2 x i32>, <2 x i32>, i32)
+define i32 @f() {
+entry:
+  %nz.active0.v = icmp ult i32 0, 2
+  %nz.choice0.v = select i1 true, i32 5, i32 7
+  %nz.l0.v = select i1 %nz.active0.v, i32 %nz.choice0.v, i32 7
+  %nz.active1.v = icmp ult i32 1, 2
+  %nz.choice1.v = select i1 false, i32 6, i32 9
+  %nz.l1.v = select i1 %nz.active1.v, i32 %nz.choice1.v, i32 9
+  ret i32 %nz.l1.v
+}
+```
+
+```text native=n-vp-merge
+f=9
+```
+
+**`n-vp-select` (round-2).**
+
+```llvm normalise-in=n-vp-select
+declare <2 x i32> @llvm.vp.select.v2i32(<2 x i1>, <2 x i32>, <2 x i32>, i32)
+define i32 @f() {
+entry:
+  %v = call <2 x i32> @llvm.vp.select.v2i32(<2 x i1> <i1 true, i1 false>, <2 x i32> <i32 5, i32 6>, <2 x i32> <i32 7, i32 9>, i32 2)
+  %r = extractelement <2 x i32> %v, i32 1
+  ret i32 %r
+}
+```
+
+```llvm normalise-out=n-vp-select
+declare <2 x i32> @llvm.vp.select.v2i32(<2 x i1>, <2 x i32>, <2 x i32>, i32)
+define i32 @f() {
+entry:
+  %nz.active0.v = icmp ult i32 0, 2
+  %nz.choice0.v = select i1 true, i32 5, i32 7
+  %nz.l0.v = select i1 %nz.active0.v, i32 %nz.choice0.v, i32 0
+  %nz.active1.v = icmp ult i32 1, 2
+  %nz.choice1.v = select i1 false, i32 6, i32 9
+  %nz.l1.v = select i1 %nz.active1.v, i32 %nz.choice1.v, i32 0
+  ret i32 %nz.l1.v
+}
+```
+
+```text native=n-vp-select
+f=9
+```
+
+**`n-vp-product` (round-2).**
+
+```llvm normalise-in=n-vp-product
+declare i32 @llvm.vp.reduce.mul.v2i32(i32, <2 x i32>, <2 x i1>, i32)
+define i32 @f() {
+entry:
+  %r = call i32 @llvm.vp.reduce.mul.v2i32(i32 3, <2 x i32> <i32 5, i32 7>, <2 x i1> <i1 true, i1 false>, i32 2)
+  ret i32 %r
+}
+```
+
+```llvm normalise-out=n-vp-product
+declare i32 @llvm.vp.reduce.mul.v2i32(i32, <2 x i32>, <2 x i1>, i32)
+define i32 @f() {
+entry:
+  %nz.active0.r = icmp ult i32 0, 2
+  %nz.mask0.r = and i1 %nz.active0.r, true
+  %nz.fold0.r = mul i32 3, 5
+  %nz.acc0.r = select i1 %nz.mask0.r, i32 %nz.fold0.r, i32 3
+  %nz.active1.r = icmp ult i32 1, 2
+  %nz.mask1.r = and i1 %nz.active1.r, false
+  %nz.fold1.r = mul i32 %nz.acc0.r, 7
+  %r = select i1 %nz.mask1.r, i32 %nz.fold1.r, i32 %nz.acc0.r
+  ret i32 %r
+}
+```
+
+```text native=n-vp-product
+f=15
+```
+
+**Padded scalar, contiguous vector.** Scalar i24 allocation stride is four under
+this datalayout, but vector lane spacing is 24 bits. Lane 1 reads bytes 04 05 06,
+so 4+5·256+6·65536=394500. Store writes six contiguous bytes and leaves the
+following sentinel bytes untouched. These ordinary accesses stay within six bytes.
+
+```llvm normalise-in=n-vector-i24
+target datalayout = "e-p:64:64-i64:64-i24:32-n8:16:32:64-S128"
+define i32 @f(ptr %p) {
+entry:
+  %v = load <2 x i24>, ptr %p, align 1
+  %r = extractelement <2 x i24> %v, i32 1
+  %z = zext i24 %r to i32
+  ret i32 %z
+}
+define void @s(ptr %p) {
+entry:
+  store <2 x i24> <i24 197121, i24 394500>, ptr %p, align 1
+  ret void
+}
+```
+
+```llvm normalise-out=n-vector-i24
+target datalayout = "e-p:64:64-i64:64-i24:32-n8:16:32:64-S128"
+define i32 @f(ptr %p) {
+entry:
+  %nz.p0.v = getelementptr i8, ptr %p, i64 0
+  %nz.l0.v = load i24, ptr %nz.p0.v, align 1
+  %nz.p1.v = getelementptr i8, ptr %p, i64 3
+  %nz.l1.v = load i24, ptr %nz.p1.v, align 1
+  %z = zext i24 %nz.l1.v to i32
+  ret i32 %z
+}
+define void @s(ptr %p) {
+entry:
+  %nz.p0.s.0 = getelementptr i8, ptr %p, i64 0
+  store i24 197121, ptr %nz.p0.s.0, align 1
+  %nz.p1.s.0 = getelementptr i8, ptr %p, i64 3
+  store i24 394500, ptr %nz.p1.s.0, align 1
+  ret void
+}
+```
+
+```text native=n-vector-i24
+bytes=0102030405060708 -> f=394500; code=0
+store=[1,2,3,4,5,6,170,170]; code=0
+```
+
+### 12.7 Wide integers (N22)
+
+Let w_k = min(64, N − 64k). Limbs a_k, b_k (k = 0 … L − 1) have type i<w_k>.
+Every limb operation, constant and incoming carry uses w_k, with an identity conversion
+when widths agree (in particular an i1 carry into an i1 top limb needs no zext):
+
+- `add`: `%nz.m0.r = add a_0, b_0`, `%nz.c0.r = icmp ult %nz.m0.r, a_0`; for k ≥ 1:
+  `%nz.t<k>.r = add a_k, b_k`, `%nz.z<k>.r = zext i1 %nz.c<k−1>.r to i<w_k>`, `%nz.m<k>.r = add
+  %nz.t<k>.r, %nz.z<k>.r` and, for k < L − 1, `%nz.u<k>.r = icmp ult %nz.t<k>.r, a_k`,
+  `%nz.v<k>.r = icmp ult %nz.m<k>.r, %nz.t<k>.r`, `%nz.c<k>.r = or i1 %nz.u<k>.r, %nz.v<k>.r`;
+- `sub`: let beta_-1=0. At limb k compute t_k=a_k−b_k modulo 2^w_k,
+  z_k=zero-extended beta_(k−1) (identity if w_k=1), and m_k=t_k−z_k modulo
+  2^w_k. When another limb follows, beta_k=(icmp ult a_k,b_k) OR
+  (icmp ult t_k,z_k). Discard the final outgoing borrow. Canonical names use
+  `%nz.m0.r = sub a_0,b_0`, `%nz.c0.r = icmp ult a_0,b_0`; thereafter
+  `%nz.t<k>.r`, `%nz.z<k>.r`, `%nz.m<k>.r`, `%nz.u<k>.r`, `%nz.v<k>.r`,
+  `%nz.c<k>.r` in that order. In particular v_k tests t_k<z_k, never m_k<t_k.
+  This derives wrapping subtraction from [LangRef sub](https://llvm.org/docs/LangRef.html#sub-instruction)
+  and [usub.with.overflow](https://llvm.org/docs/LangRef.html#llvm-usub-with-overflow-intrinsics);
+- `and`, `or`, `xor`: per limb; `icmp`: lexicographic from the top limb (signed on the top
+  limb only for signed predicates); `select`, `phi`: per limb; `zext`, `sext`, `trunc`: limb
+  copies; `sext` extracts the sign at bit w_top − 1, sign-extends the old partial top
+  limb when widening it, and fills each new limb with that sign at its own width;
+- `mul`, `udiv`, `sdiv`, `urem`, `srem`, `shl`, `lshr`, `ashr`: calls of the runtimes entry points
+  `__bennett_rt_i<N>_<op>(ptr r, ptr a, ptr b)` on shadow-stack slots holding the limbs (division
+  by zero calls `__bennett_nz_fault(5)`, signed MIN / −1 `__bennett_nz_fault(6)`, shifts by ≥ N
+  give 0 as N14);
+- loads and stores: per limb at offsets 8k, little-endian targets (`%nz.p<k>.r` / `%nz.q<k>.r`
+  for the addresses);
+- a wide parameter or result of an internal device function becomes L limb parameters or an
+  aggregate of limbs.
+
+**Pointer-index width witness.** With I=32 and pw=64, index 2^32 becomes
+zero. Adding one to low 0xffffffff wraps to zero without carrying into the
+high pointer bits. These materialised pairs are unchanged by normalisation;
+the state witness executes their §16.4 mapped objects, and native executes LLVM.
+
+```llvm normalise-in=n-gep-index
+target datalayout = "e-p:64:64:64:32"
+define i64 @f(i64 %i) {
+entry:
+  %p = inttoptr i64 4294967296 to ptr
+  %q = getelementptr i8, ptr %p, i64 %i
+  %r = ptrtoint ptr %q to i64
+  ret i64 %r
+}
+define i64 @g(i64 %base, i64 %i) {
+entry:
+  %p = inttoptr i64 %base to ptr
+  %q = getelementptr i8, ptr %p, i64 %i
+  %r = ptrtoint ptr %q to i64
+  ret i64 %r
+}
+define i64 @h() {
+entry:
+  ret i64 ptrtoint (ptr getelementptr (i8, ptr inttoptr (i64 8589934591 to ptr), i64 1) to i64)
+}
+```
+
+```llvm normalise-out=n-gep-index
+target datalayout = "e-p:64:64:64:32"
+define i64 @f(i64 %i) {
+entry:
+  %p = inttoptr i64 4294967296 to ptr
+  %q = getelementptr i8, ptr %p, i64 %i
+  %r = ptrtoint ptr %q to i64
+  ret i64 %r
+}
+define i64 @g(i64 %base, i64 %i) {
+entry:
+  %p = inttoptr i64 %base to ptr
+  %q = getelementptr i8, ptr %p, i64 %i
+  %r = ptrtoint ptr %q to i64
+  ret i64 %r
+}
+define i64 @h() {
+entry:
+  ret i64 ptrtoint (ptr getelementptr (i8, ptr inttoptr (i64 8589934591 to ptr), i64 1) to i64)
+}
+```
+
+```text native=n-gep-index
+f(4294967296)=4294967296; code=0
+g(4294967296,4294967296)=4294967296; code=0
+```
+
+```text state=n-gep-index at=0
+{"f":[[4294967296,4294967296,0],[-1,8589934591,0]],"g":[[8589934591,1,4294967296,0],[4294967296,4294967296,4294967296,0]],"h":[[4294967296,0]]}
+```
+
+### 12.8 Integer intrinsics (N27)
+
+At W>128, the arithmetic expansions below (smax/smin/umax/umin, abs,
+scmp/ucmp, .with.overflow and .sat families) are emitted at width W and
+legalised by the repeated N22 (§12.1): carries/borrows, lexicographic compares,
+and per-limb select. Aggregate expansion results carry the limb tuple plus the
+flag; insertvalue/extractvalue transport these fields without a residual wide
+aggregate. Unsigned add overflow is the outgoing carry of the top limb; unsigned
+sub overflow is its outgoing borrow (retain it for the flag even though ordinary
+wrapping add/sub discards it). Signed overflow tests signs at the true top bit.
+Runtime rows bswap, bitreverse, ctpop, ctlz, cttz, fshl, fshr, sshl.sat,
+ushl.sat, smul/umul.fix[.sat], sdiv/udiv.fix[.sat], pdep, pext and clmul use
+`void @__bennett_rt_i<W>_<name>(ptr dst, ptr a[, ptr b, ptr c][, scalar flags])`
+instead of a wide call result/parameter. Each wide argument is a limb slot;
+scalar flags retain their declared types, in source order. Counts ctpop/ctlz/cttz
+write a full W-bit result slot. Slots use §13.1's push/store/call/load/pop order
+(destination first, then wide source operands in order); runtime fault rows are
+unchanged. These are the same limb-slot conventions as wide mul/div in §12.7.
+
+| Intrinsic | Expansion |
+|---|---|
+| `smax`, `smin`, `umax`, `umin` (a, b) | `%nz.c.r = icmp sgt/slt/ugt/ult a, b`; `%r = select i1 %nz.c.r, a, b` |
+| `abs(a, false)` | `%nz.c.r = icmp slt a, 0`; `%nz.n.r = sub 0, a`; `%r = select i1 %nz.c.r, %nz.n.r, a` |
+| `scmp`, `ucmp` (a, b) → iM | `%nz.g.r = icmp sgt/ugt a, b`; `%nz.l.r = icmp slt/ult a, b`; `%nz.z.r = zext i1 %nz.g.r to iM`; `%nz.s.r = sext i1 %nz.l.r to iM`; `%r = or iM %nz.z.r, %nz.s.r` |
+| `uadd/usub.with.overflow` (a, b) | `%nz.s.r = add/sub a, b`; `%nz.c.r = icmp ult %nz.s.r, a` (add) or `icmp ult a, b` (sub); `%nz.a.r = insertvalue { T, i1 } zeroinitializer, T %nz.s.r, 0`; `%r = insertvalue { T, i1 } %nz.a.r, i1 %nz.c.r, 1` |
+| `sadd/ssub.with.overflow` | `%nz.s.r = add/sub a, b`; `%nz.x.r = xor a, %nz.s.r`; `%nz.y.r = xor b, %nz.s.r` (add) or `xor a, b` (sub); `%nz.w.r = and %nz.x.r, %nz.y.r`; `%nz.c.r = icmp slt %nz.w.r, 0` (overflow iff the result's sign differs from a's while the operands' signs agree (add) or differ (sub)); then the two `insertvalue`s |
+| `umul/smul.with.overflow` on iW, W ≤ 64 | the product at width 2W (`zext`/`sext`, `mul`, `trunc`); overflow iff the high half differs from 0 (unsigned) or from the sign extension of the low half (signed); W > 64: `__bennett_rt_<name>_i<W>` |
+| `uadd/usub/sadd/ssub.sat` | the `.with.overflow` expansion and a `select` of the saturated bound (unsigned: all ones / 0; signed: MAX if the operand a is non-negative, else MIN) |
+| `ptrmask(p, m)` | `%nz.i.r = ptrtoint p to iW`; `%nz.a.r = and iW %nz.i.r, m`; `%r = inttoptr iW %nz.a.r to ptr` |
+| `load.relative(p, off)` | `%nz.p.r = getelementptr i8, ptr p, off`; `%nz.o.r = load i32, ptr %nz.p.r`; `%nz.e.r = sext i32 %nz.o.r to i64`; `%r = getelementptr i8, ptr p, i64 %nz.e.r` |
+| `bswap`, `bitreverse`, `ctpop`, `ctlz`, `cttz`, `fshl`, `fshr`, `sshl.sat`, `ushl.sat`, `smul.fix`, `umul.fix`, `smul.fix.sat`, `umul.fix.sat`, `sdiv.fix`, `udiv.fix`, `sdiv.fix.sat`, `udiv.fix.sat`, `pdep`, `pext`, `clmul` | `%r = call iW @__bennett_rt_<name>_i<W>(…)` with the same operands (`<name>` with `.` replaced by `_`), defined by `bennett-runtimes` with the LangRef semantics (division by zero in the `.fix` forms: `__bennett_nz_fault(5)`) |
+| `read_register`, `read_volatile_register`, `write_register`, `write_volatile_register` (named register) | a load or store of the runtimes global `__bennett_rt_reg_<name>` (the platform register file, §20.1); the name `sp` (and its target spellings) reads the shadow-stack pointer (§17.3) |
+| `thread.pointer` | the address of the runtimes global `__bennett_rt_tls` (one thread) |
+| `stackguard`, `stackprotector(g, slot)` | a load of the runtimes global `__stack_chk_guard`; a store of g into slot |
+| `set.loop.iterations(n)`, `start.loop.iterations(n)`, `test.set.loop.iterations(n)`, `test.start.loop.iterations(n)`, `loop.decrement(k)`, `loop.decrement.reg(c, k)` (hardware loops; only the code generator's HardwareLoops pass emits them) | the counter in a shadow-frame slot of the function: `set`/`start` store n (`start` also returns n); the `test` forms also return n ≠ 0; `loop.decrement(k)` stores counter − k and returns counter − k ≠ 0; `loop.decrement.reg(c, k)` returns c − k |
+| `preserve.array.access.index`, `preserve.struct.access.index`, `preserve.union.access.index`, `preserve.static.offset` (BPF CO-RE) | the `getelementptr` they describe (the union form and `preserve.static.offset` return their pointer operand) |
+| `ptrauth.resign.load.relative(p, k1, d1, k2, d2, add)` (i64 values) | p + sext(the i32 loaded at p + add), as `load.relative`, with signing and authentication the identity of N5 |
+| `ptrauth.blend(a, d)` | `(a & 0xFFFFFFFFFFFF) | (d << 48)` in i64 |
+| `ptrauth.sign.generic(v, d)` | `0` |
+| `objc.*` | `llvm.objc.<name>` becomes a call of the Objective-C runtime function `objc_<name>` with the same operands (resolved by §4.5); `objc.clang.arc.use`, `objc.clang.arc.noop.use` and `objc.arc.annotation.*` are deleted |
+| `experimental.gc.statepoint(id, n, f, args…)` | a plain call `f(args…)`; `gc.result` → its result; `gc.relocate(token, base, derived)` → the derived pointer of the statepoint's argument list (a non-moving collector); `gc.get.pointer.base` and `gc.get.pointer.offset` are resolved by the major's LLVM base-pointer analysis before erasing statepoints, preserving the actual allocation base and byte offset of derived pointers (explicit base provenance is carried through phis/selects where needed); `gcroot` deleted; `gcread(o, p)` → `load ptr, ptr p`; `gcwrite(v, o, p)` → `store ptr v, ptr p` |
+| `experimental.patchpoint*(id, n, target, nargs, args…)` | an indirect call of target with the first nargs arguments (§14.2); a null target: nothing |
+| `experimental.deoptimize(args…)` | a call of the runtimes function `__llvm_deoptimize` with the arguments (resolved by §4.5) and `ret` of its result |
+| `init.trampoline`, `adjust.trampoline` | §14.2 (trampolines) |
+| `eh.typeid.for`, `eh.exceptionpointer`, `eh.exceptioncode`, `eh.return.*`, `eh.sjlj.*` | §14.4, §14.5 |
+| `callbr.landingpad` | §15.2 |
+
+
+**Wide conversion and intrinsic witnesses.** Limb [0,0,1] is 2^128, whose
+binary64 exponent is 1151 and fraction zero: carrier 0x47f0000000000000.
+The source conversion probes are folded with LLVM before native code generation
+(the x86 backend lacks direct i192 conversion libcalls); the materialised limb
+output executes dynamically. Both paths run with clang 18/23.
+Truncating −2.5 toward zero gives −2 (all upper limbs ones); positive 1e300
+saturates to 2^191−1. In addition, [all-ones,0,0]+[1,0,0] carries into
+limb 1 but not beyond limb 2, whereas all-ones×3 plus one wraps to zero with
+overflow 1. Population count of [all-ones,1,0] is 64+1=65.
+
+```llvm normalise-in=n-fpconv-wide
+define void @to_double(ptr %p, ptr %q) {
+  %a = load i192, ptr %p, align 8
+  %r = sitofp i192 %a to double
+  store double %r, ptr %q, align 8
+  ret void
+}
+define void @from_double(double %a, ptr %q) {
+  %r = fptosi double %a to i192
+  store i192 %r, ptr %q, align 8
+  ret void
+}
+declare i192 @llvm.fptosi.sat.i192.f64(double)
+define void @sat_double(double %a, ptr %q) {
+  %r = call i192 @llvm.fptosi.sat.i192.f64(double %a)
+  store i192 %r, ptr %q, align 8
+  ret void
+}
+```
+
+```llvm normalise-out=n-fpconv-wide
+define void @to_double(ptr %p, ptr %q) {
+  %nz.p0.a = getelementptr i64, ptr %p, i64 0
+  %nz.m0.a = load i64, ptr %nz.p0.a, align 8
+  %nz.p1.a = getelementptr i64, ptr %p, i64 1
+  %nz.m1.a = load i64, ptr %nz.p1.a, align 8
+  %nz.p2.a = getelementptr i64, ptr %p, i64 2
+  %nz.m2.a = load i64, ptr %nz.p2.a, align 8
+  %nz.s.r = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %nz.s0.r = getelementptr i64, ptr %nz.s.r, i64 0
+  store i64 %nz.m0.a, ptr %nz.s0.r, align 8
+  %nz.s1.r = getelementptr i64, ptr %nz.s.r, i64 1
+  store i64 %nz.m1.a, ptr %nz.s1.r, align 8
+  %nz.s2.r = getelementptr i64, ptr %nz.s.r, i64 2
+  store i64 %nz.m2.a, ptr %nz.s2.r, align 8
+  %nz.i.r = call i64 @__bennett_sf_sitofp_f64_wide(ptr %nz.s.r, i32 192)
+  call void @__bennett_rt_ss_pop(ptr %nz.s.r)
+  %r = bitcast i64 %nz.i.r to double
+  store double %r, ptr %q, align 8
+  ret void
+}
+define void @from_double(double %a, ptr %q) {
+  %nz.0.r = bitcast double %a to i64
+  %nz.d.r = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  call void @__bennett_sf_fptosi_f64_wide(ptr %nz.d.r, i64 %nz.0.r, i32 192)
+  %nz.rp0.r = getelementptr i64, ptr %nz.d.r, i64 0
+  %nz.rm0.r = load i64, ptr %nz.rp0.r, align 8
+  %nz.rp1.r = getelementptr i64, ptr %nz.d.r, i64 1
+  %nz.rm1.r = load i64, ptr %nz.rp1.r, align 8
+  %nz.rp2.r = getelementptr i64, ptr %nz.d.r, i64 2
+  %nz.rm2.r = load i64, ptr %nz.rp2.r, align 8
+  call void @__bennett_rt_ss_pop(ptr %nz.d.r)
+  %nz.q0.from_double.0 = getelementptr i64, ptr %q, i64 0
+  store i64 %nz.rm0.r, ptr %nz.q0.from_double.0, align 8
+  %nz.q1.from_double.0 = getelementptr i64, ptr %q, i64 1
+  store i64 %nz.rm1.r, ptr %nz.q1.from_double.0, align 8
+  %nz.q2.from_double.0 = getelementptr i64, ptr %q, i64 2
+  store i64 %nz.rm2.r, ptr %nz.q2.from_double.0, align 8
+  ret void
+}
+declare i192 @llvm.fptosi.sat.i192.f64(double)
+define void @sat_double(double %a, ptr %q) {
+  %nz.0.r = bitcast double %a to i64
+  %nz.d.r = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  call void @__bennett_sf_fptosi_f64_wide(ptr %nz.d.r, i64 %nz.0.r, i32 192)
+  %nz.rp0.r = getelementptr i64, ptr %nz.d.r, i64 0
+  %nz.rm0.r = load i64, ptr %nz.rp0.r, align 8
+  %nz.rp1.r = getelementptr i64, ptr %nz.d.r, i64 1
+  %nz.rm1.r = load i64, ptr %nz.rp1.r, align 8
+  %nz.rp2.r = getelementptr i64, ptr %nz.d.r, i64 2
+  %nz.rm2.r = load i64, ptr %nz.rp2.r, align 8
+  call void @__bennett_rt_ss_pop(ptr %nz.d.r)
+  %nz.q0.sat_double.0 = getelementptr i64, ptr %q, i64 0
+  store i64 %nz.rm0.r, ptr %nz.q0.sat_double.0, align 8
+  %nz.q1.sat_double.0 = getelementptr i64, ptr %q, i64 1
+  store i64 %nz.rm1.r, ptr %nz.q1.sat_double.0, align 8
+  %nz.q2.sat_double.0 = getelementptr i64, ptr %q, i64 2
+  store i64 %nz.rm2.r, ptr %nz.q2.sat_double.0, align 8
+  ret void
+}
+
+declare ptr @__bennett_rt_ss_push(i64, i64)
+
+declare void @__bennett_rt_ss_pop(ptr)
+
+declare i64 @__bennett_sf_sitofp_f64_wide(ptr, i32)
+
+declare void @__bennett_sf_fptosi_f64_wide(ptr, i64, i32)
+```
+
+```text native=n-fpconv-wide
+to_double([0,0,1])=5183643171103440896; from_double(-2.5)=[18446744073709551614,18446744073709551615,18446744073709551615]; sat_double(1e300)=[18446744073709551615,18446744073709551615,9223372036854775807]; code=0
+```
+
+```llvm normalise-in=n-wide-intrinsics
+declare { i192, i1 } @llvm.uadd.with.overflow.i192(i192, i192)
+declare i192 @llvm.ctpop.i192(i192)
+define i1 @add192(ptr %p, ptr %q, ptr %out) {
+  %a = load i192, ptr %p, align 8
+  %b = load i192, ptr %q, align 8
+  %pair = call { i192, i1 } @llvm.uadd.with.overflow.i192(i192 %a, i192 %b)
+  %v = extractvalue { i192, i1 } %pair, 0
+  %of = extractvalue { i192, i1 } %pair, 1
+  store i192 %v, ptr %out, align 8
+  ret i1 %of
+}
+define void @count192(ptr %p, ptr %out) {
+  %a = load i192, ptr %p, align 8
+  %v = call i192 @llvm.ctpop.i192(i192 %a)
+  store i192 %v, ptr %out, align 8
+  ret void
+}
+```
+
+```llvm normalise-out=n-wide-intrinsics
+declare { i192, i1 } @llvm.uadd.with.overflow.i192(i192, i192)
+declare i192 @llvm.ctpop.i192(i192)
+define i1 @add192(ptr %p, ptr %q, ptr %out) {
+  %nz.p0.a = getelementptr i64, ptr %p, i64 0
+  %nz.m0.a = load i64, ptr %nz.p0.a, align 8
+  %nz.p1.a = getelementptr i64, ptr %p, i64 1
+  %nz.m1.a = load i64, ptr %nz.p1.a, align 8
+  %nz.p2.a = getelementptr i64, ptr %p, i64 2
+  %nz.m2.a = load i64, ptr %nz.p2.a, align 8
+  %nz.p0.b = getelementptr i64, ptr %q, i64 0
+  %nz.m0.b = load i64, ptr %nz.p0.b, align 8
+  %nz.p1.b = getelementptr i64, ptr %q, i64 1
+  %nz.m1.b = load i64, ptr %nz.p1.b, align 8
+  %nz.p2.b = getelementptr i64, ptr %q, i64 2
+  %nz.m2.b = load i64, ptr %nz.p2.b, align 8
+  %nz.m0.nz.s.pair = add i64 %nz.m0.a, %nz.m0.b
+  %nz.c0.nz.s.pair = icmp ult i64 %nz.m0.nz.s.pair, %nz.m0.a
+  %nz.t1.nz.s.pair = add i64 %nz.m1.a, %nz.m1.b
+  %nz.z1.nz.s.pair = zext i1 %nz.c0.nz.s.pair to i64
+  %nz.m1.nz.s.pair = add i64 %nz.t1.nz.s.pair, %nz.z1.nz.s.pair
+  %nz.u1.nz.s.pair = icmp ult i64 %nz.t1.nz.s.pair, %nz.m1.a
+  %nz.v1.nz.s.pair = icmp ult i64 %nz.m1.nz.s.pair, %nz.t1.nz.s.pair
+  %nz.c1.nz.s.pair = or i1 %nz.u1.nz.s.pair, %nz.v1.nz.s.pair
+  %nz.t2.nz.s.pair = add i64 %nz.m2.a, %nz.m2.b
+  %nz.z2.nz.s.pair = zext i1 %nz.c1.nz.s.pair to i64
+  %nz.m2.nz.s.pair = add i64 %nz.t2.nz.s.pair, %nz.z2.nz.s.pair
+  %nz.eq0.nz.c.pair = icmp eq i64 %nz.m0.nz.s.pair, %nz.m0.a
+  %nz.cmp0.nz.c.pair = icmp ult i64 %nz.m0.nz.s.pair, %nz.m0.a
+  %nz.c0.nz.c.pair = select i1 %nz.eq0.nz.c.pair, i1 false, i1 %nz.cmp0.nz.c.pair
+  %nz.eq1.nz.c.pair = icmp eq i64 %nz.m1.nz.s.pair, %nz.m1.a
+  %nz.cmp1.nz.c.pair = icmp ult i64 %nz.m1.nz.s.pair, %nz.m1.a
+  %nz.c1.nz.c.pair = select i1 %nz.eq1.nz.c.pair, i1 %nz.c0.nz.c.pair, i1 %nz.cmp1.nz.c.pair
+  %nz.eq2.nz.c.pair = icmp eq i64 %nz.m2.nz.s.pair, %nz.m2.a
+  %nz.cmp2.nz.c.pair = icmp ult i64 %nz.m2.nz.s.pair, %nz.m2.a
+  %nz.c.pair = select i1 %nz.eq2.nz.c.pair, i1 %nz.c1.nz.c.pair, i1 %nz.cmp2.nz.c.pair
+  %nz.q0.add192.0 = getelementptr i64, ptr %out, i64 0
+  store i64 %nz.m0.nz.s.pair, ptr %nz.q0.add192.0, align 8
+  %nz.q1.add192.0 = getelementptr i64, ptr %out, i64 1
+  store i64 %nz.m1.nz.s.pair, ptr %nz.q1.add192.0, align 8
+  %nz.q2.add192.0 = getelementptr i64, ptr %out, i64 2
+  store i64 %nz.m2.nz.s.pair, ptr %nz.q2.add192.0, align 8
+  ret i1 %nz.c.pair
+}
+define void @count192(ptr %p, ptr %out) {
+  %nz.p0.a = getelementptr i64, ptr %p, i64 0
+  %nz.m0.a = load i64, ptr %nz.p0.a, align 8
+  %nz.p1.a = getelementptr i64, ptr %p, i64 1
+  %nz.m1.a = load i64, ptr %nz.p1.a, align 8
+  %nz.p2.a = getelementptr i64, ptr %p, i64 2
+  %nz.m2.a = load i64, ptr %nz.p2.a, align 8
+  %nz.d.v = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %nz.s0.v = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %nz.s00.v = getelementptr i64, ptr %nz.s0.v, i64 0
+  store i64 %nz.m0.a, ptr %nz.s00.v, align 8
+  %nz.s01.v = getelementptr i64, ptr %nz.s0.v, i64 1
+  store i64 %nz.m1.a, ptr %nz.s01.v, align 8
+  %nz.s02.v = getelementptr i64, ptr %nz.s0.v, i64 2
+  store i64 %nz.m2.a, ptr %nz.s02.v, align 8
+  call void @__bennett_rt_i192_ctpop(ptr %nz.d.v, ptr %nz.s0.v)
+  %nz.rp0.v = getelementptr i64, ptr %nz.d.v, i64 0
+  %nz.rm0.v = load i64, ptr %nz.rp0.v, align 8
+  %nz.rp1.v = getelementptr i64, ptr %nz.d.v, i64 1
+  %nz.rm1.v = load i64, ptr %nz.rp1.v, align 8
+  %nz.rp2.v = getelementptr i64, ptr %nz.d.v, i64 2
+  %nz.rm2.v = load i64, ptr %nz.rp2.v, align 8
+  call void @__bennett_rt_ss_pop(ptr %nz.s0.v)
+  call void @__bennett_rt_ss_pop(ptr %nz.d.v)
+  %nz.q0.count192.0 = getelementptr i64, ptr %out, i64 0
+  store i64 %nz.rm0.v, ptr %nz.q0.count192.0, align 8
+  %nz.q1.count192.0 = getelementptr i64, ptr %out, i64 1
+  store i64 %nz.rm1.v, ptr %nz.q1.count192.0, align 8
+  %nz.q2.count192.0 = getelementptr i64, ptr %out, i64 2
+  store i64 %nz.rm2.v, ptr %nz.q2.count192.0, align 8
+  ret void
+}
+
+declare i192 @__bennett_rt_ctpop_i192(i192)
+
+declare ptr @__bennett_rt_ss_push(i64, i64)
+
+declare void @__bennett_rt_ss_pop(ptr)
+
+declare void @__bennett_rt_i192_ctpop(ptr, ptr)
+```
+
+```text native=n-wide-intrinsics
+add([18446744073709551615,0,0],[1,0,0])=[0,1,0,0]; add([18446744073709551615,18446744073709551615,18446744073709551615],[1,0,0])=[0,0,0,1]; ctpop([18446744073709551615,1,0])=[65,0,0]; code=0
+```
+
+### 12.9 Examples
+
+The following vectors fix packed memory, partial limbs and GC provenance. The
+scalar GEP fast path of §12.6 exempts only lanes whose scalar allocation stride
+equals their vector bit spacing; n-vector-i24 above checks the padded-byte case. For byte 0x80,
+bit 7 = 1; 2^128−1 carries through two 64-bit limbs into the one-bit limb; −1 sign-fills.
+
+```text state=normalisation-boundaries at=0
+N21: memory[p]=80; load <8 x i1>, extract lane 7 -> 1; bytes read=[p,p+1); code=0
+N22: add i129 (2^128-1), 1 -> limbs=[0x0000000000000000,0x0000000000000000,0x1]
+N22: sext i129 -1 to i256 -> limbs=[0xffffffffffffffff,0xffffffffffffffff,0xffffffffffffffff,0xffffffffffffffff]
+N27: derived p=b+8 -> gc.get.pointer.base(p)=b; gc.get.pointer.offset(p)=8
+PT6: @cb = global ptr @f -> candidates(load @cb)={f}
+PT2: @tab=[@f,@g]; gep [1 x ptr], @tab, 0, i with i=1 -> candidates={g}; code=0
+N24: one 24-byte alloca aligned 16 -> S=ceil(24/16)*16=32; next frame offset=32
+N28: caught throw (source call noreturn) -> returning Bennett replacement, propagation check, catch -> 7
+```
+
+
+```llvm normalise-in=n-flags
+define internal i32 @f(i32 noundef %a, ptr nonnull align 4 %p) #0 {
+  %s = add nsw i32 %a, 1
+  %q = getelementptr inbounds i32, ptr %p, i64 1
+  %v = load i32, ptr %q, align 4, !range !0, !noundef !1
+  %c = icmp sgt i32 %v, 0
+  call void @llvm.assume(i1 %c)
+  %r = mul nuw nsw i32 %s, %v
+  ret i32 %r
+}
+
+declare void @llvm.assume(i1 noundef)
+
+attributes #0 = { mustprogress nounwind willreturn memory(argmem: read) }
+
+!0 = !{i32 0, i32 100}
+!1 = !{}
+```
+
+```llvm normalise-out=n-flags
+define internal i32 @f(i32 %a, ptr %p) #0 {
+  %s = add i32 %a, 1
+  %q = getelementptr i32, ptr %p, i64 1
+  %v = load i32, ptr %q, align 4
+  %c = icmp sgt i32 %v, 0
+  %r = mul i32 %s, %v
+  ret i32 %r
+}
+
+declare void @llvm.assume(i1 noundef)
+
+attributes #0 = { nounwind }
+
+!0 = !{i32 0, i32 100}
+!1 = !{}
+```
+
+```llvm normalise-in=n-shift
+define internal i32 @sh(i32 %a, i32 %b) {
+  %r = shl i32 %a, %b
+  %k = lshr i32 %a, 3
+  %z = ashr i32 %a, 40
+  %t = add i32 %r, %z
+  %u = add i32 %t, %k
+  ret i32 %u
+}
+```
+
+```llvm normalise-out=n-shift
+define internal i32 @sh(i32 %a, i32 %b) {
+  %nz.c.r = icmp uge i32 %b, 32
+  %nz.s.r = shl i32 %a, %b
+  %r = select i1 %nz.c.r, i32 0, i32 %nz.s.r
+  %k = lshr i32 %a, 3
+  %t = add i32 %r, 0
+  %u = add i32 %t, %k
+  ret i32 %u
+}
+```
+
+```llvm normalise-in=n-undef
+define internal i64 @u(i64 %a, i1 %c) {
+  %f = freeze i64 undef
+  %s = select i1 %c, i64 %a, i64 poison
+  %v = insertelement <2 x i64> poison, i64 %a, i32 0
+  %w = extractelement <2 x i64> %v, i32 1
+  %r = add i64 %f, %s
+  %t = add i64 %r, %w
+  ret i64 %t
+}
+```
+
+The vector in `n-undef` is then scalarised by N21: lane 0 is `%a`, lane 1 is the zero of N7, so
+`%w` is `0`:
+
+```llvm normalise-out=n-undef
+define internal i64 @u(i64 %a, i1 %c) {
+  %s = select i1 %c, i64 %a, i64 0
+  %r = add i64 0, %s
+  %t = add i64 %r, 0
+  ret i64 %t
+}
+```
+
+```llvm normalise-in=n-query
+define internal i64 @q(ptr %p, i64 %x) {
+  %s = call i64 @llvm.objectsize.i64.p0(ptr %p, i1 false, i1 true, i1 false)
+  %k = call i1 @llvm.is.constant.i64(i64 %x)
+  %z = zext i1 %k to i64
+  %r = add i64 %s, %z
+  ret i64 %r
+}
+
+declare i64 @llvm.objectsize.i64.p0(ptr, i1 immarg, i1 immarg, i1 immarg)
+declare i1 @llvm.is.constant.i64(i64)
+```
+
+```llvm normalise-out=n-query
+define internal i64 @q(ptr %p, i64 %x) {
+  %z = zext i1 false to i64
+  %r = add i64 -1, %z
+  ret i64 %r
+}
+
+declare i64 @llvm.objectsize.i64.p0(ptr, i1 immarg, i1 immarg, i1 immarg)
+declare i1 @llvm.is.constant.i64(i64)
+```
+
+```llvm normalise-in=n-trap
+define internal i32 @t(i32 %a) {
+  %c = icmp eq i32 %a, 0
+  call void @llvm.trap()
+  %r = add i32 %a, 1
+  ret i32 %r
+}
+
+declare void @llvm.trap()
+```
+
+```llvm normalise-out=n-trap
+define internal i32 @t(i32 %a) {
+  %c = icmp eq i32 %a, 0
+  call void @__bennett_nz_fault(i64 4)
+  unreachable
+}
+
+declare void @llvm.trap()
+
+declare void @__bennett_nz_fault(i64)
+```
+
+Vector scalarisation and an ordered reduction (N21):
+
+```llvm normalise-in=n-vector
+define internal i32 @v(ptr %pa, ptr %pb) {
+  %a = load <4 x i32>, ptr %pa, align 4
+  %b = load <4 x i32>, ptr %pb, align 4
+  %s = add <4 x i32> %a, %b
+  %r = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> %s)
+  ret i32 %r
+}
+
+declare i32 @llvm.vector.reduce.add.v4i32(<4 x i32>)
+```
+
+```llvm normalise-out=n-vector
+define internal i32 @v(ptr %pa, ptr %pb) {
+  %nz.p0.a = getelementptr i32, ptr %pa, i64 0
+  %nz.l0.a = load i32, ptr %nz.p0.a, align 4
+  %nz.p1.a = getelementptr i32, ptr %pa, i64 1
+  %nz.l1.a = load i32, ptr %nz.p1.a, align 4
+  %nz.p2.a = getelementptr i32, ptr %pa, i64 2
+  %nz.l2.a = load i32, ptr %nz.p2.a, align 4
+  %nz.p3.a = getelementptr i32, ptr %pa, i64 3
+  %nz.l3.a = load i32, ptr %nz.p3.a, align 4
+  %nz.p0.b = getelementptr i32, ptr %pb, i64 0
+  %nz.l0.b = load i32, ptr %nz.p0.b, align 4
+  %nz.p1.b = getelementptr i32, ptr %pb, i64 1
+  %nz.l1.b = load i32, ptr %nz.p1.b, align 4
+  %nz.p2.b = getelementptr i32, ptr %pb, i64 2
+  %nz.l2.b = load i32, ptr %nz.p2.b, align 4
+  %nz.p3.b = getelementptr i32, ptr %pb, i64 3
+  %nz.l3.b = load i32, ptr %nz.p3.b, align 4
+  %nz.l0.s = add i32 %nz.l0.a, %nz.l0.b
+  %nz.l1.s = add i32 %nz.l1.a, %nz.l1.b
+  %nz.l2.s = add i32 %nz.l2.a, %nz.l2.b
+  %nz.l3.s = add i32 %nz.l3.a, %nz.l3.b
+  %nz.f1.r = add i32 %nz.l0.s, %nz.l1.s
+  %nz.f2.r = add i32 %nz.f1.r, %nz.l2.s
+  %r = add i32 %nz.f2.r, %nz.l3.s
+  ret i32 %r
+}
+
+declare i32 @llvm.vector.reduce.add.v4i32(<4 x i32>)
+```
+
+```text native=n-vector
+v([1, 2, 3, 2147483647], [10, 20, 30, 1]) = -2147483582
+v([-5, 7, 0, 100], [5, -7, 9, 1]) = 110
+```
+
+*(non-normative)* 11 + 22 + 33 + (2147483647 + 1 mod 2^32 = −2^31) = 66 − 2147483648 =
+−2147483582; 0 + 0 + 9 + 101 = 110.
+
+A 256-bit addition in four limbs (N22):
+
+**Three-limb subtraction.** 0−1 borrows; the middle limb computes 1−1−1,
+so its provisional zero also borrows. The top limb is 1−0−1=0, giving
+2^128−1, not 2^129−1. The second vector exercises discarded final borrow.
+
+```llvm normalise-in=n-wide-sub
+define internal void @w(ptr %pa, ptr %pb, ptr %pr) {
+  %a = load i192, ptr %pa, align 8
+  %b = load i192, ptr %pb, align 8
+  %s = sub i192 %a, %b
+  store i192 %s, ptr %pr, align 8
+  ret void
+}
+```
+
+```llvm normalise-out=n-wide-sub
+define internal void @w(ptr %pa, ptr %pb, ptr %pr) {
+  %nz.p0.a = getelementptr i64, ptr %pa, i64 0
+  %nz.m0.a = load i64, ptr %nz.p0.a, align 8
+  %nz.p1.a = getelementptr i64, ptr %pa, i64 1
+  %nz.m1.a = load i64, ptr %nz.p1.a, align 8
+  %nz.p2.a = getelementptr i64, ptr %pa, i64 2
+  %nz.m2.a = load i64, ptr %nz.p2.a, align 8
+  %nz.p0.b = getelementptr i64, ptr %pb, i64 0
+  %nz.m0.b = load i64, ptr %nz.p0.b, align 8
+  %nz.p1.b = getelementptr i64, ptr %pb, i64 1
+  %nz.m1.b = load i64, ptr %nz.p1.b, align 8
+  %nz.p2.b = getelementptr i64, ptr %pb, i64 2
+  %nz.m2.b = load i64, ptr %nz.p2.b, align 8
+  %nz.m0.s = sub i64 %nz.m0.a, %nz.m0.b
+  %nz.c0.s = icmp ult i64 %nz.m0.a, %nz.m0.b
+  %nz.t1.s = sub i64 %nz.m1.a, %nz.m1.b
+  %nz.z1.s = zext i1 %nz.c0.s to i64
+  %nz.m1.s = sub i64 %nz.t1.s, %nz.z1.s
+  %nz.u1.s = icmp ult i64 %nz.m1.a, %nz.m1.b
+  %nz.v1.s = icmp ult i64 %nz.t1.s, %nz.z1.s
+  %nz.c1.s = or i1 %nz.u1.s, %nz.v1.s
+  %nz.t2.s = sub i64 %nz.m2.a, %nz.m2.b
+  %nz.z2.s = zext i1 %nz.c1.s to i64
+  %nz.m2.s = sub i64 %nz.t2.s, %nz.z2.s
+  %nz.q0.w.0 = getelementptr i64, ptr %pr, i64 0
+  store i64 %nz.m0.s, ptr %nz.q0.w.0, align 8
+  %nz.q1.w.0 = getelementptr i64, ptr %pr, i64 1
+  store i64 %nz.m1.s, ptr %nz.q1.w.0, align 8
+  %nz.q2.w.0 = getelementptr i64, ptr %pr, i64 2
+  store i64 %nz.m2.s, ptr %nz.q2.w.0, align 8
+  ret void
+}
+```
+
+```text native=n-wide-sub
+w(limbs a = [0, 1, 1], b = [1, 1, 0]) -> r = [18446744073709551615, 18446744073709551615, 0]; code=0
+w(limbs a = [0, 0, 0], b = [1, 0, 0]) -> r = [18446744073709551615, 18446744073709551615, 18446744073709551615]; code=0
+```
+
+```llvm normalise-in=n-wideint
+define internal void @w(ptr %pa, ptr %pb, ptr %pr) {
+  %a = load i256, ptr %pa, align 8
+  %b = load i256, ptr %pb, align 8
+  %s = add i256 %a, %b
+  store i256 %s, ptr %pr, align 8
+  ret void
+}
+```
+
+```llvm normalise-out=n-wideint
+define internal void @w(ptr %pa, ptr %pb, ptr %pr) {
+  %nz.p0.a = getelementptr i64, ptr %pa, i64 0
+  %nz.m0.a = load i64, ptr %nz.p0.a, align 8
+  %nz.p1.a = getelementptr i64, ptr %pa, i64 1
+  %nz.m1.a = load i64, ptr %nz.p1.a, align 8
+  %nz.p2.a = getelementptr i64, ptr %pa, i64 2
+  %nz.m2.a = load i64, ptr %nz.p2.a, align 8
+  %nz.p3.a = getelementptr i64, ptr %pa, i64 3
+  %nz.m3.a = load i64, ptr %nz.p3.a, align 8
+  %nz.p0.b = getelementptr i64, ptr %pb, i64 0
+  %nz.m0.b = load i64, ptr %nz.p0.b, align 8
+  %nz.p1.b = getelementptr i64, ptr %pb, i64 1
+  %nz.m1.b = load i64, ptr %nz.p1.b, align 8
+  %nz.p2.b = getelementptr i64, ptr %pb, i64 2
+  %nz.m2.b = load i64, ptr %nz.p2.b, align 8
+  %nz.p3.b = getelementptr i64, ptr %pb, i64 3
+  %nz.m3.b = load i64, ptr %nz.p3.b, align 8
+  %nz.m0.s = add i64 %nz.m0.a, %nz.m0.b
+  %nz.c0.s = icmp ult i64 %nz.m0.s, %nz.m0.a
+  %nz.t1.s = add i64 %nz.m1.a, %nz.m1.b
+  %nz.z1.s = zext i1 %nz.c0.s to i64
+  %nz.m1.s = add i64 %nz.t1.s, %nz.z1.s
+  %nz.u1.s = icmp ult i64 %nz.t1.s, %nz.m1.a
+  %nz.v1.s = icmp ult i64 %nz.m1.s, %nz.t1.s
+  %nz.c1.s = or i1 %nz.u1.s, %nz.v1.s
+  %nz.t2.s = add i64 %nz.m2.a, %nz.m2.b
+  %nz.z2.s = zext i1 %nz.c1.s to i64
+  %nz.m2.s = add i64 %nz.t2.s, %nz.z2.s
+  %nz.u2.s = icmp ult i64 %nz.t2.s, %nz.m2.a
+  %nz.v2.s = icmp ult i64 %nz.m2.s, %nz.t2.s
+  %nz.c2.s = or i1 %nz.u2.s, %nz.v2.s
+  %nz.t3.s = add i64 %nz.m3.a, %nz.m3.b
+  %nz.z3.s = zext i1 %nz.c2.s to i64
+  %nz.m3.s = add i64 %nz.t3.s, %nz.z3.s
+  %nz.q0.w.0 = getelementptr i64, ptr %pr, i64 0
+  store i64 %nz.m0.s, ptr %nz.q0.w.0, align 8
+  %nz.q1.w.0 = getelementptr i64, ptr %pr, i64 1
+  store i64 %nz.m1.s, ptr %nz.q1.w.0, align 8
+  %nz.q2.w.0 = getelementptr i64, ptr %pr, i64 2
+  store i64 %nz.m2.s, ptr %nz.q2.w.0, align 8
+  %nz.q3.w.0 = getelementptr i64, ptr %pr, i64 3
+  store i64 %nz.m3.s, ptr %nz.q3.w.0, align 8
+  ret void
+}
+```
+
+```text native=n-wideint
+w(limbs a = [0xffffffffffffffff, 0xffffffffffffffff, 5, 1], b = [1, 0, 0xffffffffffffffff, 2]) -> r = [0, 0, 5, 4]
+w(limbs a = [all ones x 4], b = [1, 0, 0, 0]) -> r = [0, 0, 0, 0]
+```
+
+*(non-normative)* Limbs are least significant first. Limb 0: 2^64 − 1 + 1 = 0, carry 1; limb 1:
+2^64 − 1 + 0 + 1 = 0, carry 1; limb 2: 5 + 2^64 − 1 + 1 = 5, carry 1; limb 3: 1 + 2 + 1 = 4.
+
+Allocas move to the shadow stack (N24, §17.3); the frame is zero-filled, so the read of
+`b[2]`, undefined in the input, is 0:
+
+```llvm normalise-in=n-shadow-stack
+define internal i64 @a(i64 %x) {
+  %b = alloca [3 x i64], align 8
+  %p = getelementptr [3 x i64], ptr %b, i64 0, i64 1
+  store i64 %x, ptr %p, align 8
+  %q = getelementptr [3 x i64], ptr %b, i64 0, i64 2
+  %v = load i64, ptr %q, align 8
+  %w = load i64, ptr %p, align 8
+  %r = add i64 %v, %w
+  ret i64 %r
+}
+```
+
+```llvm normalise-out=n-shadow-stack
+define internal i64 @a(i64 %x) {
+  %nz.fp.a = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %b = getelementptr i8, ptr %nz.fp.a, i64 0
+  %p = getelementptr [3 x i64], ptr %b, i64 0, i64 1
+  store i64 %x, ptr %p, align 8
+  %q = getelementptr [3 x i64], ptr %b, i64 0, i64 2
+  %v = load i64, ptr %q, align 8
+  %w = load i64, ptr %p, align 8
+  %r = add i64 %v, %w
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.a)
+  ret i64 %r
+}
+
+declare ptr @__bennett_rt_ss_push(i64, i64)
+
+declare void @__bennett_rt_ss_pop(ptr)
+```
+
+```text native=n-shadow-stack
+a(5) = 5 (output module; the input module's read of b[2] is undefined: the documented choice of N24)
+a(-9) = -9 (output module)
+```
+
+Memory intrinsics (N26) and integer intrinsics (N27):
+
+```llvm normalise-in=n-memintrinsics
+define internal void @cp(ptr %d, ptr %s, i32 %n) {
+  call void @llvm.memcpy.p0.p0.i64(ptr %d, ptr %s, i64 16, i1 false)
+  call void @llvm.memset.p0.i32(ptr %d, i8 7, i32 %n, i1 false)
+  ret void
+}
+
+declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1 immarg)
+
+declare void @llvm.memset.p0.i32(ptr, i8, i32, i1 immarg)
+```
+
+```llvm normalise-out=n-memintrinsics
+define internal void @cp(ptr %d, ptr %s, i32 %n) {
+  call void @__bennett_rt_memmove(ptr %d, ptr %s, i64 16)
+  %nz.n.cp.1 = zext i32 %n to i64
+  call void @__bennett_rt_memset(ptr %d, i8 7, i64 %nz.n.cp.1)
+  ret void
+}
+
+declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1 immarg)
+
+declare void @llvm.memset.p0.i32(ptr, i8, i32, i1 immarg)
+
+declare void @__bennett_rt_memmove(ptr, ptr, i64)
+
+declare void @__bennett_rt_memset(ptr, i8, i64)
+```
+
+```text native=n-memintrinsics
+cp(d, s = [100, 101, …, 115], 3) -> d = [7, 7, 7, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115]
+```
+
+```llvm normalise-in=n-intrinsics
+define internal i32 @k(i32 %a, i32 %b) {
+  %m = call i32 @llvm.smax.i32(i32 %a, i32 %b)
+  %o = call { i32, i1 } @llvm.uadd.with.overflow.i32(i32 %a, i32 %b)
+  %ov = extractvalue { i32, i1 } %o, 1
+  %p = call i32 @llvm.ctpop.i32(i32 %m)
+  %z = zext i1 %ov to i32
+  %r = add i32 %p, %z
+  ret i32 %r
+}
+
+declare i32 @llvm.smax.i32(i32, i32)
+
+declare { i32, i1 } @llvm.uadd.with.overflow.i32(i32, i32)
+
+declare i32 @llvm.ctpop.i32(i32)
+```
+
+```llvm normalise-out=n-intrinsics
+define internal i32 @k(i32 %a, i32 %b) {
+  %nz.c.m = icmp sgt i32 %a, %b
+  %m = select i1 %nz.c.m, i32 %a, i32 %b
+  %nz.s.o = add i32 %a, %b
+  %nz.c.o = icmp ult i32 %nz.s.o, %a
+  %nz.a.o = insertvalue { i32, i1 } zeroinitializer, i32 %nz.s.o, 0
+  %o = insertvalue { i32, i1 } %nz.a.o, i1 %nz.c.o, 1
+  %ov = extractvalue { i32, i1 } %o, 1
+  %p = call i32 @__bennett_rt_ctpop_i32(i32 %m)
+  %z = zext i1 %ov to i32
+  %r = add i32 %p, %z
+  ret i32 %r
+}
+
+declare i32 @llvm.smax.i32(i32, i32)
+
+declare { i32, i1 } @llvm.uadd.with.overflow.i32(i32, i32)
+
+declare i32 @llvm.ctpop.i32(i32)
+
+declare i32 @__bennett_rt_ctpop_i32(i32)
+```
+
+```text native=n-intrinsics
+k(7, -3) = 4
+k(-1, -1) = 33
+k(2147483647, 1) = 31
+```
+
+*(non-normative)* k(7, −3): smax = 7, ctpop(7) = 3, and 7 + 0xFFFFFFFD overflows 32 bits, so 3 +
+1 = 4. k(−1, −1): ctpop(0xFFFFFFFF) = 32, overflow, 33. k(2^31 − 1, 1): ctpop = 31, no unsigned
+overflow, 31.
+
+Atomics are sequentialised (N9):
+
+```llvm normalise-in=n-atomic
+define internal i32 @at(ptr %p, i32 %v) {
+  %old = atomicrmw add ptr %p, i32 %v seq_cst, align 4
+  %ok = cmpxchg ptr %p, i32 %old, i32 0 seq_cst seq_cst, align 4
+  %f = extractvalue { i32, i1 } %ok, 1
+  %z = zext i1 %f to i32
+  %r = add i32 %old, %z
+  ret i32 %r
+}
+```
+
+```llvm normalise-out=n-atomic
+define internal i32 @at(ptr %p, i32 %v) {
+  %nz.l.old = load i32, ptr %p, align 4
+  %nz.v.old = add i32 %nz.l.old, %v
+  store i32 %nz.v.old, ptr %p, align 4
+  %nz.l.ok = load i32, ptr %p, align 4
+  %nz.e.ok = icmp eq i32 %nz.l.ok, %nz.l.old
+  %nz.s.ok = select i1 %nz.e.ok, i32 0, i32 %nz.l.ok
+  store i32 %nz.s.ok, ptr %p, align 4
+  %nz.a.ok = insertvalue { i32, i1 } zeroinitializer, i32 %nz.l.ok, 0
+  %ok = insertvalue { i32, i1 } %nz.a.ok, i1 %nz.e.ok, 1
+  %f = extractvalue { i32, i1 } %ok, 1
+  %z = zext i1 %f to i32
+  %r = add i32 %nz.l.old, %z
+  ret i32 %r
+}
+```
+
+```text native=n-atomic
+at(p -> 5, 3) = 5, *p = 8
+at(p -> 5, 0) = 6, *p = 0
+```
+
+The validator (§12.4) on a residue and on clean code:
+
+```llvm example=residual-nsw verdict=reject:BD-E-RESIDUAL mode=validate
+define internal i32 @f(i32 %a) {
+  %s = add nsw i32 %a, 1
+  ret i32 %s
+}
+```
+
+```llvm example=residual-clean verdict=accept mode=validate
+define internal i32 @f(i32 %a) {
+  %s = add i32 %a, 1
+  ret i32 %s
+}
+```
+
+## 13. Floating point (arith contract)
+
+NS §3.2: "Floating point is deterministic soft-float in both builds … Hardware floating point
+never executes in either build." Every floating-point construct of every format has a row
+here; none faults.
+
+### 13.1 Soft-float rewrite (rules N19, N32)
+
+**Formats and carriers:**
+
+| LLVM type | Suffix | Carrier |
+|---|---|---|
+| `half` | `f16` | `i16` |
+| `bfloat` | `bf16` | `i16` |
+| `float` | `f32` | `i32` |
+| `double` | `f64` | `i64` |
+| `x86_fp80` | `f80` | `i80` |
+| `fp128` | `f128` | `i128` |
+| `ppc_fp128` | `ppcf128` | `i128` |
+
+The rewrite of an instruction `%r` with floating-point operands or result is: first, for each
+floating-point operand k (value or constant, in operand order), `%nz.<k>.r = bitcast <T>
+<operand> to <carrier>`; then the call below, named `%nz.i.r`; then, for a floating-point result,
+`%r = bitcast <carrier> %nz.i.r to <T>`. The entry points are defined by `bennett-arith` and are
+part of its bitcode the driver links. B below is the format's suffix, C its carrier.
+
+| Instruction | Call (carrier operands in order) | Result |
+|---|---|---|
+| `fadd`, `fsub`, `fmul`, `fdiv`, `frem` | `C @__bennett_sf_{add,sub,mul,div,rem}_B(C, C)` | bitcast |
+| `fcmp <p>` | `i1 @__bennett_sf_cmp_B(C, C, i32 P)`, P the LLVM predicate number: `false` 0, `oeq` 1, `ogt` 2, `oge` 3, `olt` 4, `ole` 5, `one` 6, `ord` 7, `uno` 8, `ueq` 9, `ugt` 10, `uge` 11, `ult` 12, `ule` 13, `une` 14, `true` 15 | `%r` is the call itself |
+| `fptosi`/`fptoui` to iM, `llvm.fptosi.sat`/`llvm.fptoui.sat` to iM | `i128 @__bennett_sf_{fptosi,fptoui}_B(C, i32 M)` | `%r = trunc i128 %nz.i.r to iM` (the call is `%r` when M = 128) |
+| `sitofp`/`uitofp` from iM | `%nz.x.r = sext`/`zext iM a to i128` (omitted when M = 128), `C @__bennett_sf_{sitofp,uitofp}_B(i128)` | bitcast |
+| `fpext`, `fptrunc` from format S to format D; `llvm.convert.to.fp16`, `llvm.convert.from.fp16` | `D_carrier @__bennett_sf_{fpext,fptrunc}_S_D(S_carrier)` | bitcast |
+| `llvm.fptrunc.round(x, mode)` | `D_carrier @__bennett_sf_fptrunc_S_D_rm(S_carrier, i32 R)`, R from the mode (§13.5) | bitcast |
+| `llvm.sqrt`, `llvm.floor`, `llvm.ceil`, `llvm.trunc`, `llvm.round`, `llvm.roundeven`, `llvm.rint`, `llvm.nearbyint`, `llvm.canonicalize` | `C @__bennett_sf_<name>_B(C)` | bitcast |
+| `llvm.minnum`, `llvm.maxnum`, `llvm.minimum`, `llvm.maximum`, `llvm.minimumnum`, `llvm.maximumnum` | `C @__bennett_sf_<name>_B(C, C)` | bitcast |
+| `llvm.fma` | `C @__bennett_sf_fma_B(C, C, C)` | bitcast |
+| `llvm.is.fpclass(x, mask)` | `i1 @__bennett_sf_isfpclass_B(C, i32 mask)` | the call |
+| `llvm.ldexp(x, e)`, `llvm.frexp(x)` | `C @__bennett_sf_ldexp_B(C, i32 e)`; `{ C, i32 } @__bennett_sf_frexp_B(C)` | bitcast (for frexp: of field 0) |
+| `llvm.lround`, `llvm.llround`, `llvm.lrint`, `llvm.llrint` to iM | `i128 @__bennett_sf_{lround,llround,lrint,llrint}_B(C, i32 M)` | `trunc` to iM |
+| `llvm.convert.to.arbitrary.fp`, `llvm.convert.from.arbitrary.fp` (format named by metadata) | `@__bennett_sf_convert_to_<fmt>_B` / `@__bennett_sf_convert_from_<fmt>_B` with LLVM APFloat's semantics of the named format | bitcast |
+| `fneg`, `llvm.fabs`, `llvm.copysign`, `bitcast`, `load`, `store`, `select`, `phi` | unchanged: bit-exact operations (LangRef) | – |
+
+**Arbitrary-format naming and carriers.** Format metadata MUST be the LLVM-major LangRef interpretation MDString, not a user-defined precision/exponent record; the integer carrier is exactly the interpretation's storage width, scalarised lane by lane by N21. LLVM 23's names are `Float8E5M2`, `Float8E5M2FNUZ`, `Float8E4M3`, `Float8E4M3FN`, `Float8E4M3FNUZ`, `Float8E4M3B11FNUZ`, `Float8E3M4`, `Float8E8M0FNU` (i8), `Float6E3M2FN`, `Float6E2M3FN` (i6), and `Float4E2M1FN` (i4). These intrinsics are absent on LLVM 18; the name set is the major's published set, not a list of formats that its current APFloat converter happens to implement.
+
+For each such name fmt and each B of §13.1, N32 MUST emit `iN @__bennett_sf_convert_to_<fmt>_B(C_B, i32 R, i1 Sat)` for to-arbitrary (format MDString removed, rounding encoded by §13.5, immediate saturation retained), and `C_B @__bennett_sf_convert_from_<fmt>_B(iN)` for from-arbitrary; fmt is spelled exactly as its case-sensitive MDString, N is its listed bit width, and results are integer bits / bitcast B respectively. Finite conversions use the named format's rounding, saturation and nonfinite rules with canonical NaNs; N1 defines a source-poison conversion result as zero bits, including unsaturated out-of-range FP4/FP6 inputs. A missing APFloat lowering is an implementation obligation, never permission to reject a valid named format or emit an unresolved numerical placeholder.
+
+**Static instantiation request v1.** The driver MUST collect required concrete arith instances before the final link and supply a UTF-8 JSON object with exactly `schema: "bennett-arith-instantiations-1"`, `llvm_major` (integer), `target_triple` (string), `data_layout` (LLVM string), and `entries` (array); a conversion entry has exactly `op: "convert_to" | "convert_from"`, `format` (the MDString above), and `base` (B suffix), and a powi entry has exactly `op: "powi"`, `base`, and `exponent_bits` (integer K, 1..8388608). A powi entry requests both `C_B @__bennett_sf_powi_<B>_i<K>(C_B, iK)` and `C_B @__bennett_sf_powi_<B>_i<K>_rm(C_B, iK, i32 R)` (the suffix `_rm` is last); a conversion entry requests its exact signature above. Duplicate entries denote one instance; canonical request bytes are JCS with entries sorted by (op, base, format or empty string, exponent_bits or zero).
+
+The arith distribution MUST provide a documented offline generator accepting that request and producing matching-major ordinary bitcode plus a JCS manifest containing `schema: "bennett-arith-instances-1"`, the request SHA-256 as `request_sha256`, `bitcode_sha256`, and `exports` (array of objects with exact `symbol` and LLVM `function_type` strings sorted by symbol); every requested definition and its reachable closure MUST be present, with no hardware FP or host libm import, and linked before normalisation identically in both builds. Default prebuilt exponent widths are a cache, never a capability bound; generation failure is an explicit implementation blocker, not a successful link, unsupported-format verdict, or silent narrower substitute.
+
+**Wide integer sides (M>128).** The preceding i128 conversion rows apply only
+to M≤128. For fptosi/fptoui, their .sat forms and lround/llround/lrint/llrint,
+N32 emits `void @__bennett_sf_<op>_B_wide(ptr d, C operand, i32 M)`.
+Here d is a shadow-stack slot of L=ceil(M/64) limbs at byte offsets 8k (§12.7).
+The entry writes the exact M-bit saturated result, limb 0 least significant,
+using truncation toward zero / the rounding rule above, with NaN mapped to 0;
+N22 loads each limb at width min(64,M−64k). For sitofp/uitofp from iM, store
+all limbs in slot s and call `C @__bennett_sf_<op>_B_wide(ptr s, i32 M)`,
+correctly rounded from the exact signed/unsigned M-bit integer. No i128 carrier
+intervenes. For canonical temporary slots, emit ss_push(8L,8), then limb
+GEP/store rows in increasing k; for destinations, push then call then limb
+GEP/load rows in increasing k; pop slots in reverse push order after their
+last use. Bitcast FP operands before destination push and FP results after pop.
+The usual shadow-stack checks, budget charges and linked-runtime materialisation
+apply. The helper's suffix op is fptosi/fptoui for the corresponding .sat form.
+
+**Semantics of the entry points** (the contract with `bennett-arith`): IEEE 754-2019 for
+binary16 (`half`), binary32, binary64 and binary128; `bfloat` is the IEEE-style format with 8
+exponent and 7 fraction bits; `x86_fp80` is the 80-bit x87 extended format (64-bit significand
+with explicit integer bit; encodings with exponent ≠ 0 and integer bit 0, the unnormals, and
+pseudo-denormals and pseudo-infinities are treated as NaN inputs, as modern x87 hardware does);
+`ppc_fp128` is double-double with the operations of LLVM's APFloat `PPCDoubleDouble` semantics of
+the major in use. For all formats: round to nearest ties to even, subnormals supported, no
+observable flags or exceptions (except §13.5); **every NaN result is the format's canonical NaN**
+(sign 0, quiet bit set, other payload bits 0: `0x7E00` f16, `0x7FC0` bf16, `0x7FC00000` f32,
+`0x7FF8000000000000` f64, `0x7FFFC000000000000000` f80, `0x7FFF8000…0` f128, and for ppcf128
+the f64 canonical NaN in the high double and +0 in the low); `rem` is C `fmod` (exact, the sign of
+the dividend); `cmp` is LLVM's `fcmp` for the predicate; `fptosi`/`fptoui` and the `.sat` forms
+truncate toward zero, map NaN to 0 and saturate values outside the range of iM to its bounds,
+returned sign-extended (`fptosi`) or zero-extended (`fptoui`) in i128 when M≤128,
+and in the full limb slot when M>128; `sitofp`/`uitofp` round to
+nearest even; `minnum`/`maxnum` are IEEE 754-2008 minNum/maxNum (one NaN operand: the other
+operand; two: the canonical NaN) with −0 < +0; `minimum`/`maximum` are IEEE 754-2019 (either NaN:
+the canonical NaN) with −0 < +0; `minimumnum`/`maximumnum` are IEEE 754-2019 minimumNumber/
+maximumNumber; `sqrt`, `fma` and every rounding function are correctly rounded (`round` ties
+away from zero, `rint` and `nearbyint` to nearest even); `fpext` is exact; `fptrunc` rounds to
+nearest even; `canonicalize` maps every NaN to the canonical NaN and is the identity otherwise;
+`is.fpclass` tests LangRef's ten classes on the bit pattern; `ldexp`/`frexp` are exact up to
+rounding of a subnormal `ldexp` result; `lround`/`llround` round half away from zero and `lrint`/
+`llrint` to nearest even, saturating like `fptosi`. *(non-normative)* `fneg`, `fabs` and
+`copysign` stay bit-exact, so a NaN's sign bit set by `fneg` survives, as LangRef requires; an
+implementation of `half` and `bfloat` + − × ÷ √ in binary32 followed by one rounding is
+correctly rounded, since 24 ≥ 2p + 2 for p = 11 and p = 8 (Figueroa's double-rounding bound), but
+the contract is correct rounding, so `fma` needs its own implementation.
+
+**PPCDoubleDouble priority and rounding.** The reference to the LLVM major's APFloat `PPCDoubleDouble` names its two-binary64 value representation and operation conventions, not permission to violate this section's explicit numerical guarantees: implementations MUST preserve the exact real value high + low for conversions and the correctly-rounded requirements for `sqrt`, `fma` and rounding-to-integral operations, and MUST NOT substitute the legacy consecutive-106-bit fallback when it changes such a result.
+
+For these guarantees, a finite canonical double-double is a nonoverlapping pair (h,l) of binary64 values with h = roundTiesToEven(h+l) and l the exact residual (positive zero when the residual is zero), zero represented as (signed zero,+0); the result MUST be the canonical pair whose exact sum is nearest the exact mathematical result (or its directed neighbour for §13.5), with ties to the even low-component significand, using the high significand when the low component is zero, and NaN/inf represented in the high component with low +0. Overflow is determined by rounding with an unbounded high exponent first and then applying binary64's high-component exponent limit with IEEE overflow outcomes for the active mode (the finite maximum or infinity as appropriate); underflow uses tininess after rounding of the exact pair sum, with subnormal threshold 2^-1022.
+
+Cross-format conversion MUST use the exact sum of both components, be exact whenever that sum is representable in the destination, and otherwise round once to the destination format under the requested mode; it MUST NOT drop a representable low component, saturate an in-range positive total because its low component is negative, or introduce intermediate-conversion flags. For example, high = 1 and low = 2^-60 convert to x86_fp80 as exactly 1 + 2^-60, not 1. The `fpext` exactness statement describes true numerical widening; a cross-format pair whose value sets are not nested still uses this conversion rule, regardless of equal storage width.
+
+Constrained operations covered by these guarantees MUST derive invalid/divbyzero/overflow/underflow/inexact from the mathematical operation and final rounding, not the status of an inaccurate APFloat fallback or an intermediate high/low operation; for sqrt/fma/conversion, inexact means the final pair's exact sum differs from the exact finite result, and underflow requires both tininess after rounding and inexactness. Rounding-to-integral follows the named IEEE operation: rint/lrint/llrint signal inexact on a nonintegral finite operand, nearbyint suppresses inexact, and floor/ceil/trunc/round/roundeven/lround/llround do not raise inexact merely for discarding a fractional part. Other PPC operations retain their named major-specific APFloat semantics subject to the explicit canonical-NaN rules above.
+
+### 13.2 Vector floating point
+
+After N21 every vector floating-point operation is scalar: §13.1 applies lane by lane, and
+`vector.reduce.fadd`/`fmul` are the ordered left folds of §12.6 (exact once N2 has removed
+`reassoc`).
+
+### 13.3 Formats beyond binary32 and binary64
+
+All seven formats of §13.1 are required by the same table and contract (NS §3.2). A producer MUST report a route as `lowered` only when its linked implementation satisfies that complete contract; a missing numerical implementation is an implementation blocker, never permission to reject, trap or silently narrow the format capability. musl's
+`fmt_fp` (`printf("%Lf")`, rung 3) uses `x86_fp80` on x86-64 and `fp128` on AArch64 and RISC-V64.
+
+### 13.4 Transcendentals and libm intrinsics (N33)
+
+`llvm.sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `exp2`,
+`exp10`, `log`, `log2`, `log10`, `pow`, `powi`, `sincos`, `sincospi` and `modf` become calls of
+the **runtimes libm**: `@<name>` for `double`, `@<name>f` for `float`,
+and `@<name>l` for the target's native `long double` format D (x86-64:
+`x86_fp80`; AArch64 and RISC-V64: `fp128`). For every other source format B,
+including half, bfloat and non-native x86_fp80/fp128/ppc_fp128, use a direct
+own-format carrier call `C_B @__bennett_sf_<name>_<suffix>(C_B, …)`;
+C_B and suffix are exactly §13.1's table. No conversion through D is emitted.
+All seven source formats remain covered on every supported platform; a format
+different from D is neither rejected nor trapped. This route preserves the
+source format's precision and cannot request a narrowing fpext or an equal-size
+cross-format cast.
+
+For these carrier calls, bitcast each floating operand k to its **own** carrier
+in operand order as `%nz.<k>.r`, call as `%nz.i.r`, and bitcast the scalar
+floating result back as `%r` (§13.1). Retain non-floating operands and their types
+in source order. These linked bennett-arith/runtimes functions implement the
+named operation numerically in B, using the same deterministic, versioned
+implementation in both builds; they are not bit reinterpretations between FP
+formats and do not use the host C long-double ABI. NaN results use §13.1's
+canonical encoding, with signed zeros preserved where the operation requires.
+As for the native-format libm below, no correct-rounding claim is made.
+
+`powi(x,n)` retains repeated-squaring semantics (compiler-rt's `__powidf2`),
+with the integer exponent unconverted; its carrier spelling is
+`C_B @__bennett_sf_powi_<suffix>_i<K>(C_B, iK)` at the intrinsic's exponent width K
+(the floating-ABI spelling remains `__bennett_rt_powi_B`). `sincos(x)` is the
+pair (sin x, cos x), `sincospi(x)` the pair (sinpi x, cospi x), and `modf(x)`
+the pair (fractional, integral). Their carrier entry points return `{ C_B, C_B }`.
+For powi and these pair operations use this carrier route on every format,
+avoiding the C pointer-output ABI. Reconstruct pair fields in order j=0,1:
+`%nz.outbits<j>.r = extractvalue` of `%nz.i.r`, then bitcast to B as
+`%nz.outfp<j>.r`, then insert into `{ B, B }` (first into zeroinitializer as
+`%nz.out0.r`, finally as `%r`). Thus the special operations retain their
+semantics and field order under the same format policy.
+
+The runtimes libm is musl-derived and compiled through this pipeline, so it is
+soft-float code itself and the same function runs in both builds; calls of
+`sin`, `exp`, … in source resolve to it by §4.5. The certificate records the
+runtimes/arith versions. No correct-rounding claim is required; bit-exact
+determinism is (NS §3.2). The carrier routines are linked bitcode definitions,
+normalised by this same pipeline, not new ISA primitives or unresolved host calls.
+
+**Accuracy envelope.** For each finite mathematical result of a §13.4 own-format carrier transcendental, the implementation MUST return a B value within one local ulp of that exact result, over the entire finite input domain; local ulp is the spacing of B's adjacent finite values bracketing the exact result, taking an exactly representable result as the lower endpoint (the upper endpoint at the largest finite value), with the least positive subnormal spacing at zero or in the subnormal interval. For ppcf128 use §13.1's ordered canonical-pair values. Special values, domain errors, poles, signed zeros and overflow results follow the named operation's mathematical/IEEE semantics rather than this finite-result envelope. At overflow the result is the correctly rounded overflow outcome for the requested mode. This is an error bound, not a general correct-rounding claim.
+
+The bound MUST apply separately to both fields of sincos/sincospi; modf MUST split the input exactly with truncation toward zero and preserve required zero signs, and powi MUST retain its specified repeated-squaring sequence with each multiplication/division rounded under §13.1, rather than claiming the one-ulp bound for the whole sequence.
+
+For `_rm` carrier transcendentals, implementations MUST choose a result within the same envelope on the requested side of the exact result for directed modes, use nearest-side selection for the two nearest modes, and raise IEEE invalid for a domain error or signaling NaN, divbyzero for a pole, overflow when the correctly rounded mathematical result overflows B, underflow when that result is tiny after rounding and inexact, and inexact iff the returned finite value differs from the exact mathematical result; approximation work alone MUST NOT set a flag on an exactly representable mathematical result. For nearest-side selection, compare the distances to the two B neighbours bracketing the exact result, with ties to even or away as requested; this constrained case is correctly rounded. Unconstrained carrier operations retain the one-ulp allowance. Flags for modf/powi follow their exact split/sequenced arithmetic semantics. The native-format musl libm accuracy policy remains the recorded, versioned musl implementation; the quantitative carrier envelope applies to every own-format carrier route.
+
+### 13.5 Constrained intrinsics, `strictfp` and the floating-point environment
+
+bennett-runtimes defines @__bennett_rt_fenv as a global { i32, i32 }, align 4; round is field 0 at byte offset 0, flags is field 1 at byte offset 4, initially {0,0}; bennett-arith declares that same object.
+
+`llvm.experimental.constrained.<op>(…, metadata <rounding>, metadata <except>)` becomes the
+soft-float call of §13.1 with the suffix `_rm` and an extra `i32 R` operand: R = 0 for
+`round.tonearest`, 1 `round.downward`, 2 `round.upward`, 3 `round.towardzero`, 4
+`round.tonearestaway`, and for `round.dynamic` the value loaded from the runtimes global
+`__bennett_rt_fenv` (field `round`); when `<except>` is not `fpexcept.ignore`, the entry point
+ORs the IEEE flags it raises (invalid 1, divbyzero 2, overflow 4, underflow 8, inexact 16) into
+`__bennett_rt_fenv` (field `flags`). `llvm.get.rounding`, `set.rounding`, `get.fpenv`,
+`set.fpenv`, `reset.fpenv`, `get.fpmode`, `set.fpmode`, `reset.fpmode` read and write that state;
+musl's `<fenv.h>` functions in `bennett-runtimes` do the same. Unconstrained operations use round
+to nearest and raise no flags, as LLVM assumes of the default environment. A `strictfp` call-site
+attribute on a marker is benign (§3.6).
+
+**Quiet and signaling comparison ABI.** N32 MUST lower `llvm.experimental.constrained.fcmp` to `i1 @__bennett_sf_cmp_B_rm(C_B, C_B, i32 P, i32 R)` and `llvm.experimental.constrained.fcmps` to the distinct `i1 @__bennett_sf_cmps_B_rm(C_B, C_B, i32 P, i32 R)`, with P exactly the 0..15 predicate encoding of §13.1 and R = 0 (these intrinsics have exception metadata but no rounding metadata); vector forms scalarise first, and no predicate-bit extension encodes signalingness.
+
+Both entries MUST compute the same LLVM predicate truth value, while quiet `cmp` raises invalid only for a signaling NaN operand and signaling `cmps` raises invalid for either quiet or signaling NaN, even for predicates false/true; neither raises divbyzero, overflow, underflow or inexact, and no comparison canonicalises or modifies its input bits.
+
+For `fpexcept.ignore`, the normaliser MUST use `i1 @__bennett_sf_cmp_B(C_B, C_B, i32 P)` for either intrinsic so the observable fenv is unchanged; for `fpexcept.maytrap` or `fpexcept.strict` it MUST use the corresponding `_rm` entry, OR invalid into the sticky flags and return the predicate without a host trap (the dialect's deterministic exception convention), identically on LLVM 18 and 23. The plain cmp entry therefore has no flag side effect, and every `_rm` comparison entry always records the flags it raises.
+
+All seven formats MUST retain own-format arithmetic and transcendental semantics, with vector operations scalarised first and identical deterministic carrier implementations in the materialised native and lifted builds. [deps: DLT-13.1, DLT-13.2, DLT-13.3, DLT-13.4, DLT-13.5, DLT-12.1-P1, ISA-4.2]
+
+Suite DF checks the independent §§13.1/13.4/13.5 boundary vectors in `scripts/0212_numerical.c`; full-domain accuracy and exact-flag implementation obligations remain open.
+
+### 13.6 Examples
+
+The unordered bit is predicate bit 3: ueq = 8|1 = 9, uno = 8, une = 8|2|4 = 14.
+
+```llvm normalise-in=n-fcmp
+ define i1 @p(double %a, double %b) {
+   %r = fcmp une double %a, %b
+   ret i1 %r
+ }
+```
+
+```llvm normalise-out=n-fcmp
+ declare i1 @__bennett_sf_cmp_f64(i64, i64, i32)
+ define i1 @p(double %a, double %b) {
+   %nz.0.r = bitcast double %a to i64
+   %nz.1.r = bitcast double %b to i64
+   %r = call i1 @__bennett_sf_cmp_f64(i64 %nz.0.r, i64 %nz.1.r, i32 14)
+   ret i1 %r
+ }
+```
+
+```text native=n-fcmp
+p(0x7ff8000000000000,0x3ff0000000000000)=1
+p(0x3ff0000000000000,0x3ff0000000000000)=0
+```
+
+```text state=fcmp-abi at=0
+__bennett_sf_cmp_f64(0x3ff0000000000000,0x3ff0000000000000,9)=1
+__bennett_sf_cmp_f64(0x3ff0000000000000,0x4000000000000000,8)=0
+```
+
+
+```llvm normalise-in=n-fmuladd
+define internal double @fm(double %a, double %b, double %c) {
+  %r = call double @llvm.fmuladd.f64(double %a, double %b, double %c)
+  ret double %r
+}
+
+declare double @llvm.fmuladd.f64(double, double, double)
+```
+
+```llvm normalise-out=n-fmuladd
+define internal double @fm(double %a, double %b, double %c) {
+  %nz.0.nz.m.r = bitcast double %a to i64
+  %nz.1.nz.m.r = bitcast double %b to i64
+  %nz.i.nz.m.r = call i64 @__bennett_sf_mul_f64(i64 %nz.0.nz.m.r, i64 %nz.1.nz.m.r)
+  %nz.m.r = bitcast i64 %nz.i.nz.m.r to double
+  %nz.0.r = bitcast double %nz.m.r to i64
+  %nz.1.r = bitcast double %c to i64
+  %nz.i.r = call i64 @__bennett_sf_add_f64(i64 %nz.0.r, i64 %nz.1.r)
+  %r = bitcast i64 %nz.i.r to double
+  ret double %r
+}
+
+declare double @llvm.fmuladd.f64(double, double, double)
+
+declare i64 @__bennett_sf_mul_f64(i64, i64)
+
+declare i64 @__bennett_sf_add_f64(i64, i64)
+```
+
+```text native=n-fmuladd
+fm(1.5, 2.0, 0.25) = 3.25 (0x400a000000000000), input and output modules
+fm(0.1, 10.0, -1.0) = 0.0 (0x0000000000000000), output module on every target; input module: 0.0 for -march=x86-64, 5.551115123125783e-17 (0x3c90000000000000) for -march=haswell
+```
+
+*(non-normative)* The double nearest 0.1 is 0x3FB999999999999A = 0.1 + 2^−54/10 exactly, so its
+exact product with 10 is 1 + 2^−54. Unfused, the product rounds to 1.0 (2^−54 is below half an
+ulp of 1, 2^−53) and adding −1.0 gives 0.0; fused, the exact 1 + 2^−54 − 1 = 2^−54 is returned.
+`llvm.fmuladd` lets the code generator choose, so the input module's result depends on the CPU;
+N16 fixes the unfused meaning in both builds (spike F4).
+
+Extended precision and libm intrinsics (N33):
+
+```llvm normalise-in=n-fp80
+define internal x86_fp80 @l(x86_fp80 %a, double %d) {
+  %e = fpext double %d to x86_fp80
+  %r = fadd x86_fp80 %a, %e
+  ret x86_fp80 %r
+}
+```
+
+```llvm normalise-out=n-fp80
+define internal x86_fp80 @l(x86_fp80 %a, double %d) {
+  %nz.0.e = bitcast double %d to i64
+  %nz.i.e = call i80 @__bennett_sf_fpext_f64_f80(i64 %nz.0.e)
+  %e = bitcast i80 %nz.i.e to x86_fp80
+  %nz.0.r = bitcast x86_fp80 %a to i80
+  %nz.1.r = bitcast x86_fp80 %e to i80
+  %nz.i.r = call i80 @__bennett_sf_add_f80(i80 %nz.0.r, i80 %nz.1.r)
+  %r = bitcast i80 %nz.i.r to x86_fp80
+  ret x86_fp80 %r
+}
+
+declare i80 @__bennett_sf_fpext_f64_f80(i64)
+
+declare i80 @__bennett_sf_add_f80(i80, i80)
+```
+
+```llvm normalise-in=n-libm
+define internal double @e(double %x, float %y) {
+  %a = call double @llvm.exp.f64(double %x)
+  %b = call float @llvm.sin.f32(float %y)
+  %c = fpext float %b to double
+  %r = fadd double %a, %c
+  ret double %r
+}
+
+declare double @llvm.exp.f64(double)
+
+declare float @llvm.sin.f32(float)
+```
+
+```llvm normalise-out=n-libm
+define internal double @e(double %x, float %y) {
+  %a = call double @exp(double %x)
+  %b = call float @sinf(float %y)
+  %nz.0.c = bitcast float %b to i32
+  %nz.i.c = call i64 @__bennett_sf_fpext_f32_f64(i32 %nz.0.c)
+  %c = bitcast i64 %nz.i.c to double
+  %nz.0.r = bitcast double %a to i64
+  %nz.1.r = bitcast double %c to i64
+  %nz.i.r = call i64 @__bennett_sf_add_f64(i64 %nz.0.r, i64 %nz.1.r)
+  %r = bitcast i64 %nz.i.r to double
+  ret double %r
+}
+
+declare double @llvm.exp.f64(double)
+
+declare float @llvm.sin.f32(float)
+
+declare double @exp(double)
+
+declare float @sinf(float)
+
+declare i64 @__bennett_sf_fpext_f32_f64(i32)
+
+declare i64 @__bennett_sf_add_f64(i64, i64)
+```
+
+*(non-normative)* The calls of `exp` and `sinf` pass `double` and `float` values, which are
+bit-exact moves; they resolve by §4.5 to the runtimes libm, whose own floating-point code has been
+normalised by §13.1. N33 runs before N32 (§12.1), so its declarations precede N32's; the libm
+calls it creates are not floating-point instructions in the sense of §13.1 (they pass bit-exact
+values) and N32 leaves them alone.
+
+**Portable extended-format libm witnesses.** The invalid old routes fail
+LLVM 18/23 verification: `fpext fp128 to x86_fp80` on x86-64 and
+`fpext ppc_fp128 to fp128` on AArch64/RISC-V64 both report `invalid cast opcode`
+(exit 1). Each source and new materialised output below verifies on both majors
+(exit 0), including non-native x86_fp80 on the latter platforms. There are no
+cross-format casts. The numerical vectors use own-format carriers: +0 -> +0,
+and 1+2^-100 retains its low input bits instead of truncating through long
+double. The binary128 input has bit 12 set; the ppc carrier stores the high
+double in low 64 bits and the low double in high 64 bits (APFloat encoding).
+The state checks compile the materialised **carrier** body on the host, linked
+to an independent libquadmath numerical fixture. Per-triple verifier results
+are not claims of native AArch64/RISC-V execution. The fixture validates these
+ABI/numerical witnesses, not a complete production soft-float library.
+
+```llvm normalise-in=n-libm-x86-f128
+target triple = "x86_64-unknown-linux-gnu"
+declare fp128 @llvm.sin.f128(fp128)
+define fp128 @f(fp128 %x) {
+ %r = call fp128 @llvm.sin.f128(fp128 %x)
+ ret fp128 %r
+}
+```
+
+```llvm normalise-out=n-libm-x86-f128
+target triple = "x86_64-unknown-linux-gnu"
+declare fp128 @llvm.sin.f128(fp128)
+define fp128 @f(fp128 %x) {
+  %nz.0.r = bitcast fp128 %x to i128
+  %nz.i.r = call i128 @__bennett_sf_sin_f128(i128 %nz.0.r)
+  %r = bitcast i128 %nz.i.r to fp128
+  ret fp128 %r
+}
+
+declare i128 @__bennett_sf_sin_f128(i128)
+```
+
+```llvm normalise-in=n-libm-x86-ppcf128
+target triple = "x86_64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+ %r = call ppc_fp128 @llvm.sin.ppcf128(ppc_fp128 %x)
+ ret ppc_fp128 %r
+}
+```
+
+```llvm normalise-out=n-libm-x86-ppcf128
+target triple = "x86_64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+  %nz.0.r = bitcast ppc_fp128 %x to i128
+  %nz.i.r = call i128 @__bennett_sf_sin_ppcf128(i128 %nz.0.r)
+  %r = bitcast i128 %nz.i.r to ppc_fp128
+  ret ppc_fp128 %r
+}
+
+declare i128 @__bennett_sf_sin_ppcf128(i128)
+```
+
+```llvm normalise-in=n-libm-arm-ppcf128
+target triple = "aarch64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+ %r = call ppc_fp128 @llvm.sin.ppcf128(ppc_fp128 %x)
+ ret ppc_fp128 %r
+}
+```
+
+```llvm normalise-out=n-libm-arm-ppcf128
+target triple = "aarch64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+  %nz.0.r = bitcast ppc_fp128 %x to i128
+  %nz.i.r = call i128 @__bennett_sf_sin_ppcf128(i128 %nz.0.r)
+  %r = bitcast i128 %nz.i.r to ppc_fp128
+  ret ppc_fp128 %r
+}
+
+declare i128 @__bennett_sf_sin_ppcf128(i128)
+```
+
+```llvm normalise-in=n-libm-arm-f80
+target triple = "aarch64-unknown-linux-gnu"
+declare x86_fp80 @llvm.sin.f80(x86_fp80)
+define x86_fp80 @f(x86_fp80 %x) {
+ %r = call x86_fp80 @llvm.sin.f80(x86_fp80 %x)
+ ret x86_fp80 %r
+}
+```
+
+```llvm normalise-out=n-libm-arm-f80
+target triple = "aarch64-unknown-linux-gnu"
+declare x86_fp80 @llvm.sin.f80(x86_fp80)
+define x86_fp80 @f(x86_fp80 %x) {
+  %nz.0.r = bitcast x86_fp80 %x to i80
+  %nz.i.r = call i80 @__bennett_sf_sin_f80(i80 %nz.0.r)
+  %r = bitcast i80 %nz.i.r to x86_fp80
+  ret x86_fp80 %r
+}
+
+declare i80 @__bennett_sf_sin_f80(i80)
+```
+
+```llvm normalise-in=n-libm-riscv-ppcf128
+target triple = "riscv64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+ %r = call ppc_fp128 @llvm.sin.ppcf128(ppc_fp128 %x)
+ ret ppc_fp128 %r
+}
+```
+
+```llvm normalise-out=n-libm-riscv-ppcf128
+target triple = "riscv64-unknown-linux-gnu"
+declare ppc_fp128 @llvm.sin.ppcf128(ppc_fp128)
+define ppc_fp128 @f(ppc_fp128 %x) {
+  %nz.0.r = bitcast ppc_fp128 %x to i128
+  %nz.i.r = call i128 @__bennett_sf_sin_ppcf128(i128 %nz.0.r)
+  %r = bitcast i128 %nz.i.r to ppc_fp128
+  ret ppc_fp128 %r
+}
+
+declare i128 @__bennett_sf_sin_ppcf128(i128)
+```
+
+```llvm normalise-in=n-libm-riscv-f80
+target triple = "riscv64-unknown-linux-gnu"
+declare x86_fp80 @llvm.sin.f80(x86_fp80)
+define x86_fp80 @f(x86_fp80 %x) {
+ %r = call x86_fp80 @llvm.sin.f80(x86_fp80 %x)
+ ret x86_fp80 %r
+}
+```
+
+```llvm normalise-out=n-libm-riscv-f80
+target triple = "riscv64-unknown-linux-gnu"
+declare x86_fp80 @llvm.sin.f80(x86_fp80)
+define x86_fp80 @f(x86_fp80 %x) {
+  %nz.0.r = bitcast x86_fp80 %x to i80
+  %nz.i.r = call i80 @__bennett_sf_sin_f80(i80 %nz.0.r)
+  %r = bitcast i80 %nz.i.r to x86_fp80
+  ret x86_fp80 %r
+}
+
+declare i80 @__bennett_sf_sin_f80(i80)
+```
+
+```text state=n-libm-x86-f128 at=0
+{"verifier":{"18":0,"23":0},"vectors":[["00000000000000000000000000000000","00000000000000000000000000000000"],["3fff0000000000000000000000001000","3ffeaed548f090cee0418dd3d2139b69"]],"code":0}
+```
+
+```text state=n-libm-x86-ppcf128 at=0
+{"verifier":{"18":0,"23":0},"vectors":[["00000000000000000000000000000000","00000000000000000000000000000000"],["39b00000000000003ff0000000000000","3c406374f484e6da3feaed548f090cee"]],"code":0}
+```
+
+```text state=n-libm-arm-ppcf128 at=0
+{"verifier":{"18":0,"23":0},"vectors":[["00000000000000000000000000000000","00000000000000000000000000000000"],["39b00000000000003ff0000000000000","3c406374f484e6da3feaed548f090cee"]],"code":0}
+```
+
+```text state=n-libm-riscv-ppcf128 at=0
+{"verifier":{"18":0,"23":0},"vectors":[["00000000000000000000000000000000","00000000000000000000000000000000"],["39b00000000000003ff0000000000000","3c406374f484e6da3feaed548f090cee"]],"code":0}
+```
+
+```text state=libm-invalid-casts at=0
+{"18":"invalid cast opcode","23":"invalid cast opcode"}
+```
+
+## 14. Calls and control transfer
+
+### 14.1 Direct calls and recursion
+
+Direct calls lower to CC/R `call` (ISA §4.1) and to lifted `lift.call`/`lift.ret` lprocs (ISA
+§3.7), with the depth and stack faults of the budget (§9). Recursion is unrestricted.
+
+### 14.2 Indirect calls
+
+- **Candidate set** of an indirect call with callee value v: every `FN(F)` atom of AV(v) (§5),
+  resolved through aliases; if AV(v) has the ⊤ flag, in addition every function whose LLVM
+  function type equals the call's and whose address is used anywhere in the linked program
+  (sound for defined C, C++ and Rust: a call through an incompatible type is undefined, and
+  compatible C types lower to the same LLVM type under opaque pointers; SQLite §3). The device
+  closure includes every candidate (§4.1).
+- **Dispatch**: the compare tree of §16.4 over the candidates' A(F) values, sorted unsigned, with
+  a static call at each leaf: CC/R `icmp eq` + `br` + `call @F_k` (ISA §4.1), lifted `lift.icmp.eq`
+  + `qbranch` + `lift.call @L(F_k)` (ISA §4.2). `qjumpr` is intra-function only (ISA §4.2) and is
+  not used for calls.
+- **No match** (a value that is the address of no function of the program, or of a function
+  without bitcode): F(4) `FAULT_UB_TRAP` (outline E13; calling through such a pointer is undefined
+  or reaches code without bitcode, which the coverage report names). **Zero candidates**: F(4) at
+  the site.
+- **Trampolines** (`llvm.init.trampoline(t, f, nval)`, `llvm.adjust.trampoline(t)`): `init`
+  stores the tag `0x42454E54` (i32), A(f) and nval in the trampoline memory t (runtimes
+  `__bennett_rt_tramp_init`); `adjust` returns t. Before the compare tree, an indirect call whose
+  callee value v points to a live allocation holding the tag at offset 0 calls the stored
+  function with the stored nest value as its `nest` argument.
+- Calls through a variadic function type use §14.3. The same compare-tree construction serves
+  region operands (§7.2), handle ids (§6.5), descriptor shapes (§8.4), `switch` (§14.8) and
+  `indirectbr` (§14.9).
+
+```llvm example=indirect-table verdict=accept callees=gt,lt
+define internal i32 @lt(i32 %a, i32 %b) {
+  %c = icmp slt i32 %a, %b
+  %r = zext i1 %c to i32
+  ret i32 %r
+}
+
+define internal i32 @gt(i32 %a, i32 %b) {
+  %c = icmp sgt i32 %a, %b
+  %r = zext i1 %c to i32
+  ret i32 %r
+}
+
+@cmps = internal constant [2 x ptr] [ptr @lt, ptr @gt]
+
+define void @pick(i32 %which, i32 %a, i32 %b) {
+entry:
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %k = and i32 %which, 1
+  %i = zext i32 %k to i64
+  %p = getelementptr [2 x ptr], ptr @cmps, i64 0, i64 %i
+  %f = load ptr, ptr %p
+  %r = call i32 %f(i32 %a, i32 %b)
+  %t = icmp ne i32 %r, 0
+  br i1 %t, label %flip, label %out
+
+flip:
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  br label %out
+
+out:
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+A callee from host input dispatches over the address-taken functions of the call's type; here
+`@lt` and `@gt` (their addresses are stored in `@cmps`), but not `@neg`, whose type differs:
+
+```llvm example=indirect-host-pointer verdict=accept callees=gt,lt
+define internal i32 @lt(i32 %a, i32 %b) {
+  %c = icmp slt i32 %a, %b
+  %r = zext i1 %c to i32
+  ret i32 %r
+}
+
+define internal i32 @gt(i32 %a, i32 %b) {
+  %c = icmp sgt i32 %a, %b
+  %r = zext i1 %c to i32
+  ret i32 %r
+}
+
+define internal i32 @neg(i32 %a) {
+  %r = sub i32 0, %a
+  ret i32 %r
+}
+
+@cmps = global [2 x ptr] [ptr @lt, ptr @gt]
+@unary = global ptr @neg
+
+define void @apply(ptr %f, i32 %a, i32 %b) {
+entry:
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %r = call i32 %f(i32 %a, i32 %b)
+  %t = icmp ne i32 %r, 0
+  br i1 %t, label %flip, label %out
+
+flip:
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  br label %out
+
+out:
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+```
+
+Every device indirect call MUST retain the reference candidate closure and compare-tree lowering to tier-appropriate static calls, using comparison-link addresses and the accepted no-match fault. [deps: DLT-4.1-P12, DLT-14.2, DLT-16.4-P25, ISA-4.1, ISA-4.2, ISA-3.7]
+
+### 14.3 Varargs (N23)
+
+- A variadic definition `R @f(P…, ...)` becomes `R @f(P…, ptr %nz.va)`; every call of it, direct
+  or through a variadic function type, passes a **va block** in place of the variadic arguments.
+- A call site spills its variadic arguments (as the front end promoted them) into a va block
+  `%nz.vb.<r>`, an alloca of the caller's entry block (so N24 places it in the caller's shadow
+  frame), in argument order: argument j at the next offset aligned to max(8, ABI alignment of its
+  type), occupying its size rounded up to 8 bytes (the x86-64 System V, AAPCS64 and RISC-V LP64
+  memory-argument layout); argument j ≥ 1 is addressed by `%nz.vb<j>.<r>`.
+- `llvm.va_start(ptr ap)` builds the target's `va_list` so that the front end's inline `va_arg`
+  takes its memory path:
+
+  | Target | `va_list` | Fields written by `va_start` |
+  |---|---|---|
+  | x86-64 System V | `{ i32 gp_offset, i32 fp_offset, ptr overflow_arg_area, ptr reg_save_area }` | gp_offset = 48, fp_offset = 176, overflow_arg_area = `%nz.va`, reg_save_area = null (SQLite §5.1): every `va_arg` finds no register slot left |
+  | AArch64 AAPCS64 | `{ ptr __stack, ptr __gr_top, ptr __vr_top, i32 __gr_offs, i32 __vr_offs }` | __stack = `%nz.va`, __gr_top = __vr_top = null, __gr_offs = __vr_offs = 0 |
+  | RISC-V LP64 | `ptr` | the pointer `%nz.va` |
+
+  The stores are named `%nz.vfo.<r>` (x86-64 `fp_offset` address), `%nz.vov.<r>` (overflow area
+  address), `%nz.vrs.<r>` (register save area address); AArch64 and RISC-V use `%nz.vs.<r>`,
+  `%nz.vgt.<r>`, `%nz.vvt.<r>`, `%nz.vgo.<r>`, `%nz.vvo.<r>` in field order.
+- IR `va_arg` is expanded by the same memory layout; `llvm.va_copy(d, s)` copies the
+  `va_list` record (24, 32 or 8 bytes); `llvm.va_end` is deleted.
+- A call of an external variadic function without bitcode passes the va block to its host call
+  (§11.4) or is trapped (§4.5). One table row per target ABI; adding a target adds a row (§24).
+
+```llvm normalise-in=n-varargs
+%struct.__va_list_tag = type { i32, i32, ptr, ptr }
+
+define internal i32 @sum(i32 %n, ...) {
+entry:
+  %ap = alloca %struct.__va_list_tag, align 16
+  call void @llvm.va_start(ptr %ap)
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i2, %got ]
+  %s = phi i32 [ 0, %entry ], [ %s2, %got ]
+  %done = icmp sge i32 %i, %n
+  br i1 %done, label %out, label %arg
+
+arg:
+  %gp = load i32, ptr %ap, align 16
+  %fits = icmp ult i32 %gp, 41
+  br i1 %fits, label %inreg, label %inmem
+
+inreg:
+  %rsap = getelementptr %struct.__va_list_tag, ptr %ap, i64 0, i32 3
+  %rsa = load ptr, ptr %rsap, align 16
+  %gp64 = zext i32 %gp to i64
+  %ra = getelementptr i8, ptr %rsa, i64 %gp64
+  %gp2 = add i32 %gp, 8
+  store i32 %gp2, ptr %ap, align 16
+  br label %got
+
+inmem:
+  %ovp = getelementptr %struct.__va_list_tag, ptr %ap, i64 0, i32 2
+  %ov = load ptr, ptr %ovp, align 8
+  %ov2 = getelementptr i8, ptr %ov, i64 8
+  store ptr %ov2, ptr %ovp, align 8
+  br label %got
+
+got:
+  %addr = phi ptr [ %ra, %inreg ], [ %ov, %inmem ]
+  %v = load i32, ptr %addr, align 4
+  %s2 = add i32 %s, %v
+  %i2 = add i32 %i, 1
+  br label %loop
+
+out:
+  call void @llvm.va_end(ptr %ap)
+  ret i32 %s
+}
+
+define i32 @top(i32 %x) {
+  %r = call i32 (i32, ...) @sum(i32 3, i32 %x, i32 20, i32 300)
+  ret i32 %r
+}
+
+declare void @llvm.va_start(ptr)
+
+declare void @llvm.va_end(ptr)
+```
+
+```llvm normalise-out=n-varargs
+%struct.__va_list_tag = type { i32, i32, ptr, ptr }
+
+define internal i32 @sum(i32 %n, ptr %nz.va) {
+entry:
+  %nz.fp.sum = call ptr @__bennett_rt_ss_push(i64 32, i64 16)
+  %ap = getelementptr i8, ptr %nz.fp.sum, i64 0
+  store i32 48, ptr %ap, align 4
+  %nz.vfo.sum.0 = getelementptr i8, ptr %ap, i64 4
+  store i32 176, ptr %nz.vfo.sum.0, align 4
+  %nz.vov.sum.0 = getelementptr i8, ptr %ap, i64 8
+  store ptr %nz.va, ptr %nz.vov.sum.0, align 8
+  %nz.vrs.sum.0 = getelementptr i8, ptr %ap, i64 16
+  store ptr null, ptr %nz.vrs.sum.0, align 8
+  br label %loop
+
+loop:
+  %i = phi i32 [ 0, %entry ], [ %i2, %got ]
+  %s = phi i32 [ 0, %entry ], [ %s2, %got ]
+  %done = icmp sge i32 %i, %n
+  br i1 %done, label %out, label %arg
+
+arg:
+  %gp = load i32, ptr %ap, align 16
+  %fits = icmp ult i32 %gp, 41
+  br i1 %fits, label %inreg, label %inmem
+
+inreg:
+  %rsap = getelementptr %struct.__va_list_tag, ptr %ap, i64 0, i32 3
+  %rsa = load ptr, ptr %rsap, align 16
+  %gp64 = zext i32 %gp to i64
+  %ra = getelementptr i8, ptr %rsa, i64 %gp64
+  %gp2 = add i32 %gp, 8
+  store i32 %gp2, ptr %ap, align 16
+  br label %got
+
+inmem:
+  %ovp = getelementptr %struct.__va_list_tag, ptr %ap, i64 0, i32 2
+  %ov = load ptr, ptr %ovp, align 8
+  %ov2 = getelementptr i8, ptr %ov, i64 8
+  store ptr %ov2, ptr %ovp, align 8
+  br label %got
+
+got:
+  %addr = phi ptr [ %ra, %inreg ], [ %ov, %inmem ]
+  %v = load i32, ptr %addr, align 4
+  %s2 = add i32 %s, %v
+  %i2 = add i32 %i, 1
+  br label %loop
+
+out:
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.sum)
+  ret i32 %s
+}
+
+define i32 @top(i32 %x) {
+  %nz.fp.top = call ptr @__bennett_rt_ss_push(i64 24, i64 8)
+  %nz.vb.r = getelementptr i8, ptr %nz.fp.top, i64 0
+  store i32 %x, ptr %nz.vb.r, align 8
+  %nz.vb1.r = getelementptr i8, ptr %nz.vb.r, i64 8
+  store i32 20, ptr %nz.vb1.r, align 8
+  %nz.vb2.r = getelementptr i8, ptr %nz.vb.r, i64 16
+  store i32 300, ptr %nz.vb2.r, align 8
+  %r = call i32 @sum(i32 3, ptr %nz.vb.r)
+  call void @__bennett_rt_ss_pop(ptr %nz.fp.top)
+  ret i32 %r
+}
+
+declare ptr @__bennett_rt_ss_push(i64, i64)
+
+declare void @__bennett_rt_ss_pop(ptr)
+```
+
+```text native=n-varargs
+top(1) = 321
+top(-320) = 0
+top(2147483000) = 2147483320
+```
+
+*(non-normative)* The input is the shape clang's inline x86-64 `va_arg` expansion takes after
+`default<O2>` (with the loop bound left as a parameter). With gp_offset = 48 the `fits` test
+(gp_offset < 41) is always false, so every argument is read from `overflow_arg_area`, which is the
+va block: slots at offsets 0, 8, 16 hold x, 20, 300, and the sum is x + 320.
+
+Variadic calls and definitions MUST retain the N23 argument block and target va_list memory-path transform, including promoted scalar types, va_copy and indirect variadic calls. [deps: DLT-14.3, DLT-12.2-P25, ISA-4.1-P8, ISA-4.1-P11, ISA-4.2]
+
+### 14.4 Unwinding (N28: explicit propagation)
+
+N28–N30 remove `noreturn` and incompatible `tail`/`musttail` constraints from every
+transformed nonlocal-transfer definition, declaration and call that now returns normally.
+Returning replacements use dedicated `__bennett_rt_` symbols (including throw, unwind,
+longjmp and exit replacements), so builtin nonreturning assumptions cannot reappear.
+The residual validator rejects any such surviving attribute or constraint.
+
+The runtimes keep the **EH state** in the global `__bennett_rt_eh` of type `{ i32 active, i32
+selector, ptr object }` (active: 0 none, 1 exception, 2 longjmp, 3 fiber switch, 4 exit; §14.5–
+§14.7). Every device variant is rewritten, and the native comparison build uses the same
+materialised code, so the behaviour is identical in both builds:
+
+- `invoke F(args) to label %N unwind label %U` → `call F(args)`; `%nz.ehl.<r> = load i32, ptr
+  @__bennett_rt_eh`; `%nz.ehc.<r> = icmp ne i32 %nz.ehl.<r>, 0`; `br i1 %nz.ehc.<r>, label %U,
+  label %N`.
+- A `call` of a function that may unwind (one without `nounwind`, or an indirect call) inside a
+  function that may unwind → the same check after the call, branching on a set flag to the
+  function's **early-return block** `nz.ehr.<f>`, which pops the shadow frame (§17.3) and returns
+  the zero of the return type.
+- `%r = landingpad T clauses` → `%r = call { ptr, i32 } @__bennett_rt_eh_match(ptr P, ptr
+  @nz.lp.<f>.<r>)`, where P is the function's personality and `@nz.lp.<f>.<r>` is the private
+  constant `{ i64 cleanup, i64 n, [n x { i64 kind, ptr info }] }` of the clauses in order (kind 0
+  `catch` with its typeinfo, kind 1 `filter` with its array). The runtimes implement the
+  personality's matching: for `__gxx_personality_v0`, C++ catch by typeinfo with the C++ ABI's
+  derived-class rules and filters; for `rust_eh_personality`, Rust panics; for
+  `__gcc_personality_v0`, cleanups only. A matching catch or a cleanup clears `active` and
+  returns (object, selector) with selector = `llvm.eh.typeid.for` of the matched typeinfo (0 for
+  a cleanup); when nothing matches (or the pseudo-exception is a longjmp, switch or exit, which no
+  clause handles) the flag stays set, the selector is −1, and the normaliser's check after the
+  call (`%nz.ehm.<r> = extractvalue … 1`, `icmp eq … −1`) branches to the early-return block.
+- `resume v` → `call void @__bennett_rt_eh_resume({ ptr, i32 } v)` (sets `active` = 1 and the
+  object) and a branch to the early-return block.
+- `llvm.eh.typeid.for(ti)` → `call i32 @__bennett_rt_eh_typeid(ptr ti)`; `llvm.eh.exceptionpointer`
+  and `llvm.eh.exceptioncode` read the state's object.
+- `__cxa_throw`, `_Unwind_RaiseException`, `_Unwind_Resume`, `__rust_start_panic` are runtimes
+  functions that set the state and return; the code after their call is the check above, and the
+  original `unreachable` after them is kept on the path where the flag is clear (F(4)).
+- Windows funclet pads (`catchswitch`, `catchpad`, `cleanuppad`, `catchret`, `cleanupret`) use the
+  same transform with the `__CxxFrameHandler3` matching rules (corpus case needed, bd `-kdj`).
+- **Unwinding out of a region**: a set flag when an oracle's region function returns is `fault 4`
+  in the wrapper (§16.2); in an action's generation it is TDL-12's `fault` event with code 4; at
+  an R entry or a CC device entry it ends the run with code 4 (§11.5). NS §3.1: "a fault code
+  where it is not [handled in the region]".
+
+```llvm normalise-in=n-eh
+declare i32 @__gxx_personality_v0(...)
+
+declare void @may_throw(i32)
+
+define internal i32 @eh(i32 %x) personality ptr @__gxx_personality_v0 {
+entry:
+  invoke void @may_throw(i32 %x)
+          to label %ok unwind label %lp
+
+ok:
+  ret i32 0
+
+lp:
+  %e = landingpad { ptr, i32 }
+          catch ptr null
+  ret i32 1
+}
+```
+
+```llvm normalise-out=n-eh
+@__bennett_rt_eh = external global { i32, i32, ptr }
+@nz.lp.eh.e = private constant { i64, i64, [1 x { i64, ptr }] } { i64 0, i64 1, [1 x { i64, ptr }] [{ i64, ptr } { i64 0, ptr null }] }
+
+declare i32 @__gxx_personality_v0(...)
+
+declare void @may_throw(i32)
+
+define internal i32 @eh(i32 %x) {
+entry:
+  call void @may_throw(i32 %x)
+  %nz.ehl.eh.0 = load i32, ptr @__bennett_rt_eh, align 4
+  %nz.ehc.eh.0 = icmp ne i32 %nz.ehl.eh.0, 0
+  br i1 %nz.ehc.eh.0, label %lp, label %ok
+
+ok:
+  ret i32 0
+
+lp:
+  %e = call { ptr, i32 } @__bennett_rt_eh_match(ptr @__gxx_personality_v0, ptr @nz.lp.eh.e)
+  %nz.ehm.e = extractvalue { ptr, i32 } %e, 1
+  %nz.ehn.e = icmp eq i32 %nz.ehm.e, -1
+  br i1 %nz.ehn.e, label %nz.ehr.eh, label %nz.lpc.e
+
+nz.lpc.e:
+  ret i32 1
+
+nz.ehr.eh:
+  ret i32 0
+}
+
+declare { ptr, i32 } @__bennett_rt_eh_match(ptr, ptr)
+```
+
+```text native=n-eh
+eh(2) = 0; eh(3) = 1; eh(-5) = 1 (input built with clang++ and a C++ may_throw that throws when x is odd; output built with the runtimes seeds, whose may_throw sets the EH state)
+```
+
+Device exceptions MUST retain explicit propagation and in-region handler execution, with a region-escaping exception reported through that tier's declared fault path. [deps: DLT-14.4, DLT-12.2-P30, ISA-4.1-P11, ISA-4.2, ISA-4.9]
+
+### 14.5 setjmp and longjmp (N29)
+
+- A call of `setjmp`, `_setjmp`, `sigsetjmp` or `__sigsetjmp` with buffer b in function f
+  becomes a block boundary: `call void @__bennett_rt_setjmp(ptr b, ptr %nz.fp.<f>, i32 k)` stores
+  the **frame token** (f's shadow-frame address, §17.3) and the site index k (0-based among f's
+  setjmp sites) in b, and the call's result becomes the phi `%r = phi i32 [ 0, <normal> ], [ v,
+  %nz.sj<k>.<f> ]` at the continuation.
+- `longjmp(b, v)` (and `siglongjmp`, `_longjmp`) is a runtimes function that sets the EH state to
+  the longjmp pseudo-exception (`active` = 2, object = b, selector = v, with v = 0 replaced by 1)
+  and returns; propagation is §14.4 (landing pads do not handle it).
+- In every function containing a setjmp site, the check after each call that may unwind also
+  tests `active` = 2 and the frame token and site index stored in b; on a match it clears the
+  state and branches to `%nz.sj<k>.<f>`, the continuation of site k with value v. SSA values live
+  into the continuation take, on that path, their values at the call after which the longjmp was
+  detected (C makes non-volatile locals modified after `setjmp` indeterminate; memory is the
+  shadow frame's).
+- This covers `longjmp` to an active frame, the only defined case in C, and Julia's `jl_try`
+  (`sigsetjmp`, rung 5). A `longjmp` to a frame that has returned reaches the device entry and
+  faults (code 4, §14.4).
+
+A `longjmp` across two frames, as a whole program in the R tier; the expected status is the
+native one:
+
+```c example=sjlj-two-frames verdict=accept lowering=K5 rmode=@main
+#include <setjmp.h>
+
+static jmp_buf jb;
+
+static void deep(int n) {
+  if (n == 0) longjmp(jb, 7);
+  deep(n - 1);
+}
+
+static int try_deep(int n) {
+  int r = setjmp(jb);
+  if (r) return r;
+  deep(n);
+  return 0;
+}
+
+int main(void) { return try_deep(2) + 10 * try_deep(0); }
+```
+
+The same source as a whole-program CC entry has no R entry and is an accepted N29/N30 witness; native success is checked against the same cc-run result.
+
+```c example=sjlj-two-frames-cc verdict=accept tier=CC entry=@main
+#include <setjmp.h>
+
+static jmp_buf jb;
+
+static void deep(int n) {
+  if (n == 0) longjmp(jb, 7);
+  deep(n - 1);
+}
+
+static int try_deep(int n) {
+  int r = setjmp(jb);
+  if (r) return r;
+  deep(n);
+  return 0;
+}
+
+int main(void) { return try_deep(2) + 10 * try_deep(0); }
+```
+
+```text lowering-report=sjlj-two-frames
+K5 R entry: pre-instruction step checks lower to fault 1 (§17.6); terminal record, intact reversible prefix
+```
+
+```text cc-run=sjlj-two-frames
+driver: --bennett-tier=reversible --bennett-entry=main
+run: status=COMPLETED results=[INT(32):77] faults=[]
+native: exit status 77 (clang 18 and 23, -O2)
+reverse: status=REVERSED memory=entry
+```
+
+### 14.6 Fibers and context switches (N30: rewindable frames)
+
+- **Switch primitives**: the runtimes' `swapcontext`, `makecontext`, `setcontext`, Julia's task
+  switch (`jl_swap_fiber`, `ctx_switch`), and the platform shims `swtch` and `__switch_to` (§20.5);
+  all are implemented by `__bennett_rt_fiber_switch(from, to)` over records that hold a fiber's
+  shadow stack (the `makecontext` stack argument) and its saved frame chain.
+- Every function on a call-graph path to a switch primitive is **instrumented**, Asyncify-style:
+  its SSA values that are live across a call that may switch are spilled to its shadow frame
+  before the call and reloaded after it, and it gets a resume index (the call site it was
+  suspended at).
+- A switch sets the EH state to `active` = 3 and propagates (§14.4): each instrumented frame on
+  the way out saves its resume index and returns early, up to the fiber's base; the runtime
+  records the chain, then **rewinds** the target fiber: it calls the target's base with the
+  rewind state, and each instrumented frame jumps to its saved resume index, reloads its values
+  and calls the next frame, until the target's switch call returns.
+- This works in CC, R and L on ISA 0.9: it is ordinary code over memory. G-16 (ISA fibers,
+  §25.3) is the efficient alternative.
+
+A `swapcontext` ping-pong in the R tier: the main fiber logs 0, 1, 2 and the second fiber 100,
+101, 102, alternately; the status encodes the order (digits 0 0 1 1 2 2 give 1122, and 1122 mod
+256 = 98):
+
+```c example=fiber-pingpong verdict=accept lowering=K5 rmode=@main
+#include <ucontext.h>
+
+static ucontext_t main_ctx, fiber_ctx;
+static int trace[6], n;
+static char fiber_stack[16384];
+
+static void fiber(void) {
+  for (int i = 0; i < 3; i++) {
+    trace[n++] = 100 + i;
+    swapcontext(&fiber_ctx, &main_ctx);
+  }
+}
+
+int main(void) {
+  getcontext(&fiber_ctx);
+  fiber_ctx.uc_stack.ss_sp = fiber_stack;
+  fiber_ctx.uc_stack.ss_size = sizeof fiber_stack;
+  fiber_ctx.uc_link = &main_ctx;
+  makecontext(&fiber_ctx, fiber, 0);
+  for (int i = 0; i < 3; i++) {
+    trace[n++] = i;
+    swapcontext(&main_ctx, &fiber_ctx);
+  }
+  int s = 0;
+  for (int i = 0; i < n; i++) s = s * 10 + trace[i] % 10;
+  return s % 256;
+}
+```
+
+The same source as a whole-program CC entry has no R entry and is an accepted N29/N30 witness; native success is checked against the same cc-run result.
+
+```c example=fiber-pingpong-cc verdict=accept tier=CC entry=@main
+#include <ucontext.h>
+
+static ucontext_t main_ctx, fiber_ctx;
+static int trace[6], n;
+static char fiber_stack[16384];
+
+static void fiber(void) {
+  for (int i = 0; i < 3; i++) {
+    trace[n++] = 100 + i;
+    swapcontext(&fiber_ctx, &main_ctx);
+  }
+}
+
+int main(void) {
+  getcontext(&fiber_ctx);
+  fiber_ctx.uc_stack.ss_sp = fiber_stack;
+  fiber_ctx.uc_stack.ss_size = sizeof fiber_stack;
+  fiber_ctx.uc_link = &main_ctx;
+  makecontext(&fiber_ctx, fiber, 0);
+  for (int i = 0; i < 3; i++) {
+    trace[n++] = i;
+    swapcontext(&main_ctx, &fiber_ctx);
+  }
+  int s = 0;
+  for (int i = 0; i < n; i++) s = s * 10 + trace[i] % 10;
+  return s % 256;
+}
+```
+
+```text lowering-report=fiber-pingpong
+K5 R entry: pre-instruction step checks lower to fault 1 (§17.6); terminal record, intact reversible prefix
+```
+
+```text cc-run=fiber-pingpong
+driver: --bennett-tier=reversible --bennett-entry=main
+run: status=COMPLETED results=[INT(32):98] faults=[]
+native: exit status 98 (clang 18 and 23, -O2)
+reverse: status=REVERSED memory=entry
+```
+
+### 14.7 `exit`, `abort`, `_Exit`
+
+- `abort` → F(4).
+- musl's `exit` runs the `atexit` handlers and flushes stdio, then calls `_Exit(s)`. `_Exit(s)`
+  (the runtimes' `exit_group` system call) sets the EH state to the **exit pseudo-exception**
+  (`active` = 4, selector = s) and propagates.
+- An R or CC whole-program entry (§19.2) catches it and returns s as the program's status; an
+  oracle wrapper in "oracle from program" mode (§19.3) catches it and delivers s as the payload;
+  a CC device entry of a host program catches it and makes `hostcall bennett.exit` with s, whose
+  host stub calls `_Exit(s)`. Elsewhere (inside an oracle in the plain marker form, inside an
+  action) it is unwinding out of the region: code 4.
+
+```c example=exit-status verdict=accept lowering=K5 rmode=@main
+#include <stdlib.h>
+
+int main(void) {
+  exit(3);
+}
+```
+
+```text lowering-report=exit-status
+K5 R entry: pre-instruction step checks lower to fault 1 (§17.6); terminal record, intact reversible prefix
+```
+
+```text cc-run=exit-status
+driver: --bennett-tier=reversible --bennett-entry=main
+run: status=COMPLETED results=[INT(32):3] faults=[]
+native: exit status 3 (clang 18 and 23, -O2)
+```
+
+### 14.8 `switch`
+
+`switch` lowers by the compare tree of §16.4 in L, and by the same tree of `icmp`/`br` in CC and R
+(ISA has no switch instruction).
+
+### 14.9 `blockaddress` and `indirectbr`
+
+`blockaddress(@f, %bb)` has the device value B(f) + i, where i is the index of %bb among f's k
+address-taken blocks in layout order and B(f) is the base of a k-byte object
+`__bennett_rt_blk.<f>` that the driver adds to the data section of the comparison link (§19.5) and
+whose address the link map records. These values are nonzero, pairwise distinct and distinct from
+every A(F) and every other object's bytes, so comparisons and dispatch on them are exact. `indirectbr ptr v, [labels]` dispatches with the compare
+tree over the labels' values to static branches (`qjump` in L, `br` in CC/R); no match is F(4).
+*(non-normative)* LangRef permits a `blockaddress` only in `indirectbr` and in comparisons with
+null; an execution in which its bits influence a result otherwise (printing, hashing) is
+layout-dependent and validated against the reference interpreter (NS §3.2; §17.1).
+
+## 15. Inline asm and target intrinsics (asm 0.2)
+
+NS §3.3: "Target intrinsics and asm are classified *lowered / trapped / shimmed* in the coverage
+report." N31 applies the tables of this section.
+
+### 15.1 Table format
+
+An asm **row** is keyed by (target architecture, normalised asm string, constraint string):
+
+- the asm string with every run of whitespace (including `\n`, `\t` and `;` separators) replaced
+  by one space and leading and trailing whitespace removed, operand placeholders (`$0`, `${0:w}`)
+  kept;
+- the constraint string exactly as LLVM prints it (clobbers included).
+
+A row has a **class** and a **replacement** in IR. Target-intrinsic rows are keyed by the
+intrinsic name. The rows of this section are normative; they are also published as data files
+`spec/asm/<arch>.toml` (`asm 0.2`, one table per architecture with the fields `asm`,
+`constraints`, `class`, `replacement`), generated from this section; the section prevails on a
+difference. Rows are added with a version change (§23).
+
+### 15.2 Classes
+
+- **lowered** (an IR replacement with the same meaning on the single-threaded device):
+  - an empty asm string (any constraints without outputs) → deleted (a compiler barrier);
+  - `pause` (x86), `nop` (all), `yield` (AArch64), `fence`, `fence rw,rw`, `fence.i` (RISC-V) and
+    the target intrinsics `llvm.x86.sse2.pause`, `llvm.aarch64.hint` → deleted;
+  - `rdtsc` (x86, `={ax},={dx}`), `rdtime`/`rdcycle` (RISC-V), `mrs $0, cntvct_el0` (AArch64),
+    and `llvm.x86.rdtsc`, `llvm.readcyclecounter`, `llvm.readsteadycounter` → a call of
+    `__bennett_rt_cyclecounter()`, which reads the clock model (§11) in every tier;
+  - `cpuid` (x86) → a lookup in the constant leaf table of the declared CPU model
+    (`--bennett-cpu=<model>`; default `x86-64`, whose table is the one the driver reads on the
+    build machine and records in the build record, §19.9, §24 D33), so both builds and every
+    tier see the same values;
+  - asm-goto (`callbr`) whose asm string is lowered → its replacement followed by a branch to the
+    default destination; `llvm.callbr.landingpad` → its operand.
+- **shimmed** (a call of a runtimes or platform function):
+  - the system-call instructions (§15.5) → `__bennett_rt_syscall(nr, a1, …, a6)`, the runtimes'
+    system-call layer, which maps calls onto device models (§11.2) and runtimes services;
+  - privileged forms → platform functions (§20.2).
+- **trapped**: every other row → F(8) with a coverage line naming the asm string. This is
+  required by NS §3.3 ("trapped"), and it occurs only on the executions that reach the asm.
+
+Inline assembly and target intrinsics MUST retain the per-target lowered, shimmed or trapped classification with shim identity and a reached unmodelled-effect fault, rather than rejecting an entire device closure for containing asm. [deps: DLT-15, DLT-12.2-P33, ISA-4.1, ISA-7.3, ISA-13]
+
+### 15.3 Module-level asm and assembly objects
+
+Symbols defined only by `module asm` or by non-bitcode objects (`.S` files) resolve like
+external functions (§4.5): to a runtime or platform shim with the same symbol, recorded with its
+content hash in the certificate's coverage entries (`shim_hash`), else trapped.
+
+### 15.4 Target intrinsics
+
+`llvm.x86.*`, `llvm.aarch64.*`, `llvm.riscv.*` and the other target families use rows of the same
+form keyed by name; the rows the rungs need are those of §15.2 and §20.2; every other target
+intrinsic is trapped until a row is added (a mechanics deferral, §24).
+
+### 15.5 Required rows for 0.2
+
+The musl `__syscall0` … `__syscall6` asm of the three architectures (rung 3). For k arguments the
+replacement is `%r = call i64 @__bennett_rt_syscall(i64 nr, i64 a1, …, i64 ak, i64 0, …)` with
+the absent arguments 0; `nr` and a1 … ak are the inputs named below.
+
+| Architecture | asm | Constraints (k = 0 … 6) | Inputs |
+|---|---|---|---|
+| x86-64 | `syscall` | `={ax},{ax}` then the first k of `{di},{si},{dx},{r10},{r8},{r9}`, then `~{rcx},~{r11},~{memory},~{dirflag},~{fpsr},~{flags}` | nr = `{ax}`, a1 … ak in order |
+| AArch64 | `svc 0` | `={x0},{x8}` then the first k of `{x0},{x1},{x2},{x3},{x4},{x5}`, then `~{memory},~{cc}` | nr = `{x8}`, a1 … ak in order |
+| RISC-V64 | `ecall` | `={x10},{x17}` then the first k of `{x10},{x11},{x12},{x13},{x14},{x15}`, then `~{memory}` | nr = `{x17}`, a1 … ak in order |
+
+*(non-normative)* These are the strings clang 18 and clang 23 produce from musl's
+`arch/*/syscall_arch.h` (the RISC-V source string `ecall\n\t` normalises to `ecall`). The
+xv6-riscv and Linux `tinyconfig` rows are §20.2, fixed by the platform spike (§20.7).
+
+```llvm example=asm-musl-syscall verdict=accept
+define i64 @write3(i64 %fd, ptr %buf) {
+  %a = ptrtoint ptr %buf to i64
+  %r = call i64 asm sideeffect "syscall", "={ax},{ax},{di},{si},{dx},~{rcx},~{r11},~{memory},~{dirflag},~{fpsr},~{flags}"(i64 1, i64 %fd, i64 %a, i64 3)
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_qfree(ptr %h)
+  ret i64 %r
+}
+```
+
+```llvm normalise-in=n-asm
+define internal i64 @w(i64 %fd, i64 %a) {
+  %r = call i64 asm sideeffect "syscall", "={ax},{ax},{di},{si},{dx},~{rcx},~{r11},~{memory},~{dirflag},~{fpsr},~{flags}"(i64 1, i64 %fd, i64 %a, i64 3)
+  call void asm sideeffect "", "~{memory},~{dirflag},~{fpsr},~{flags}"()
+  ret i64 %r
+}
+```
+
+```llvm normalise-out=n-asm
+define internal i64 @w(i64 %fd, i64 %a) {
+  %r = call i64 @__bennett_rt_syscall(i64 1, i64 %fd, i64 %a, i64 3, i64 0, i64 0, i64 0)
+  ret i64 %r
+}
+
+declare i64 @__bennett_rt_syscall(i64, i64, i64, i64, i64, i64, i64)
+```
+
+## 16. The lifting map (map 0.3)
+
+The lifting map turns a materialised region function, a binding shape (§8.4) and the link
+layout (§19.5) into the **reference object** of that shape: the ISA object whose oracle `@ref`
+defines F_B and the budget unit by the reference interpreter (ISA §4.2 "Reference body and
+binding", §14.1). It is a function of its inputs alone, so two plugins on the same LLVM version
+and pipeline produce byte-identical reference objects. Its version (`map 0.3`) is the
+certificate's `dialect_mapping_version` (ISA §12.3). The plugin's device objects (§17.4) are
+plugin-defined; they MUST be extensionally equal to the reference objects (ISA §5.7, T6; §18.7).
+
+### 16.1 Liftable means materialised, always
+
+Every materialised function is liftable (outline B1): §12 legalises every construct into integer
+SSA values of at most 128 bits, memory, calls and branches at the map boundary.
+Materialised LLVM may still contain bit-exact FP forms and aggregates; §16.4 maps these
+through integer carriers and field locations. Every such accepted form has a row. 0.1's
+`BD-E-LIFT-SUBSET` is deleted.
+
+Every materialised function in an oracle closure MUST remain liftable through the complete normalisation and mapping tables, including memory, recursion, indirect calls, vectors and floating-point carriers. [deps: DLT-12.2, DLT-C, DLT-16.1-P1, DLT-16.4, ISA-3.7, ISA-4.2, ISA-7.2]
+
+### 16.2 The reference object
+
+For a shape with region function f, the reference object is the ISA text (ISA §16) with:
+
+- the header `bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9
+  target=0.9 ptr_width=<pw>`;
+- `section symbols`: one JCS line, keys `"0"`, `"1"`, … in the order `@ref`, `@L1` … `@Ln`, then
+  the data symbols `G…` in `section data` order, each with its kind, name, signature (ISA §9.1;
+  `args` types spelled as JCS strings of the ISA §16.2 type, e.g. `"i64"`) and interface hash
+  (ISA §9.2);
+- `section functions`: `@ref`, then the lprocs `@L1` … `@Ln`: one per function of the L closure of
+  f (direct calls and indirect-call candidates), numbered in depth-first preorder from `@ref`
+  along the `lift.call` rows in text order;
+- `section data`: one line `G<n> <hex>` per global of the layout below, in `layout.globals` key
+  order, with the global's initialiser bytes after §12 (function addresses encoded as A(F) in
+  P(a)-bit little-endian at each pointer field, §4.4; pointers to globals as their bases plus offsets);
+- `section layout`: one JCS line (§16.3).
+
+**The wrapper `@ref`.** Its header is `oracle @ref (<ins>) (tgt:wire[T]) (fault:wire[4])
+(<mems>) (<args>)`:
+
+- `<ins>`: `x<k>:wire[n] in` for the k-th `IN` binding in parameter order (n = n(q));
+- T: the width of the variant's slice (§8.6), or 1 when the shape has no output;
+- `<mems>`: first `coh:region[A,8] in` when a slice or oracle reads an arena object,
+  then `m<k>:region[A,8] in` for the k-th `MEM_IN` binding in parameter order, then `e0` for
+  an ENTROPY binding, `k0` for a BLOCK binding, `s0` for an entry-state snapshot (§8.5);
+- `<args>`: `a<k>:i<W>` for the k-th `ARG` binding in parameter order (W = P(a) for a `ptr addrspace(a)`).
+
+Its body is one block `^entry():` with, in order:
+
+1. **Prologue** (each part only when needed): the entry-state replay `t = lift.call
+   @L(__bennett_rt_entry_replay) (s)` with `s = lift.addr @s0`; the device-state stores of §11.3
+   (for ENTROPY: `d0 = lift.addr @e0`, `d1 = lift.addr @G(base)`, `lift.boundscheck d1 8`,
+   `lift.store.i64 d1 d0`, `d2 = lift.const.i64 <2^A>`, `d3 = lift.addr @G(size)`,
+   `lift.boundscheck d3 8`, `lift.store.i64 d3 d2`; the position starts at its data image 0; the
+   other models likewise in model order); the shadow-stack setup `t = lift.call
+   @L(__bennett_rt_ss_init) (c)` with c = `lift.const.i64 <sstack>` (baseline for the provisional object,
+   resolved for the final object under §9.2; no rematching) when the closure contains a
+   call of `__bennett_rt_ss_push` (§17.3).
+2. **Arguments**, for each parameter i in order: `IN` with n = W: the pseudo-location `x<k>`
+   itself; `IN` with n < W: `w<i> = lift.zext.iW x<k>` (`lift.sext` for SEXT); `ARG`: `a<k>`
+   itself; `MEM_IN`: `w<i> = lift.addr @m<k>`; `OUT`: `w<i> = lift.alloc <size>`.
+3. **Call**: `r = lift.call @L1 (<arguments>)` (`r:reg[R]`, R the return width, 1 for `void`).
+4. **Unwind check** (only when f may unwind, §14.4): `e = lift.addr @G(__bennett_rt_eh)`,
+   `lift.boundscheck e 4`, `l = lift.load.i32 e`, `z = lift.const.i32 0`, `u = lift.icmp.ne l z`,
+   `lift.faultif u 4`. A function **may unwind** iff it is not `nounwind` and calls (directly or
+   through a candidate) a function that may unwind, an external function without `nounwind`, or
+   one of the raise functions of §14.4 (least fixpoint).
+5. **Common delivery**, identical in every W_j: compute and validate *every* payload
+   slice in output/slice order (§8.6), including all address offsets, bounds checks, loads,
+   casts, dropped-bit checks and console slices. Store each projection in `p<j>:reg[w_j]`.
+   Only after this identical sequence does `lift.retval p<j>` select this variant's result.
+   For k=0 there are no projections or dropped-return-bit checks: discard r and emit
+   `p0 = lift.const.i1 0` followed by `lift.retval p0`, with `p0:reg[1]`.
+   These two terminal rows are part of the charged reference body, after the call and
+   any unwind check. A fault still delivers code through the four-wire fault interface
+   and zero payload to the hidden bit. For k=1 retain the original direct result without a projection move.
+   Every variant has the same location list and row charges, including unused projections.
+   The per-slice computation is: for the `tgt` output with n(tgt) < R: `c = lift.const.iR
+   <n(tgt)>`, `t = lift.lshr r c`, `z = lift.const.iR 0`, `u = lift.icmp.ne t z`, `lift.faultif
+   u 4` (the dropped-bits check of §8.2, in every variant); then the slice value: from `r` by
+   `lift.lshr` of its low bit position (when nonzero) and `lift.trunc`/`lift.zext` to T (when the
+   widths differ); from an `OUT` buffer `w<i>` by `p = lift.add w<i> <offset>` (when nonzero),
+   `lift.boundscheck p <T/8>`, `v = lift.load.i<T> p`; then `p<j> = lift.mov <value>`; after all slices, `lift.retval p<selected>`.
+
+Wrapper locations are `w<i>` (arguments), `r` (the call's result), `d<k>` (prologue),
+`p<j>` (delivery projections, including synthetic `p0` for k=0), and `c<j>`, `t<j>`
+for its constants and temporaries in emission order.
+
+**lprocs.** Each lifted function g becomes `lproc @L<n> (a0:reg[W0], …) (r:reg[R]) () () ()`
+with the parameters in order (`ptr addrspace(a)` → `reg[P(a)]`; an aggregate parameter flattened into one
+parameter per field in field order), the result `r` of the return width (1 for `void`, whose
+`ret void` is `lift.ret r`), a `regs` line, and the blocks of §16.4.
+
+The entry-state dependency decision of §8.5 precedes every private allocation in the
+wrapper prologue (§16.2), including device buffers and ss_init. Replay allocates the
+caller's sizes in order, frees dead entries, and preserves bump/liveness even when no
+caller byte is read. No fresh allocator reset is permitted for an allocation-only closure.
+
+### 16.3 Names and layout
+
+| LLVM entity | ISA name |
+|---|---|
+| the i-th parameter of g | `a<i>` (fields of a flattened aggregate `a<i>_<f>`) |
+| the k-th instruction of g that produces a value (0-based, in layout order, phis included) | location `v<k>` (fields of an aggregate value `v<k>_<f>`) |
+| the j-th constant materialisation of g, in text order of the output | location `c<j>` |
+| the j-th mapping temporary of g, in text order | location `t<j>` |
+| the i-th basic block of g (0-based, layout order) | block `^b<i>` |
+| a block created by a compare tree in block i (§16.4), in creation order | `^b<i>.s<j>` (j ≥ 1) |
+| for the q-th indirect call of block i (q ≥ 1): the leaf of candidate k (sorted order), the default, the continuation | `^b<i>.q<q>c<k>`, `^b<i>.q<q>d`, `^b<i>.q<q>r` |
+| the edge block from block i to block s | `^b<i>.e<s>` |
+| the n-th global of the layout (1-based, in link order) | data symbol and global `G<n>` |
+
+The `regs` line lists every location of the function that is neither a parameter nor the result,
+in order of first appearance as a destination in the text, as `name:reg[W]`, separated by `, `;
+it is omitted when empty. W: a value's width (`i1` → 1, `ptr addrspace(a)` → P(a)); a constant's width; a
+temporary's width (1 for a compare, else its operation's width).
+
+**Layout.** The reference object's `layout` is the device link layout (§19.5) restricted to the
+non-arena globals that the L closure names in `lift.addr` and, transitively, non-arena globals their initialisers
+point to (in link order, numbered G1, G2, …), with the link's `ptr_width`, `null_size`,
+`heap_base`, `heap_limit_max`, `H`, `A_tab` and `S_cells`, and `interface_regions` = { "ref": the
+shape's regions }. An arena-relocated global has no G<n> symbol or data image:
+its address is @coh plus its arena offset. `coh` is placed at A_coh (§19.5), disjoint
+from globals and heap. Bases of all other regions follow `<mems>` order: each base is the smallest multiple of
+the region's size that is ≥ the end of the previous range (the heap's end `heap_base +
+heap_limit_max` for the first when there is no arena; otherwise the arena's end). H is the smallest value with every range inside [0, 2^H); A_tab
+is the smallest value with 2^A_tab ≥ P + `heap_limit_max`, P the link's number of globals plus
+the largest number of interface regions of any oracle, so that allocation-table overflow never
+precedes heap exhaustion (both fault with code 2, ISA §4.2, and a reference object with fewer
+pre-entries than the device object faults at the same allocation); S_cells is the smallest value
+with 2^S_cells ≥ the frozen `stack` capacity of §9.2. These link capacities are
+frozen before provisional identity construction and include unmatched raw entries
+and static non-sentinel record fields; identity overlays never recompute them.
+
+### 16.4 Rows
+
+Pointer constants, flattened pointer fields, parameters, results and pointer memory values
+use P(a), including their DataLayout storage size. Materialise null at P(a). Before an ISA
+memory address operand, bridge the source pointer representation to pw with the target's
+address conversion (zero-extension/truncation for the integral flat-address spaces); this
+bridge never changes the stored pointer width or the source ptrtoint/inttoptr semantics.
+Apply the same rules to constant expressions and the native comparison build. Representations
+above 128 bits use §12.7 limbs; mixed-width layouts are not rejected.
+
+Every row accessing program memory first performs TDL-4's logical validation if the
+address can be in coh, before the physical ISA boundscheck. Loads and stores, including
+slice/event producers, use the same helper and fault gating. Proved containment in a
+static arena global (as in arena-o1's one-byte @cnt load) discharges this check without
+extra rows; a physical coh entry alone is never such a proof.
+For an address that can lie in shadow-stack backing storage, also perform §17.3's
+logical-frame check before every program load, store or memory-function access,
+including non-coh addresses. The materialised __bennett_rt_ss_check(p,n,table)
+helper's comparisons, calls and fault rows count normally. Gate mutations and dependent
+events on its success. Physical boundscheck/load/store rows remain required; they
+do not substitute for the logical check. Explicit runtime-internal bookkeeping uses
+the internal path of §17.3, not the program-access helper.
+
+Rows of an instruction are emitted in instruction order within its block. Before the rows of an
+instruction, each of its **constant operands** that is a value operand (in operand order; not an
+immediate flag; for `getelementptr`, not a constant index) is materialised: an integer constant by
+`c<j> = lift.const.iW <unsigned decimal>`; `null` by `lift.const.i<P(a)> 0`; a non-arena global `@G` by
+`c<j> = lift.addr @G<n>`; an arena global by `c<j> = lift.addr @coh`, and if its
+arena offset δ is nonzero, `c<j+1> = lift.const.i<pw> δ`, `t<j> = lift.add c<j> c<j+1>`
+(the operand reads this temporary); in an lproc the base is its hidden arena-base
+parameter rather than lift.addr @coh. The wrapper materialises @coh once before the
+region call, appends this pw-bit argument after source parameters, and every transitive
+lproc call threads it unchanged. Only functions in the arena-reading closure receive it;
+materialising the base in a lproc uses lift.mov of that parameter. Materialise a function `@F` by `c<j> = lift.const.i<pw> <A(F)>`; a constant
+expression by the rows of its instructions, innermost first, into temporaries. The operand then
+reads `c<j>`. Aggregate constants materialise one scalar carrier constant per
+flattened field in field order before packing. A non-constant operand reads the location of its value (`a<i>` for a parameter).
+`A`, `B`, `C` below are the operands so read; `v` is the instruction's location.
+
+| LLVM | Rows |
+|---|---|
+| `add sub mul and or xor shl lshr ashr` | `v = lift.<op> A B` |
+| `udiv sdiv urem srem` | `v = lift.<op> A B` (division faults, ISA §4.2) |
+| `icmp eq/ne/ult/ule/slt/sle a, b` (integers or pointers) | `v = lift.icmp.<pred> A B` |
+| `icmp ugt/uge/sgt/sge a, b` | `v = lift.icmp.{ult,ule,slt,sle} B A` (operands swapped) |
+| `select c, a, b` | `v = lift.select C A B` |
+| `zext/sext/trunc a to iM` | `v = lift.<op>.iM A` |
+| `ptrtoint` to iM, `inttoptr` from iM | Let P=P(a) for the pointer operand/result. M = P: `v = lift.mov A`; ptrtoint M < P or inttoptr M > P: `lift.trunc` to the destination width; otherwise `lift.zext` to the destination width (LangRef zero-extends) |
+| `bitcast` of equal-width integer/FP carriers or pointers | `v = lift.mov A`; FP constants materialise their carrier bit pattern |
+| `addrspacecast` | materialise the incoming target's specified conversion between address-space representations, including any non-width conversion; `lift.mov` only for bit-preserving equal-width conversions. For integral zero-extend/truncate conversions emit `lift.zext`/`lift.trunc` to P(destination) |
+| `getelementptr T, ptr p, idx…` | Let P=P(a), I=I(a) for p's address space. Arithmetic on the low I bits is modulo 2^I; only representation bits above I are preserved, also for constant expressions. Canonical rows: acc is the pointer operand (when I<P, first `t = lift.trunc.i<I> P_operand` and acc is t). For each non-constant sequential index in index order: sign-extend/truncate to I (omit the cast when already I wide); if its element allocation size s≠1 emit `c = lift.const.i<I> (s mod 2^I)` then `t = lift.mul index c`, else use the index directly; emit `acc′ = lift.add acc t`. Constant sequential indices, interpreted signed at their source width then scaled by s, and constant structure field offsets accumulate into Δ mod 2^I, with no per-index rows. After the dynamic sequence, if Δ≠0 emit `c = lift.const.i<I> Δ` then `acc′ = lift.add acc c`. For I=P the last acc′ row writes v; with no dynamic index and Δ=0 the only row is `v = lift.mov P_operand`. For I<P always emit recombination, even when acc equals trunc(P_operand), in this order: `lo = lift.zext.i<P> acc`; `c = lift.const.i<P> <ones above I>`; `hi = lift.and P_operand c`; `v = lift.or hi lo`. Every emitted row is charged normally |
+| `load T, ptr p` (T = iN with N a multiple of 8, or `ptr`; N ≤ 128 after §12; FP uses its carrier) | `lift.boundscheck P <N/8>`; `v = lift.load.iN P` |
+| `store v, ptr p` | `lift.boundscheck P <N/8>`; `lift.store.iN P V` |
+| `insertvalue`, `extractvalue` | `lift.mov` of the depth-first flattened field locations (one per scalar field); unchanged fields remain their input locations |
+| FP `load`, `store`, `select`, `phi` | the corresponding integer-carrier row, bit-exact |
+| `fneg`, `llvm.fabs`, `llvm.copysign` | for IEEE/x87 formats, xor sign mask / and complement sign mask / clear magnitude sign then or source sign, at carrier width (sign bit 15, 31, 63, 79 or 127). For ppc_fp128, fneg flips both component signs; fabs conditionally flips both using the high double's sign; copysign conditionally flips both according to differing high signs, preserving APFloat PPCDoubleDouble semantics |
+| aggregate `ret` of packed width ≤128 | zext each field to packed width (identity if equal), shift by cumulative prior field widths (omit zero shift), or in field order; `lift.ret` packed value |
+| aggregate call result | `lift.call` into a packed-width temporary, then for each field lshr by cumulative offset (omit zero shift), trunc to field width (identity if equal) |
+| `phi` | none at its position (edge moves) |
+| direct `call @g(args)` of a defined function | `v = lift.call @L(g) (A_1 … A_m)` (flattened arguments); a `void` callee writes a temporary `t<j>:reg[1]` |
+| `call @__bennett_nz_alloc(n)`, `call @__bennett_nz_free(p)` | `v = lift.alloc N`; `lift.free P` |
+| `call void @__bennett_nz_fault(i64 C)`; `unreachable` | `fault C` (one row for the pair) |
+| indirect call | the compare tree below over the candidates' A(F_k) (§14.2) on the callee value, leaf k `v = lift.call @L(F_k) (…)` then `qjump` to the continuation, default `fault 4`; the rows after the call continue in the continuation block |
+| `ret a` | `lift.ret A` (`void`: `lift.ret r`) |
+| `unreachable` | `fault 4` |
+| `br label %S` | edge moves (B → S); `qjump ^S` |
+| `br i1 c, label %T, label %F`, T ≠ F | `qbranch C ^T′ ^F′` |
+| `br i1 c, label %S, label %S` | as `br label %S` |
+| `switch iW c, label %D [k_j, label %L_j]` | the compare tree below on C, cases sorted unsigned, default D′ |
+| `indirectbr` | the compare tree over the block values of §14.9, leaves `qjump` |
+
+**Compare tree** (outline E6) over sorted distinct keys k_lo … k_hi of width W, condition C,
+targets T_j and default D, emitted into the current block X by node(lo, hi, X):
+
+- if hi − lo + 1 ≤ 3: for j = lo … hi, in block X: `c = lift.const.iW k_j`; `t = lift.icmp.eq C
+  c`; `qbranch t ^T_j ^Y`, where Y is a new block `^b<i>.s<n>` for j < hi and D for j = hi; X := Y;
+- otherwise, with mid = ⌊(lo + hi)/2⌋: in X: `c = lift.const.iW k_mid`; `t = lift.icmp.ult C
+  c`; new blocks L then R; `qbranch t ^L ^R`; node(lo, mid − 1, L); node(mid, hi, R);
+- with no key: `qjump ^D`.
+
+
+**Round-5 pointer and canonical-row witnesses.** For pointer-as270, truncation at
+P(270)=32 followed by zero-extension gives 0 and 1. For gep-index-obj, I=32
+makes index 2^32 zero, while −1 makes low bits all ones: high 0x1 plus low
+0xffffffff gives 8589934591. The constant index 2^32 accumulates Δ=0, so the
+constant-expression GEP emits exactly trunc/zext/const/and/or, with no add or
+multiply. Counts include constant-expression operands, casts, return and wrapper.
+
+```llvm lift=pointer-as270 region=@f desc=ARG(64);tgt=64
+target datalayout = "e-p:64:64-p270:32:32-p271:32:32-p272:64:64"
+target triple = "x86_64-unknown-linux-gnu"
+define i64 @f(i64 %x) {
+  %p = inttoptr i64 %x to ptr addrspace(270)
+  %r = ptrtoint ptr addrspace(270) %p to i64
+  ret i64 %r
+}
+```
+
+```text linkmap=pointer-as270
+null_size=4096 heap_base=4096 heap_limit_max=0 stack max 32
+```
+
+```isa object=pointer-as270
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"c0230e1b3589976e495060d7ef271042bf873563f440c65e62851944e21a3558","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":["i64"],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":64,"tier":"q"}},"1":{"interface_hash":"ccdf118096aa6f68a68d96cfbcb2deaf89494a3ae2f818480618436ece20b13a","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":64,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref () (tgt:wire[64]) (fault:wire[4]) () (a0:i64)
+regs { r:reg[64] }
+^entry():
+r = lift.call @L1 (a0)
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[64]) () () ()
+regs { v0:reg[32], v1:reg[64] }
+^b0():
+v0 = lift.trunc.i32 a0
+v1 = lift.zext.i64 v0
+lift.ret v1
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=pointer-as270
+L1 ccdf118096aa6f68a68d96cfbcb2deaf89494a3ae2f818480618436ece20b13a
+ref c0230e1b3589976e495060d7ef271042bf873563f440c65e62851944e21a3558
+```
+
+```text run=pointer-as270
+input= arg=4294967296 budget=100,0,32,8 -> code=0 payload=0 steps=5
+input= arg=4294967297 budget=100,0,32,8 -> code=0 payload=1 steps=5
+```
+
+```text native=pointer-as270
+f(4294967296)=0; code=0
+f(4294967297)=1; code=0
+```
+
+```llvm lift=gep-index-obj region=@f desc=ARG(64);tgt=64
+target datalayout = "e-p:64:64:64:32"
+define i64 @f(i64 %i) {
+  %p = inttoptr i64 4294967296 to ptr
+  %q = getelementptr i8, ptr %p, i64 %i
+  %r = ptrtoint ptr %q to i64
+  ret i64 %r
+}
+```
+
+```text linkmap=gep-index-obj
+null_size=4096 heap_base=4096 heap_limit_max=0 stack max 32
+```
+
+```isa object=gep-index-obj
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"93afbb7a9e791ff433ba3751bcbc99a59cd3254892639e8ac571702c9b7f37a4","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":["i64"],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":64,"tier":"q"}},"1":{"interface_hash":"bbda6cf5663897de22f83831f1652bb82650a5e991f96fac6aff2f9a74dcbe5e","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":64,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref () (tgt:wire[64]) (fault:wire[4]) () (a0:i64)
+regs { r:reg[64] }
+^entry():
+r = lift.call @L1 (a0)
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[64]) () () ()
+regs { c0:reg[64], v0:reg[64], t0:reg[32], t1:reg[32], t2:reg[32], t3:reg[64], c1:reg[64], t4:reg[64], v1:reg[64], v2:reg[64] }
+^b0():
+c0 = lift.const.i64 4294967296
+v0 = lift.mov c0
+t0 = lift.trunc.i32 v0
+t1 = lift.trunc.i32 a0
+t2 = lift.add t0 t1
+t3 = lift.zext.i64 t2
+c1 = lift.const.i64 18446744069414584320
+t4 = lift.and v0 c1
+v1 = lift.or t4 t3
+v2 = lift.mov v1
+lift.ret v2
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=gep-index-obj
+L1 bbda6cf5663897de22f83831f1652bb82650a5e991f96fac6aff2f9a74dcbe5e
+ref 93afbb7a9e791ff433ba3751bcbc99a59cd3254892639e8ac571702c9b7f37a4
+```
+
+```text run=gep-index-obj
+input= arg=4294967296 budget=100,0,32,8 -> code=0 payload=4294967296 steps=13
+input= arg=18446744073709551615 budget=100,0,32,8 -> code=0 payload=8589934591 steps=13
+```
+
+```llvm lift=gep-index-const region=@c desc=;tgt=64
+target datalayout = "e-p:64:64:64:32"
+define i64 @c() {
+  ret i64 ptrtoint (ptr getelementptr (i8, ptr inttoptr (i64 4294967296 to ptr), i64 4294967296) to i64)
+}
+```
+
+```text linkmap=gep-index-const
+null_size=4096 heap_base=4096 heap_limit_max=0 stack max 32
+```
+
+```isa object=gep-index-const
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"e6a4b367dc5738dbb31790c3c7ef67e0e1e435f1c5eed4ade6510ed0e2b4cbdd","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":64,"tier":"q"}},"1":{"interface_hash":"5299463dee9382881425d3562f2d7322f0dc81db0c4720ccb20be8bc3ad0a629","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[],"result":64,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref () (tgt:wire[64]) (fault:wire[4]) () ()
+regs { r:reg[64] }
+^entry():
+r = lift.call @L1 ()
+lift.retval r
+lproc @L1 () (r:reg[64]) () () ()
+regs { c0:reg[64], t0:reg[32], t1:reg[64], c1:reg[64], t2:reg[64], expr0:reg[64] }
+^b0():
+c0 = lift.const.i64 4294967296
+t0 = lift.trunc.i32 c0
+t1 = lift.zext.i64 t0
+c1 = lift.const.i64 18446744069414584320
+t2 = lift.and c0 c1
+expr0 = lift.or t2 t1
+lift.ret expr0
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=gep-index-const
+L1 5299463dee9382881425d3562f2d7322f0dc81db0c4720ccb20be8bc3ad0a629
+ref e6a4b367dc5738dbb31790c3c7ef67e0e1e435f1c5eed4ade6510ed0e2b4cbdd
+```
+
+```text run=gep-index-const
+input= budget=100,0,32,8 -> code=0 payload=4294967296 steps=9
+```
+
+**Edge moves** (B → S), S with phis φ_1 … φ_r in S's order and incoming values a_1 … a_r for B:
+the constant materialisations of the a_k that are constants (in order), then `(v_φ1, …, v_φr) =
+lift.parmov (A_1, …, A_r)` (ISA §4.2, parallel). None when S has no phi. For a successor X of a
+conditional terminator or of a compare-tree leaf in block i, X′ is `^b<i>.e<x>` when X has a phi,
+else `^b<x>`; the **edge block** `^b<i>.e<x>` holds the edge moves (i → x) and `qjump ^b<x>`.
+
+**Block order.** For i = 0, 1, …: block `^b<i>`, then the blocks created in it (compare-tree
+blocks, and per indirect call its leaves, default and continuation) in creation order, then its
+edge blocks in ascending successor index.
+
+Checked binding and transfer objects. These are finite materialised runtime
+microvectors: they exercise one binding or transfer boundary, without claiming
+to implement the general runtime. In the following descriptors, `tgt=8` is the
+reference variant's output slice width; `binding-out-byte` and
+`binding-console-byte` have null source return targets, as stated in their
+derivations. Device-only descriptors have no parameter bindings before `;dev=`.
+
+
+**`binding-out-byte`.** OUT(1) supplies a fresh byte, which f overwrites with 9. With a null return target the only output is that byte. The wrapper allocates, calls and loads it: ten rows in all (including the four callee rows). Heap budget 1 suffices; no caller byte is written.
+
+```llvm lift=binding-out-byte region=@f desc=OUT(1);tgt=8
+define internal void @f(ptr %p) {
+  store i8 9, ptr %p, align 1
+  ret void
+}
+```
+
+```text linkmap=binding-out-byte
+null_size=4096 heap_base=4096 heap_limit_max=1 globals=none budget-table: stack max 128, heap max 1
+```
+
+```isa object=binding-out-byte
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"bc717633d39c3a93e42c0ffbf2aed89b011b6c8e66a5b971bf3aedc3d8b0f3fa","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"df7293bdf32b8dde621780a0d0d365caa9b1011c25fc2d429c26386f0dd60227","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":1,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) () ()
+regs { c0:reg[64], w0:reg[64], r:reg[1], t0:reg[8] }
+^entry():
+c0 = lift.const.i64 1
+w0 = lift.alloc c0
+r = lift.call @L1 (w0)
+lift.boundscheck w0 1
+t0 = lift.load.i8 w0
+lift.retval t0
+lproc @L1 (a0:reg[64]) (r:reg[1]) () () ()
+regs { c0:reg[8] }
+^b0():
+c0 = lift.const.i8 9
+lift.boundscheck a0 1
+lift.store.i8 a0 c0
+lift.ret r
+
+section layout
+{"A_tab":0,"H":13,"S_cells":7,"globals":{},"heap_base":4096,"heap_limit_max":1,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=binding-out-byte
+input= budget=64,1,128,8 -> code=0 payload=9 steps=10
+```
+
+**`binding-clock-read`.** CLOCK(3) denotes initial c=3. This materialised clock read returns the old counter and advances its private copy to 4. Every invocation starts at 3. Four prologue rows, one call, ten callee rows and one return total 16; the store materialises its global-address operand anew.
+
+```llvm lift=binding-clock-read region=@f desc=;dev=CLOCK(3);tgt=8
+@__bennett_dev_clock_c = internal global i64 0
+define internal i8 @f() {
+  %c = load i64, ptr @__bennett_dev_clock_c, align 8
+  %n = add i64 %c, 1
+  store i64 %n, ptr @__bennett_dev_clock_c, align 8
+  %r = trunc i64 %c to i8
+  ret i8 %r
+}
+```
+
+```text linkmap=binding-clock-read
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @__bennett_dev_clock_c -> G1 base=4096 size=8
+budget-table: stack max 128, heap max 0
+```
+
+```isa object=binding-clock-read
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"4cd07fe1fc0985c1bfa393bf31b9b237b95f2ef65514d00d1c1b42ab7c9768b8","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"a5449596b9a96cb755c987e52383061a9a3d5da93cf8bb616033c191c8fdefa2","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[],"result":8,"tier":"q","tokens":[]}},"2":{"interface_hash":"94853dfbbb987d7de343367eba1c88201208ebda2ca0049e16de1e5a965000af","kind":"data","name":"G1","signature":{"abi":"0.9","kind":"data","size":8,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) () ()
+regs { d0:reg[64], d1:reg[64], r:reg[8] }
+^entry():
+d0 = lift.const.i64 3
+d1 = lift.addr @G1
+lift.boundscheck d1 8
+lift.store.i64 d1 d0
+r = lift.call @L1 ()
+lift.retval r
+lproc @L1 () (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], c1:reg[64], v1:reg[64], c2:reg[64], v2:reg[8] }
+^b0():
+c0 = lift.addr @G1
+lift.boundscheck c0 8
+v0 = lift.load.i64 c0
+c1 = lift.const.i64 1
+v1 = lift.add v0 c1
+c2 = lift.addr @G1
+lift.boundscheck c2 8
+lift.store.i64 c2 v1
+v2 = lift.trunc.i8 v0
+lift.ret v2
+
+section data
+G1 0000000000000000
+
+section layout
+{"A_tab":0,"H":13,"S_cells":7,"globals":{"G1":{"base":4096,"image":"G1","size":8}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=binding-clock-read
+input= budget=64,0,128,8 -> code=0 payload=3 steps=16
+```
+
+**`binding-block-byte`.** BLOCK(0) denotes one 512-byte sector (A-prime=0). With an empty overlay, the first-byte projection of sector 0 reads k0[0]. This binding microvector inlines that projection; it does not claim coverage of overlay writes. Input byte 0x2a therefore yields 42; 0xff yields 255. Eight prologue rows, call, six callee rows and return total 16.
+
+```llvm lift=binding-block-byte region=@f desc=;dev=BLOCK(0);tgt=8
+@__bennett_dev_block_base = internal global ptr null
+@__bennett_dev_block_nsect = internal global i64 0
+define internal i8 @f() {
+  %p = load ptr, ptr @__bennett_dev_block_base, align 8
+  %r = load i8, ptr %p, align 1
+  ret i8 %r
+}
+```
+
+```text linkmap=binding-block-byte
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @__bennett_dev_block_base -> G1 base=4096 size=8
+global @__bennett_dev_block_nsect -> G2 base=4104 size=8
+budget-table: stack max 128, heap max 0
+```
+
+```isa object=binding-block-byte
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"535dc973aa0ae1537b6c1d56b738a98e307258426519d50a4c788336a7fd9bf6","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[{"A":9,"W":8,"role":"in"}],"tgt":8,"tier":"q"}},"1":{"interface_hash":"23ae56310ab7d8548f705ec29f83949612d6cb61fe633ce298a7b64f85dfc8cc","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[],"result":8,"tier":"q","tokens":[]}},"2":{"interface_hash":"94853dfbbb987d7de343367eba1c88201208ebda2ca0049e16de1e5a965000af","kind":"data","name":"G1","signature":{"abi":"0.9","kind":"data","size":8,"tier":"-"}},"3":{"interface_hash":"4c74e9472a13bd9527111af00b147c374e9746392d7d45e957586334b1120f97","kind":"data","name":"G2","signature":{"abi":"0.9","kind":"data","size":8,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) (k0:region[9,8] in) ()
+regs { d0:reg[64], d1:reg[64], d2:reg[64], d3:reg[64], r:reg[8] }
+^entry():
+d0 = lift.addr @k0
+d1 = lift.addr @G1
+lift.boundscheck d1 8
+lift.store.i64 d1 d0
+d2 = lift.const.i64 1
+d3 = lift.addr @G2
+lift.boundscheck d3 8
+lift.store.i64 d3 d2
+r = lift.call @L1 ()
+lift.retval r
+lproc @L1 () (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], v1:reg[8] }
+^b0():
+c0 = lift.addr @G1
+lift.boundscheck c0 8
+v0 = lift.load.i64 c0
+lift.boundscheck v0 1
+v1 = lift.load.i8 v0
+lift.ret v1
+
+section data
+G1 0000000000000000
+G2 0000000000000000
+
+section layout
+{"A_tab":2,"H":14,"S_cells":7,"globals":{"G1":{"base":4096,"image":"G1","size":8},"G2":{"base":4104,"image":"G2","size":8}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{"k0":{"base":8192}}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=binding-block-byte
+input= mem=k0:2a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 budget=64,0,128,8 -> code=0 payload=42 steps=16
+input= mem=k0:ff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 budget=64,0,128,8 -> code=0 payload=255 steps=16
+```
+
+**`binding-console-byte`.** CONSOLE(1) denotes L=1, with a non-null one-byte output register and null return target. The materialised one-byte write appends x (120), advancing n from 0 to 1; delivery XORs 0x78 into the output without a host effect. Twelve prologue rows, call, eleven callee rows and three delivery rows total 27.
+
+```llvm lift=binding-console-byte region=@f desc=;dev=CONSOLE(1);tgt=8
+@__bennett_dev_console_buf = internal global ptr null
+@__bennett_dev_console_L = internal global i64 0
+@__bennett_dev_console_n = internal global i64 0
+define internal void @f() {
+  %p = load ptr, ptr @__bennett_dev_console_buf, align 8
+  store i8 120, ptr %p, align 1
+  store i64 1, ptr @__bennett_dev_console_n, align 8
+  ret void
+}
+```
+
+```text linkmap=binding-console-byte
+null_size=4096 heap_base=8192 heap_limit_max=1
+global @__bennett_dev_console_buf -> G1 base=4096 size=8
+global @__bennett_dev_console_L -> G2 base=4104 size=8
+global @__bennett_dev_console_n -> G3 base=4112 size=8
+budget-table: stack max 128, heap max 1
+```
+
+```isa object=binding-console-byte
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"d7725227a1d311bd5ee5154e056960eff76c4f7669885b68cbcd05932f23ed26","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"901bc51063852e312bd525f3638fbaa023dea348aa3b2f453a5c1c4f167f5833","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[],"result":1,"tier":"q","tokens":[]}},"2":{"interface_hash":"94853dfbbb987d7de343367eba1c88201208ebda2ca0049e16de1e5a965000af","kind":"data","name":"G1","signature":{"abi":"0.9","kind":"data","size":8,"tier":"-"}},"3":{"interface_hash":"4c74e9472a13bd9527111af00b147c374e9746392d7d45e957586334b1120f97","kind":"data","name":"G2","signature":{"abi":"0.9","kind":"data","size":8,"tier":"-"}},"4":{"interface_hash":"6ad17a475f1d9a6e8b97d439d4c9bdac80bed26a732cf83c9474100c172d9878","kind":"data","name":"G3","signature":{"abi":"0.9","kind":"data","size":8,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) () ()
+regs { d0:reg[64], d1:reg[64], d2:reg[64], d3:reg[64], d4:reg[64], d5:reg[64], r:reg[1], t0:reg[8] }
+^entry():
+d0 = lift.const.i64 1
+d1 = lift.addr @G2
+lift.boundscheck d1 8
+lift.store.i64 d1 d0
+d2 = lift.alloc d0
+d3 = lift.addr @G1
+lift.boundscheck d3 8
+lift.store.i64 d3 d2
+d4 = lift.const.i64 0
+d5 = lift.addr @G3
+lift.boundscheck d5 8
+lift.store.i64 d5 d4
+r = lift.call @L1 ()
+lift.boundscheck d2 1
+t0 = lift.load.i8 d2
+lift.retval t0
+lproc @L1 () (r:reg[1]) () () ()
+regs { c0:reg[64], v0:reg[64], c1:reg[8], c2:reg[64], c3:reg[64] }
+^b0():
+c0 = lift.addr @G1
+lift.boundscheck c0 8
+v0 = lift.load.i64 c0
+c1 = lift.const.i8 120
+lift.boundscheck v0 1
+lift.store.i8 v0 c1
+c2 = lift.const.i64 1
+c3 = lift.addr @G3
+lift.boundscheck c3 8
+lift.store.i64 c3 c2
+lift.ret r
+
+section data
+G1 0000000000000000
+G2 0000000000000000
+G3 0000000000000000
+
+section layout
+{"A_tab":2,"H":14,"S_cells":7,"globals":{"G1":{"base":4096,"image":"G1","size":8},"G2":{"base":4104,"image":"G2","size":8},"G3":{"base":4112,"image":"G3","size":8}},"heap_base":8192,"heap_limit_max":1,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=binding-console-byte
+input= budget=64,1,128,8 -> code=0 payload=120 steps=27
+```
+
+**`entry-replay-byte`.** This explicit replay microvector has no heap allocations (snapshot k=0); G contains one caller-mutated byte at snapshot offset 8. MEM_IN(4) supplies the 16-byte snapshot, and the defined replay helper copies that byte into G1 before f reads it. The caller snapshot is unchanged. Initial image G1=0 is overridden by caller byte 7, giving payload 7 in 16 rows. This isolates replay of G, not the general allocation/stack replay loop.
+
+```llvm lift=entry-replay-byte region=@f desc=MEM_IN(4);tgt=8
+@g = internal global i8 0
+define internal i8 @f(ptr %s) {
+  call void @__bennett_rt_entry_replay(ptr %s)
+  %r = load i8, ptr @g, align 1
+  ret i8 %r
+}
+define internal void @__bennett_rt_entry_replay(ptr %s) {
+  %p = getelementptr i8, ptr %s, i64 8
+  %v = load i8, ptr %p, align 1
+  store i8 %v, ptr @g, align 1
+  ret void
+}
+```
+
+```text linkmap=entry-replay-byte
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @g -> G1 base=4096 size=1
+budget-table: stack max 128, heap max 0
+```
+
+```isa object=entry-replay-byte
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"7e15562c759374260558c886bd28a414eb3a375c4e95ff8fcb46ed8da797c125","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[{"A":4,"W":8,"role":"in"}],"tgt":8,"tier":"q"}},"1":{"interface_hash":"41c053d6fa5eb15b2041998894e7084a031592129f6b46b6855e9501fe5ea250","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":8,"tier":"q","tokens":[]}},"2":{"interface_hash":"5cbae145c2979e5f7d06994112a7e140cfd93b8133595eed0564dde9298c9a8b","kind":"lproc","name":"L2","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":1,"tier":"q","tokens":[]}},"3":{"interface_hash":"1d3e8bd93cd6734d4d97f5d41cfb323a748d18666bab928bc8f09f47feed63ed","kind":"data","name":"G1","signature":{"abi":"0.9","kind":"data","size":1,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) (m0:region[4,8] in) ()
+regs { w0:reg[64], r:reg[8] }
+^entry():
+w0 = lift.addr @m0
+r = lift.call @L1 (w0)
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[8]) () () ()
+regs { t0:reg[1], c0:reg[64], v0:reg[8] }
+^b0():
+t0 = lift.call @L2 (a0)
+c0 = lift.addr @G1
+lift.boundscheck c0 1
+v0 = lift.load.i8 c0
+lift.ret v0
+lproc @L2 (a0:reg[64]) (r:reg[1]) () () ()
+regs { c0:reg[64], v0:reg[64], v1:reg[8], c1:reg[64] }
+^b0():
+c0 = lift.const.i64 8
+v0 = lift.add a0 c0
+lift.boundscheck v0 1
+v1 = lift.load.i8 v0
+c1 = lift.addr @G1
+lift.boundscheck c1 1
+lift.store.i8 c1 v1
+lift.ret r
+
+section data
+G1 00
+
+section layout
+{"A_tab":1,"H":14,"S_cells":7,"globals":{"G1":{"base":4096,"image":"G1","size":1}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{"m0":{"base":8192}}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=entry-replay-byte
+input= mem=m0:00000000000000000700000000000000 budget=64,0,128,8 -> code=0 payload=7 steps=16
+```
+
+**`indirectbr-two-blocks`.** The two address-taken blocks have values B(f)=4096 and B(f)+1=4097. The address object has two bytes. An IN(64,zext) pointer selects the first or second block and returns 7 or 9. Any other address reaches fault 4. The unused ptrtoint of the block object keeps its address explicitly in the reference closure. Success counts are wrapper 2 + address rows 2 + compare path 3 or 6 + return 2: 9 and 12 rows. No-match executes only the wrapper call, address rows 2, compares 6 and fault 1, for 10 rows; wrapper retval never executes.
+
+```llvm lift=indirectbr-two-blocks region=@f desc=IN(64,zext);tgt=8
+@__bennett_rt_blk.f = internal global [2 x i8] zeroinitializer
+@labels = internal constant [2 x ptr] [ptr blockaddress(@f, %one), ptr blockaddress(@f, %two)]
+define internal i8 @f(ptr %dest) {
+entry:
+  %base = ptrtoint ptr @__bennett_rt_blk.f to i64
+  indirectbr ptr %dest, [label %one, label %two]
+one:
+  ret i8 7
+two:
+  ret i8 9
+}
+```
+
+```text linkmap=indirectbr-two-blocks
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @__bennett_rt_blk.f -> G1 base=4096 size=2
+budget-table: stack max 128, heap max 0
+```
+
+```isa object=indirectbr-two-blocks
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"0f6704293791c65afcf0de0d50ba320d55cc4919da3dc854cda80f858bb83e72","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[64],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"fb3b77261414ceb25f29c597d4a729c5b5eeda7371a41ec41e7fb7b3273783e5","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":8,"tier":"q","tokens":[]}},"2":{"interface_hash":"139cabd6eabd5b62fbbea216587a379324f8a71ed2c34077140f1a2c909fbe49","kind":"data","name":"G1","signature":{"abi":"0.9","kind":"data","size":2,"tier":"-"}}}
+
+section functions
+oracle @ref (x0:wire[64] in) (tgt:wire[8]) (fault:wire[4]) () ()
+regs { r:reg[8] }
+^entry():
+r = lift.call @L1 (x0)
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], c1:reg[64], t0:reg[1], c2:reg[64], t1:reg[1], c3:reg[8], c4:reg[8] }
+^b0():
+c0 = lift.addr @G1
+v0 = lift.mov c0
+c1 = lift.const.i64 4096
+t0 = lift.icmp.eq a0 c1
+qbranch t0 ^b1 ^b0.s1
+^b0.s1():
+c2 = lift.const.i64 4097
+t1 = lift.icmp.eq a0 c2
+qbranch t1 ^b2 ^b0.d
+^b0.d():
+fault 4
+^b1():
+c3 = lift.const.i8 7
+lift.ret c3
+^b2():
+c4 = lift.const.i8 9
+lift.ret c4
+
+section data
+G1 0000
+
+section layout
+{"A_tab":0,"H":13,"S_cells":7,"globals":{"G1":{"base":4096,"image":"G1","size":2}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=indirectbr-two-blocks
+input=4096 budget=64,0,128,8 -> code=0 payload=7 steps=9
+input=4097 budget=64,0,128,8 -> code=0 payload=9 steps=12
+input=4098 budget=64,0,128,8 -> code=4 payload=0 steps=10
+```
+
+### 16.5 Runtime oracles, identity and F_B
+
+The CC tier's entry-state transfer (§8.5) and TDL (§10) use three families of runtime oracles,
+generated per width and part of the device object:
+
+- `@xor128`: `oracle @xor128 () (t:wire[128]) (f:wire[4]) () (lo:i64, hi:i64)` with body `a =
+  lift.zext.i128 lo`, `b = lift.zext.i128 hi`, `s = lift.const.i128 64`, `h = lift.shl b s`, `v =
+  lift.or h a`, `lift.retval v` (6 steps; memoryless, ISA §7.2);
+- `@xorargs<A>`: payload = a mod 2^A | m · 2^A for the classical arguments (a: i64, m: i8), a
+  (A + 8)-wire target (TDL-4);
+- `@firstfault<K>`: `in` = K 4-wire bundles, payload = the first nonzero one in order, else 0
+  (TDL-8).
+
+An oracle region's identity (§7.3) is the interface hash of `@ref` (ISA §9.2), recorded as the
+certificate's `reference_program_hash` (ISA §12.3). F_B(x) is ISA §5.2's on `@ref` with the token's
+budget (B, heap, stack, depth) (§9.4): success at `lift.retval` within B steps gives (payload, 0);
+a fault row, a faulting division or memory row, or a budget flag gives (0, code); otherwise (0,
+1). Stated results are lines `input=<x,…> [mem=<region>:<hex>] [arg=<value>] budget=<s,h,st,d>
+-> code=<C> payload=<P> steps=<N>`, each the output of `bennett-isa-ref run-oracle <object> ref`
+with those options.
+
+### 16.6 Example: rung 1 (`inc8`, two inputs)
+
+`inc8` of §8.8, one `IN` of 8 wires, an 8-wire target. The link has no globals; the budget table
+has heap 0 and largest stack 7, so `heap_limit_max` = 0, A_tab = 0, S_cells = 3, and H = 12 covers
+the null region [0, 4096):
+
+```llvm lift=inc8 region=@inc8 desc=IN(8,zext);tgt=8
+define internal i8 @inc8(i8 %x) {
+  %r = add i8 %x, 1
+  ret i8 %r
+}
+```
+
+```text linkmap=inc8
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 7, heap max 0
+```
+
+```isa object=inc8
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"78635205a0a127a835b8aa0a47dab873a40ab3a8d5bd1d96b9194b7ec439496b","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[8],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"9eb65ca1fc4f51778f6f15b8f58943ee6c23fa765742cbba40b04483e33094ee","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[8],"result":8,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref (x0:wire[8] in) (tgt:wire[8]) (fault:wire[4]) () ()
+regs { r:reg[8] }
+^entry():
+r = lift.call @L1 (x0)
+lift.retval r
+lproc @L1 (a0:reg[8]) (r:reg[8]) () () ()
+regs { c0:reg[8], v0:reg[8] }
+^b0():
+c0 = lift.const.i8 1
+v0 = lift.add a0 c0
+lift.ret v0
+
+section layout
+{"A_tab":0,"H":12,"S_cells":3,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=inc8
+ref 78635205a0a127a835b8aa0a47dab873a40ab3a8d5bd1d96b9194b7ec439496b
+L1 9eb65ca1fc4f51778f6f15b8f58943ee6c23fa765742cbba40b04483e33094ee
+```
+
+```text run=inc8
+input=0 budget=5,0,7,1 -> code=0 payload=1 steps=5
+input=7 budget=5,0,7,1 -> code=0 payload=8 steps=5
+input=255 budget=5,0,7,1 -> code=0 payload=0 steps=5
+input=7 budget=4,0,7,1 -> code=1 payload=0 steps=4
+input=7 budget=5,0,6,1 -> code=3 payload=0 steps=1
+input=7 budget=5,0,7,0 -> code=3 payload=0 steps=1
+```
+
+```text step-check=inc8
+budget=5,0,7,1 -> status=ok cases=256 input_and_memory_bits=8
+```
+
+*(non-normative)* Five steps: `lift.call`, the three rows of `@L1` (`lift.const`, `lift.add`,
+`lift.ret`) and `lift.retval`. The call needs R_L1 = 3 + m′ = 3 + 4 = 7 stack cells (m′ = one
+parameter, the result and two `regs`, ISA §3.7) and depth 1: with 6 cells or depth 0 the
+`lift.call` flag gives `FAULT_BUDGET_DEPTH` (3) at step 1. 0.1's memoryless `inc8` body is
+replaced by this wrapper form, so its hash changes (a draft-to-draft change, §23).
+
+Two `IN` bindings (`oracle-two-in`, §8.8):
+
+```llvm lift=add2 region=@add desc=IN(8,zext),IN(8,zext);tgt=9
+define internal i9 @add(i8 %a, i8 %b) {
+  %a9 = zext i8 %a to i9
+  %b9 = zext i8 %b to i9
+  %s = add i9 %a9, %b9
+  ret i9 %s
+}
+```
+
+```text linkmap=add2
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 9, heap max 0
+```
+
+```isa object=add2
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"9111865f229431972644ae662d4d97084c772f0d5a66caa9184198b74054b33f","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[8,8],"kind":"oracle","mem":[],"tgt":9,"tier":"q"}},"1":{"interface_hash":"07e5394bdca9c4b81f2047b5588fadf178abf61914125fb54817be969718870d","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[8,8],"result":9,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref (x0:wire[8] in, x1:wire[8] in) (tgt:wire[9]) (fault:wire[4]) () ()
+regs { r:reg[9] }
+^entry():
+r = lift.call @L1 (x0, x1)
+lift.retval r
+lproc @L1 (a0:reg[8], a1:reg[8]) (r:reg[9]) () () ()
+regs { v0:reg[9], v1:reg[9], v2:reg[9] }
+^b0():
+v0 = lift.zext.i9 a0
+v1 = lift.zext.i9 a1
+v2 = lift.add v0 v1
+lift.ret v2
+
+section layout
+{"A_tab":0,"H":12,"S_cells":4,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=add2
+input=200,100 budget=6,0,9,1 -> code=0 payload=300 steps=6
+input=255,255 budget=6,0,9,1 -> code=0 payload=510 steps=6
+input=0,0 budget=6,0,9,1 -> code=0 payload=0 steps=6
+input=1,2 budget=6,0,8,1 -> code=3 payload=0 steps=1
+```
+
+```text step-check=add2
+budget=6,0,9,1 -> status=ok cases=65536 input_and_memory_bits=16
+```
+
+### 16.7 Example: a reduced rung 4 (route A)
+
+The shape of the SQLite oracle of SQLite §5.2(i), route A, at toy size: a page image in a `MEM_IN`
+region (the database "fixed classically before entry", loaded into the register by
+`__bennett_qprep`), its classical length as an `ARG`, a superposed record key as a 3-wire `IN`
+(zero-extended to `i32`, like the 20-wire rowid), and a 1-wire target that receives an `i8`
+result through the dropped-bits check. The library code is ordinary C with a recursive binary
+search, a function-pointer callback through a constant table (an indirect call with two
+candidates) and an error path that traps. The image is: byte 0 the predicate id, byte 1 the
+record count n, then n records (key, value) sorted by key.
+
+```c example=rung4-minidb verdict=accept
+/* A reduced rung-4 "database": a 16-byte page image (predicate id, record count, sorted (key, value) records) */
+#include <stdint.h>
+
+typedef uint8_t (*pred_fn)(const uint8_t *rec);
+static uint8_t pred_even(const uint8_t *rec) { return (rec[1] & 1) == 0; }
+static uint8_t pred_big(const uint8_t *rec) { return rec[1] >= 100; }
+static pred_fn const preds[2] = { pred_even, pred_big };
+
+static const uint8_t *find(const uint8_t *base, uint32_t lo, uint32_t hi, uint32_t key) {
+  if (lo >= hi) return 0;
+  uint32_t mid = (lo + hi) / 2;
+  const uint8_t *rec = base + 2 * mid;
+  if (rec[0] == key) return rec;
+  if (rec[0] < key) return find(base, mid + 1, hi, key);
+  return find(base, lo, mid, key);
+}
+
+uint8_t q(const uint8_t *img, uint64_t len, uint32_t rowid) {
+  uint32_t n = img[1];
+  if (len < 2 + 2 * (uint64_t)n) __builtin_trap();
+  const uint8_t *rec = find(img + 2, 0, n, rowid);
+  if (!rec) return 0;
+  return preds[img[0] & 1](rec);
+}
+```
+
+The quantum programmer's translation unit (outline §19.3: the normative route is a separate TU
+naming the unmodified function) applies one Grover iteration; it is linked with the library by
+`clang -O2 -flto` and the driver's `lto<O3>`, after which the module holds 4 `qalloc`, 2 `qprep`,
+24 `gate`, 1 `gate3`, 1 `oracle`, 3 `measure` and 4 `qfree` calls (counted on LLVM 18):
+
+```c example=rung4-grover-tu verdict=accept
+/* The quantum programmer's translation unit: one Grover iteration over the 3-bit rowid. */
+#include <stdint.h>
+#include "bennett_markers.h"
+
+extern uint8_t q(const uint8_t *img, uint64_t len, uint32_t rowid);
+
+static void hadamards(bennett_q r) {
+  for (uint64_t i = 0; i < 3; i++) __bennett_gate(BENNETT_GATE_H, r, i);
+}
+
+static void phase_oracle(bennett_q db, bennett_q row, bennett_q t, bennett_q f) {
+  BENNETT_ORACLE_DESC_P(3) d;
+  bennett_oracle_desc_init(&d.h, 3, 0, t, f);
+  bennett_bind_set(&d.param[0], BENNETT_BIND_MEM_IN, 0, db, 0, 16);
+  bennett_bind_set(&d.param[1], BENNETT_BIND_ARG, 0, 0, 16, 0);
+  bennett_bind_set(&d.param[2], BENNETT_BIND_IN, BENNETT_MODE_ZEXT, row, 0, 0);
+  bennett_budget b = { 400, 0, 512, 8, 0 };
+  __bennett_oracle((const void *)q, &b, &d.h);
+}
+
+static void diffusion(bennett_q row) {
+  hadamards(row);
+  for (uint64_t i = 0; i < 3; i++) __bennett_gate(BENNETT_GATE_X, row, i);
+  __bennett_gate(BENNETT_GATE_H, row, 2);
+  __bennett_gate3(BENNETT_GATE3_CCX, row, 0, row, 1, row, 2);
+  __bennett_gate(BENNETT_GATE_H, row, 2);
+  for (uint64_t i = 0; i < 3; i++) __bennett_gate(BENNETT_GATE_X, row, i);
+  hadamards(row);
+}
+
+uint32_t grover_once(const uint8_t img[16]) {
+  bennett_q db = __bennett_qalloc(BENNETT_CLASS_ANY, 128);
+  bennett_q row = __bennett_qalloc(BENNETT_CLASS_ANY, 3);
+  bennett_q t = __bennett_qalloc(BENNETT_CLASS_ANY, 1);
+  bennett_q f = __bennett_qalloc(BENNETT_CLASS_ANY, 4);
+  __bennett_qprep(db, img, 16);                   /* the database, fixed classically before entry */
+  hadamards(row);
+  __bennett_gate(BENNETT_GATE_X, t, 0);           /* |-> target: phase kickback */
+  __bennett_gate(BENNETT_GATE_H, t, 0);
+  phase_oracle(db, row, t, f);
+  diffusion(row);
+  uint32_t r = 0;
+  for (uint64_t i = 0; i < 3; i++) r |= (uint32_t)__bennett_measure(row, i) << i;
+  __bennett_gate(BENNETT_GATE_H, t, 0);
+  __bennett_gate(BENNETT_GATE_X, t, 0);
+  __bennett_qprep(db, img, 16);                   /* XOR again: db is clean */
+  for (uint64_t i = 0; i < 3; i++) if ((r >> i) & 1) __bennett_gate(BENNETT_GATE_X, row, i);
+  __bennett_qfree(f);
+  __bennett_qfree(t);
+  __bennett_qfree(row);
+  __bennett_qfree(db);
+  return r;
+}
+```
+
+*(non-normative)* The descriptor's kinds and the budget record's fields reach the marker as
+constant stores and `memset`s (PT7, PT8), so there is one shape. The MEM_IN register is the
+static register of the root `db` (it is stored in the descriptor, so it has a static register
+file with N = 1 by §6.5 rule 1); `f` stays clean when the fault rate is zero, and `t` returns to
+|0⟩ after H and X.
+
+The materialised region function and its closure, written in the shape the pipeline gives them
+(the recursion kept, `__builtin_trap` already replaced by N11):
+
+```llvm lift=rung4-mini region=@q desc=MEM_IN(4),ARG(64),IN(3,zext);tgt=1
+@preds = internal constant [2 x ptr] [ptr @pred_even, ptr @pred_big]
+
+define internal i8 @q(ptr %img, i64 %len, i32 %rowid) {
+b0:
+  %p1 = getelementptr i8, ptr %img, i64 1
+  %n8 = load i8, ptr %p1
+  %n = zext i8 %n8 to i32
+  %n64 = zext i8 %n8 to i64
+  %twon = shl i64 %n64, 1
+  %need = add i64 %twon, 2
+  %short = icmp ult i64 %len, %need
+  br i1 %short, label %b1, label %b2
+
+b1:
+  call void @__bennett_nz_fault(i64 4)
+  unreachable
+
+b2:
+  %base = getelementptr i8, ptr %img, i64 2
+  %rec = call ptr @find(ptr %base, i32 0, i32 %n, i32 %rowid)
+  %none = icmp eq ptr %rec, null
+  br i1 %none, label %b3, label %b4
+
+b3:
+  ret i8 0
+
+b4:
+  %h8 = load i8, ptr %img
+  %h = and i8 %h8, 1
+  %hi = zext i8 %h to i64
+  %pp = getelementptr [2 x ptr], ptr @preds, i64 0, i64 %hi
+  %f = load ptr, ptr %pp
+  %r = call i8 %f(ptr %rec)
+  ret i8 %r
+}
+
+define internal ptr @find(ptr %base, i32 %lo, i32 %hi, i32 %key) {
+b0:
+  %e = icmp uge i32 %lo, %hi
+  br i1 %e, label %b5, label %b1
+
+b1:
+  %s = add i32 %lo, %hi
+  %mid = lshr i32 %s, 1
+  %m2 = shl i32 %mid, 1
+  %off = zext i32 %m2 to i64
+  %rec = getelementptr i8, ptr %base, i64 %off
+  %k8 = load i8, ptr %rec
+  %k = zext i8 %k8 to i32
+  %eq = icmp eq i32 %k, %key
+  br i1 %eq, label %b6, label %b2
+
+b2:
+  %lt = icmp ult i32 %k, %key
+  br i1 %lt, label %b3, label %b4
+
+b3:
+  %mid1 = add i32 %mid, 1
+  %r1 = call ptr @find(ptr %base, i32 %mid1, i32 %hi, i32 %key)
+  ret ptr %r1
+
+b4:
+  %r2 = call ptr @find(ptr %base, i32 %lo, i32 %mid, i32 %key)
+  ret ptr %r2
+
+b5:
+  ret ptr null
+
+b6:
+  ret ptr %rec
+}
+
+define internal i8 @pred_even(ptr %rec) {
+  %p = getelementptr i8, ptr %rec, i64 1
+  %v = load i8, ptr %p
+  %b = and i8 %v, 1
+  %z = icmp eq i8 %b, 0
+  %r = zext i1 %z to i8
+  ret i8 %r
+}
+
+define internal i8 @pred_big(ptr %rec) {
+  %p = getelementptr i8, ptr %rec, i64 1
+  %v = load i8, ptr %p
+  %c = icmp uge i8 %v, 100
+  %r = zext i1 %c to i8
+  ret i8 %r
+}
+```
+
+```text linkmap=rung4-mini
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @preds -> G1 base=4096 size=16
+function @pred_even A=0x401160 (4198752)
+function @pred_big A=0x4011a0 (4198816)
+budget-table=rung4-mini (largest stack 1024, largest heap 0)
+```
+
+The L closure is `@q`, `@find`, `@pred_even`, `@pred_big`; in preorder from `@ref`'s call of `@q`
+(L1), `@q`'s first `lift.call` is `@find` (L2), and its indirect call's candidates sorted by A(F)
+are `@pred_even` (L3) and `@pred_big` (L4). The layout: one global and one region, so P = 2 and
+A_tab = 1 (2^1 ≥ 2 + 0); the region m0 (16 bytes) is placed at 8192, the end of the empty heap;
+H = 14 (8208 ≤ 2^14); S_cells = 10 (2^10 ≥ 1024):
+
+```isa object=rung4-mini
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"7579f7f06ff78c7868ced4ea1aa6ff48e02f4d18d09db15e34dc7783bb3b327f","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":["i64"],"fault":4,"in":[3],"kind":"oracle","mem":[{"A":4,"W":8,"role":"in"}],"tgt":1,"tier":"q"}},"1":{"interface_hash":"e536ccb36ca3ed77bd545dded96fb433f49f752f17551937296c0ea7b1cde46b","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64,64,32],"result":8,"tier":"q","tokens":[]}},"2":{"interface_hash":"f7b3de082faf5f944e4b6c37d36440044ed95bd170a7116b6512e49f4539672e","kind":"lproc","name":"L2","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64,32,32,32],"result":64,"tier":"q","tokens":[]}},"3":{"interface_hash":"aa66f4d4406660d08985ace1cd8fbbfd509b9bc85fc7058488e89ee14dec243c","kind":"lproc","name":"L3","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":8,"tier":"q","tokens":[]}},"4":{"interface_hash":"fbf8d223ce2e3b4d42ec8c5b9362e303d433a2051773fc34171cab30751f5673","kind":"lproc","name":"L4","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":8,"tier":"q","tokens":[]}},"5":{"interface_hash":"13b8eea5eb7ffb320806090bcb731dddee82c6b7e305d02998f18f78f818fe26","kind":"data","name":"G1","signature":{"abi":"0.9","kind":"data","size":16,"tier":"-"}}}
+
+section functions
+oracle @ref (x0:wire[3] in) (tgt:wire[1]) (fault:wire[4]) (m0:region[4,8] in) (a0:i64)
+regs { w0:reg[64], w2:reg[32], r:reg[8], c0:reg[8], t0:reg[8], c1:reg[8], t1:reg[1], t2:reg[1] }
+^entry():
+w0 = lift.addr @m0
+w2 = lift.zext.i32 x0
+r = lift.call @L1 (w0, a0, w2)
+c0 = lift.const.i8 1
+t0 = lift.lshr r c0
+c1 = lift.const.i8 0
+t1 = lift.icmp.ne t0 c1
+lift.faultif t1 4
+t2 = lift.trunc.i1 r
+lift.retval t2
+lproc @L1 (a0:reg[64], a1:reg[64], a2:reg[32]) (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], v1:reg[8], v2:reg[32], v3:reg[64], c1:reg[64], v4:reg[64], c2:reg[64], v5:reg[64], v6:reg[1], c3:reg[64], v7:reg[64], c4:reg[32], v8:reg[64], c5:reg[64], v9:reg[1], c6:reg[8], v10:reg[8], c7:reg[8], v11:reg[8], v12:reg[64], c8:reg[64], c9:reg[64], t0:reg[64], v13:reg[64], v14:reg[64], c10:reg[64], t1:reg[1], c11:reg[64], t2:reg[1], v15:reg[8] }
+^b0():
+c0 = lift.const.i64 1
+v0 = lift.add a0 c0
+lift.boundscheck v0 1
+v1 = lift.load.i8 v0
+v2 = lift.zext.i32 v1
+v3 = lift.zext.i64 v1
+c1 = lift.const.i64 1
+v4 = lift.shl v3 c1
+c2 = lift.const.i64 2
+v5 = lift.add v4 c2
+v6 = lift.icmp.ult a1 v5
+qbranch v6 ^b1 ^b2
+^b1():
+fault 4
+^b2():
+c3 = lift.const.i64 2
+v7 = lift.add a0 c3
+c4 = lift.const.i32 0
+v8 = lift.call @L2 (v7, c4, v2, a2)
+c5 = lift.const.i64 0
+v9 = lift.icmp.eq v8 c5
+qbranch v9 ^b3 ^b4
+^b3():
+c6 = lift.const.i8 0
+lift.ret c6
+^b4():
+lift.boundscheck a0 1
+v10 = lift.load.i8 a0
+c7 = lift.const.i8 1
+v11 = lift.and v10 c7
+v12 = lift.zext.i64 v11
+c8 = lift.addr @G1
+c9 = lift.const.i64 8
+t0 = lift.mul v12 c9
+v13 = lift.add c8 t0
+lift.boundscheck v13 8
+v14 = lift.load.i64 v13
+c10 = lift.const.i64 4198752
+t1 = lift.icmp.eq v14 c10
+qbranch t1 ^b4.q1c0 ^b4.s1
+^b4.s1():
+c11 = lift.const.i64 4198816
+t2 = lift.icmp.eq v14 c11
+qbranch t2 ^b4.q1c1 ^b4.q1d
+^b4.q1c0():
+v15 = lift.call @L3 (v8)
+qjump ^b4.q1r
+^b4.q1c1():
+v15 = lift.call @L4 (v8)
+qjump ^b4.q1r
+^b4.q1d():
+fault 4
+^b4.q1r():
+lift.ret v15
+lproc @L2 (a0:reg[64], a1:reg[32], a2:reg[32], a3:reg[32]) (r:reg[64]) () () ()
+regs { v0:reg[1], v1:reg[32], c0:reg[32], v2:reg[32], c1:reg[32], v3:reg[32], v4:reg[64], v5:reg[64], v6:reg[8], v7:reg[32], v8:reg[1], v9:reg[1], c2:reg[32], v10:reg[32], v11:reg[64], v12:reg[64], c3:reg[64] }
+^b0():
+v0 = lift.icmp.ule a2 a1
+qbranch v0 ^b5 ^b1
+^b1():
+v1 = lift.add a1 a2
+c0 = lift.const.i32 1
+v2 = lift.lshr v1 c0
+c1 = lift.const.i32 1
+v3 = lift.shl v2 c1
+v4 = lift.zext.i64 v3
+v5 = lift.add a0 v4
+lift.boundscheck v5 1
+v6 = lift.load.i8 v5
+v7 = lift.zext.i32 v6
+v8 = lift.icmp.eq v7 a3
+qbranch v8 ^b6 ^b2
+^b2():
+v9 = lift.icmp.ult v7 a3
+qbranch v9 ^b3 ^b4
+^b3():
+c2 = lift.const.i32 1
+v10 = lift.add v2 c2
+v11 = lift.call @L2 (a0, v10, a2, a3)
+lift.ret v11
+^b4():
+v12 = lift.call @L2 (a0, a1, v2, a3)
+lift.ret v12
+^b5():
+c3 = lift.const.i64 0
+lift.ret c3
+^b6():
+lift.ret v5
+lproc @L3 (a0:reg[64]) (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], v1:reg[8], c1:reg[8], v2:reg[8], c2:reg[8], v3:reg[1], v4:reg[8] }
+^b0():
+c0 = lift.const.i64 1
+v0 = lift.add a0 c0
+lift.boundscheck v0 1
+v1 = lift.load.i8 v0
+c1 = lift.const.i8 1
+v2 = lift.and v1 c1
+c2 = lift.const.i8 0
+v3 = lift.icmp.eq v2 c2
+v4 = lift.zext.i8 v3
+lift.ret v4
+lproc @L4 (a0:reg[64]) (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[64], v1:reg[8], c1:reg[8], v2:reg[1], v3:reg[8] }
+^b0():
+c0 = lift.const.i64 1
+v0 = lift.add a0 c0
+lift.boundscheck v0 1
+v1 = lift.load.i8 v0
+c1 = lift.const.i8 100
+v2 = lift.icmp.ule c1 v1
+v3 = lift.zext.i8 v2
+lift.ret v3
+
+section data
+G1 6011400000000000a011400000000000
+
+section layout
+{"A_tab":1,"H":14,"S_cells":10,"globals":{"G1":{"base":4096,"image":"G1","size":16}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{"m0":{"base":8192}}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=rung4-mini
+ref 7579f7f06ff78c7868ced4ea1aa6ff48e02f4d18d09db15e34dc7783bb3b327f
+L1 e536ccb36ca3ed77bd545dded96fb433f49f752f17551937296c0ea7b1cde46b
+L2 f7b3de082faf5f944e4b6c37d36440044ed95bd170a7116b6512e49f4539672e
+L3 aa66f4d4406660d08985ace1cd8fbbfd509b9bc85fc7058488e89ee14dec243c
+L4 fbf8d223ce2e3b4d42ec8c5b9362e303d433a2051773fc34171cab30751f5673
+G1 13b8eea5eb7ffb320806090bcb731dddee82c6b7e305d02998f18f78f818fe26
+```
+
+The image of the runs below has 7 records with keys 0, 1, 3, 4, 5, 6, 7 (key 2 is absent) and
+values 10, 101, 7, 200, 42, 99, 150; its byte 0 selects `pred_even` (value even) or `pred_big`
+(value ≥ 100):
+
+```text run=rung4-mini
+input=0 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=107
+input=1 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=0 steps=89
+input=2 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=0 steps=91
+input=3 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=0 steps=109
+input=4 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=71
+input=5 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=109
+input=6 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=0 steps=91
+input=7 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=111
+input=0 mem=m0:0107000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=0 steps=108
+input=1 mem=m0:0107000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=90
+input=4 mem=m0:0107000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=72
+input=7 mem=m0:0107000a0165030704c8052a06630796 arg=16 budget=400,0,512,8 -> code=0 payload=1 steps=112
+input=0 mem=m0:0007000a0165030704c8052a06630796 arg=15 budget=400,0,512,8 -> code=4 payload=0 steps=16
+input=4 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=70,0,512,8 -> code=1 payload=0 steps=70
+input=4 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=71,0,512,8 -> code=0 payload=1 steps=71
+input=7 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,125,8 -> code=3 payload=0 steps=92
+input=7 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,126,8 -> code=0 payload=1 steps=111
+input=7 mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=400,0,512,3 -> code=3 payload=0 steps=57
+```
+
+```text step-check=rung4-mini
+mem=m0:0007000a0165030704c8052a06630796 arg=16 budget=120,0,512,8 -> status=ok cases=8 input_and_memory_bits=3 fixed_regions=m0
+```
+
+```text native=rung4-mini
+q(img with byte 0 = 0, 16, rowid) for rowid 0..7 = 1 0 0 0 1 1 0 1
+q(img with byte 0 = 1, 16, rowid) for rowid 0..7 = 0 1 0 0 1 0 0 1
+q(img, 15, 0) = __bennett_nz_fault(4)
+```
+
+*(non-normative)* Derivation of the 71 steps of rowid 4: `@ref` 3 rows to the call; `@L1`
+`^b0` 12 rows; `^b2` 4 rows to the call of `@L2`; `@L2` 15 rows (lo = 0, hi = 7, mid = 3: record
+3 at offset 2 + 6 has key 4, found at once); `@L1` 3 more rows of `^b2` and 14 of `^b4` to the
+`qbranch`; the leaf's `lift.call` (1), `@L3`'s 10 rows, `qjump` (1), `lift.ret` (1); `@ref`'s 7
+delivery rows: 3 + 12 + 4 + 15 + 3 + 14 + 1 + 10 + 1 + 1 + 7 = 71, and B = 70 is
+`FAULT_BUDGET_STEPS`. Rowid 7 recurses three times (mid 3, then 5 in [4, 7), then 6 in [6, 7)):
+the stack holds R_L1 = 3 + 35 = 38 cells, three R_L2 = 3 + 22 = 25 frames and R_L3 = 13, 126
+cells in all, and the depth reaches 4, so 125 cells or depth 3 give `FAULT_BUDGET_DEPTH`. The
+step check runs the reversible machine for B = 120 on all 8 rowids with this image fixed and
+reverses every step to the entry tuple. The certificate claim of NS §8 rung 4(a) is this check
+over all rows and all target values with the database fixed classically (§25.2 records how ISA
+§12.2 labels a domain with a fixed region).
+
+### 16.8 Example: a reduced rung 8 (ENTROPY binding)
+
+NS §8 rung 8: "the entropy device is replaced by a superposed register". A Monte Carlo trial
+reads one random byte through the entropy device and succeeds when it is below 77. The region
+function has no parameters; the descriptor has one ENTROPY binding of 8 wires (one byte,
+region[0,8]) and a 1-wire target. In L the effect marker is the runtimes function
+`__bennett_dev_entropy_read` over the device state (§11.3), shown here with the runtimes' code
+(a byte loop):
+
+```llvm lift=rung8-mini region=@mc desc=dev=ENTROPY(0);tgt=1
+@buf = internal global i8 0
+@__bennett_dev_entropy_base = internal global ptr null
+@__bennett_dev_entropy_size = internal global i64 0
+@__bennett_dev_entropy_pos = internal global i64 0
+
+define internal i8 @mc() {
+  call void @__bennett_dev_entropy_read(ptr @buf, i64 1)
+  %b = load i8, ptr @buf
+  %c = icmp ult i8 %b, 77
+  %r = zext i1 %c to i8
+  ret i8 %r
+}
+
+define internal void @__bennett_dev_entropy_read(ptr %p, i64 %len) {
+b0:
+  %size = load i64, ptr @__bennett_dev_entropy_size
+  %pos = load i64, ptr @__bennett_dev_entropy_pos
+  %left = sub i64 %size, %pos
+  %bad = icmp ugt i64 %len, %left
+  br i1 %bad, label %b1, label %b2
+
+b1:
+  call void @__bennett_nz_fault(i64 10)
+  unreachable
+
+b2:
+  %base = load ptr, ptr @__bennett_dev_entropy_base
+  %src = getelementptr i8, ptr %base, i64 %pos
+  br label %b3
+
+b3:
+  %i = phi i64 [ 0, %b2 ], [ %i2, %b4 ]
+  %done = icmp eq i64 %i, %len
+  br i1 %done, label %b5, label %b4
+
+b4:
+  %sp = getelementptr i8, ptr %src, i64 %i
+  %v = load i8, ptr %sp
+  %dp = getelementptr i8, ptr %p, i64 %i
+  store i8 %v, ptr %dp
+  %i2 = add i64 %i, 1
+  br label %b3
+
+b5:
+  %pos2 = add i64 %pos, %len
+  store i64 %pos2, ptr @__bennett_dev_entropy_pos
+  ret void
+}
+```
+
+```text linkmap=rung8-mini
+null_size=4096 heap_base=8192 heap_limit_max=0
+global @buf -> G1 base=4096 size=1
+global @__bennett_dev_entropy_base -> G2 base=4104 size=8
+global @__bennett_dev_entropy_size -> G3 base=4112 size=8
+global @__bennett_dev_entropy_pos -> G4 base=4120 size=8
+budget-table: largest stack 512, largest heap 0
+```
+
+The layout: four globals and one region, P = 5, A_tab = 3; e0 at 8192; H = 14; S_cells = 9. The
+prologue stores the region base and its size 2^0 = 1 into the device state (G2, G3); the
+position G4 starts at its image 0:
+
+```isa object=rung8-mini
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"73baef6cf07f17f70721e8838a79f9903d112d69dccc146877ae992fbec82013","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[{"A":0,"W":8,"role":"in"}],"tgt":1,"tier":"q"}},"1":{"interface_hash":"65e5506f3f52818306c883a8a013e05ecda2a1294612f37af1a1171c90099f40","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[],"result":8,"tier":"q","tokens":[]}},"2":{"interface_hash":"80bb2b405da4ae17f61bd9d8a45347313e078e41ca3f119240c44b30bfe219b4","kind":"lproc","name":"L2","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64,64],"result":1,"tier":"q","tokens":[]}},"3":{"interface_hash":"1d3e8bd93cd6734d4d97f5d41cfb323a748d18666bab928bc8f09f47feed63ed","kind":"data","name":"G1","signature":{"abi":"0.9","kind":"data","size":1,"tier":"-"}},"4":{"interface_hash":"4c74e9472a13bd9527111af00b147c374e9746392d7d45e957586334b1120f97","kind":"data","name":"G2","signature":{"abi":"0.9","kind":"data","size":8,"tier":"-"}},"5":{"interface_hash":"6ad17a475f1d9a6e8b97d439d4c9bdac80bed26a732cf83c9474100c172d9878","kind":"data","name":"G3","signature":{"abi":"0.9","kind":"data","size":8,"tier":"-"}},"6":{"interface_hash":"d5903ad2115655a31eed4888dcae249e47fb3ab1d70a7b94b467b9deea468f05","kind":"data","name":"G4","signature":{"abi":"0.9","kind":"data","size":8,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[1]) (fault:wire[4]) (e0:region[0,8] in) ()
+regs { d0:reg[64], d1:reg[64], d2:reg[64], d3:reg[64], r:reg[8], c0:reg[8], t0:reg[8], c1:reg[8], t1:reg[1], t2:reg[1] }
+^entry():
+d0 = lift.addr @e0
+d1 = lift.addr @G2
+lift.boundscheck d1 8
+lift.store.i64 d1 d0
+d2 = lift.const.i64 1
+d3 = lift.addr @G3
+lift.boundscheck d3 8
+lift.store.i64 d3 d2
+r = lift.call @L1 ()
+c0 = lift.const.i8 1
+t0 = lift.lshr r c0
+c1 = lift.const.i8 0
+t1 = lift.icmp.ne t0 c1
+lift.faultif t1 4
+t2 = lift.trunc.i1 r
+lift.retval t2
+lproc @L1 () (r:reg[8]) () () ()
+regs { c0:reg[64], c1:reg[64], t0:reg[1], c2:reg[64], v0:reg[8], c3:reg[8], v1:reg[1], v2:reg[8] }
+^b0():
+c0 = lift.addr @G1
+c1 = lift.const.i64 1
+t0 = lift.call @L2 (c0, c1)
+c2 = lift.addr @G1
+lift.boundscheck c2 1
+v0 = lift.load.i8 c2
+c3 = lift.const.i8 77
+v1 = lift.icmp.ult v0 c3
+v2 = lift.zext.i8 v1
+lift.ret v2
+lproc @L2 (a0:reg[64], a1:reg[64]) (r:reg[1]) () () ()
+regs { c0:reg[64], v0:reg[64], c1:reg[64], v1:reg[64], v2:reg[64], v3:reg[1], c2:reg[64], v4:reg[64], v5:reg[64], c3:reg[64], v6:reg[64], v7:reg[1], v8:reg[64], v9:reg[8], v10:reg[64], c4:reg[64], v11:reg[64], v12:reg[64], c5:reg[64] }
+^b0():
+c0 = lift.addr @G3
+lift.boundscheck c0 8
+v0 = lift.load.i64 c0
+c1 = lift.addr @G4
+lift.boundscheck c1 8
+v1 = lift.load.i64 c1
+v2 = lift.sub v0 v1
+v3 = lift.icmp.ult v2 a1
+qbranch v3 ^b1 ^b2
+^b1():
+fault 10
+^b2():
+c2 = lift.addr @G2
+lift.boundscheck c2 8
+v4 = lift.load.i64 c2
+v5 = lift.add v4 v1
+c3 = lift.const.i64 0
+(v6) = lift.parmov (c3)
+qjump ^b3
+^b3():
+v7 = lift.icmp.eq v6 a1
+qbranch v7 ^b5 ^b4
+^b4():
+v8 = lift.add v5 v6
+lift.boundscheck v8 1
+v9 = lift.load.i8 v8
+v10 = lift.add a0 v6
+lift.boundscheck v10 1
+lift.store.i8 v10 v9
+c4 = lift.const.i64 1
+v11 = lift.add v6 c4
+(v6) = lift.parmov (v11)
+qjump ^b3
+^b5():
+v12 = lift.add v1 a1
+c5 = lift.addr @G4
+lift.boundscheck c5 8
+lift.store.i64 c5 v12
+lift.ret r
+
+section data
+G1 00
+G2 0000000000000000
+G3 0000000000000000
+G4 0000000000000000
+
+section layout
+{"A_tab":3,"H":14,"S_cells":9,"globals":{"G1":{"base":4096,"image":"G1","size":1},"G2":{"base":4104,"image":"G2","size":8},"G3":{"base":4112,"image":"G3","size":8},"G4":{"base":4120,"image":"G4","size":8}},"heap_base":8192,"heap_limit_max":0,"interface_regions":{"ref":{"e0":{"base":8192}}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=rung8-mini
+input= mem=e0:00 budget=100,0,512,4 -> code=0 payload=1 steps=61
+input= mem=e0:4c budget=100,0,512,4 -> code=0 payload=1 steps=61
+input= mem=e0:4d budget=100,0,512,4 -> code=0 payload=0 steps=61
+input= mem=e0:ff budget=100,0,512,4 -> code=0 payload=0 steps=61
+```
+
+```text step-check=rung8-mini
+budget=100,0,512,4 -> status=ok cases=256 input_and_memory_bits=8
+```
+
+*(non-normative)* 0x4c = 76 < 77 and 0x4d = 77 is not, so the payload is 1 on exactly 77 of the
+256 entropy values (checked by running all 256): amplitude estimation on this oracle estimates
+77/256. The step check enumerates the superposed entropy byte itself.
+
+### 16.9 Example: rung 2 (heap, phis, a loop, `free`)
+
+A linked list of n nodes built with `malloc` (a specialised 16-byte-call witness of the runtimes allocator over `lift.alloc`, shown with
+its code; the general C wrapper is specified in §17.1), summed and freed. n comes from a 2-wire `IN` register zero-extended to `i8`:
+
+```llvm lift=listsum region=@listsum desc=IN(2,zext);tgt=8
+define ptr @malloc(i64 %n) {
+  %p = call ptr @__bennett_nz_alloc(i64 %n)
+  ret ptr %p
+}
+
+define void @free(ptr %p) {
+  %z = icmp eq ptr %p, null
+  br i1 %z, label %out, label %rel
+
+rel:
+  call void @__bennett_nz_free(ptr %p)
+  br label %out
+
+out:
+  ret void
+}
+
+define internal i8 @listsum(i8 %n) {
+b0:
+  %z = icmp eq i8 %n, 0
+  br i1 %z, label %b3, label %b1
+
+b1:
+  %i = phi i8 [ 0, %b0 ], [ %i2, %b1 ]
+  %head = phi ptr [ null, %b0 ], [ %node, %b1 ]
+  %node = call ptr @malloc(i64 16)
+  store i8 %i, ptr %node
+  %np = getelementptr i8, ptr %node, i64 8
+  store ptr %head, ptr %np
+  %i2 = add i8 %i, 1
+  %more = icmp ult i8 %i2, %n
+  br i1 %more, label %b1, label %b2
+
+b2:
+  %p = phi ptr [ %node, %b1 ], [ %next, %b2 ]
+  %s = phi i8 [ 0, %b1 ], [ %s2, %b2 ]
+  %v = load i8, ptr %p
+  %s2 = add i8 %s, %v
+  %nextp = getelementptr i8, ptr %p, i64 8
+  %next = load ptr, ptr %nextp
+  call void @free(ptr %p)
+  %end = icmp eq ptr %next, null
+  br i1 %end, label %b4, label %b2
+
+b3:
+  ret i8 0
+
+b4:
+  ret i8 %s2
+}
+```
+
+```text linkmap=listsum
+null_size=4096 heap_base=4096 heap_limit_max=64 globals=none budget-table: largest stack 512, largest heap 64
+```
+
+A_tab = 6 (2^6 ≥ 0 + 64), H = 13 (4096 + 64 ≤ 2^13), S_cells = 9:
+
+```isa object=listsum
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"120d6bbcdd35d9cdd9985a540c402d6e0b728719bb59b33403668a750c061db4","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[2],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"4dbdc2542361e80c4287d1f31b9a3cc1aa2b93a9d1967bb659d2ff6c80ec9a37","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[8],"result":8,"tier":"q","tokens":[]}},"2":{"interface_hash":"59be2d08a61f0582fa58663da45de01339fb1f290b34ec19c8618f3a1cb468d3","kind":"lproc","name":"L2","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":64,"tier":"q","tokens":[]}},"3":{"interface_hash":"0ba23f67e402006533d7b2b1a2641c1d43f571f1fae253d91da572496f828206","kind":"lproc","name":"L3","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":1,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref (x0:wire[2] in) (tgt:wire[8]) (fault:wire[4]) () ()
+regs { w0:reg[8], r:reg[8] }
+^entry():
+w0 = lift.zext.i8 x0
+r = lift.call @L1 (w0)
+lift.retval r
+lproc @L1 (a0:reg[8]) (r:reg[8]) () () ()
+regs { c0:reg[8], v0:reg[1], c1:reg[8], c2:reg[64], v1:reg[8], v2:reg[64], c3:reg[64], v3:reg[64], c4:reg[64], v4:reg[64], c5:reg[8], v5:reg[8], v6:reg[1], c6:reg[8], v7:reg[64], v8:reg[8], v9:reg[8], v10:reg[8], c7:reg[64], v11:reg[64], v12:reg[64], t0:reg[1], c8:reg[64], v13:reg[1], c9:reg[8] }
+^b0():
+c0 = lift.const.i8 0
+v0 = lift.icmp.eq a0 c0
+qbranch v0 ^b3 ^b0.e1
+^b0.e1():
+c1 = lift.const.i8 0
+c2 = lift.const.i64 0
+(v1, v2) = lift.parmov (c1, c2)
+qjump ^b1
+^b1():
+c3 = lift.const.i64 16
+v3 = lift.call @L2 (c3)
+lift.boundscheck v3 1
+lift.store.i8 v3 v1
+c4 = lift.const.i64 8
+v4 = lift.add v3 c4
+lift.boundscheck v4 8
+lift.store.i64 v4 v2
+c5 = lift.const.i8 1
+v5 = lift.add v1 c5
+v6 = lift.icmp.ult v5 a0
+qbranch v6 ^b1.e1 ^b1.e2
+^b1.e1():
+(v1, v2) = lift.parmov (v5, v3)
+qjump ^b1
+^b1.e2():
+c6 = lift.const.i8 0
+(v7, v8) = lift.parmov (v3, c6)
+qjump ^b2
+^b2():
+lift.boundscheck v7 1
+v9 = lift.load.i8 v7
+v10 = lift.add v8 v9
+c7 = lift.const.i64 8
+v11 = lift.add v7 c7
+lift.boundscheck v11 8
+v12 = lift.load.i64 v11
+t0 = lift.call @L3 (v7)
+c8 = lift.const.i64 0
+v13 = lift.icmp.eq v12 c8
+qbranch v13 ^b4 ^b2.e2
+^b2.e2():
+(v7, v8) = lift.parmov (v12, v10)
+qjump ^b2
+^b3():
+c9 = lift.const.i8 0
+lift.ret c9
+^b4():
+lift.ret v10
+lproc @L2 (a0:reg[64]) (r:reg[64]) () () ()
+regs { v0:reg[64] }
+^b0():
+v0 = lift.alloc a0
+lift.ret v0
+lproc @L3 (a0:reg[64]) (r:reg[1]) () () ()
+regs { c0:reg[64], v0:reg[1] }
+^b0():
+c0 = lift.const.i64 0
+v0 = lift.icmp.eq a0 c0
+qbranch v0 ^b2 ^b1
+^b1():
+lift.free a0
+qjump ^b2
+^b2():
+lift.ret r
+
+section layout
+{"A_tab":6,"H":13,"S_cells":9,"globals":{},"heap_base":4096,"heap_limit_max":64,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=listsum
+input=0 budget=1000,64,512,4 -> code=0 payload=0 steps=8
+input=1 budget=1000,64,512,4 -> code=0 payload=0 steps=45
+input=2 budget=1000,64,512,4 -> code=0 payload=1 steps=80
+input=3 budget=1000,64,512,4 -> code=0 payload=3 steps=115
+input=2 budget=1000,32,512,4 -> code=0 payload=1 steps=80
+input=3 budget=1000,32,512,4 -> code=2 payload=0 steps=44
+```
+
+```text step-check=listsum
+budget=200,64,512,4 -> status=ok cases=4 input_and_memory_bits=2
+```
+
+*(non-normative)* The payload is 0 + 1 + … + (n − 1). n = 3 allocates 3 × 16 bytes: with a heap
+budget of 32 the third `lift.alloc` (`heap_used` 32 + 16 > 32) is `FAULT_BUDGET_HEAP` (2). The 45
+steps of n = 1: `@ref` 2 rows to the call; `^b0` 3; `^b0.e1` 4; `^b1` 14 (including `@L2`'s 2);
+`^b1.e2` 3; `^b2` 17 (including `@L3`'s 6); `^b4` 1; `lift.retval` 1.
+
+### 16.10 Example: `switch` as a compare tree
+
+Five cases, two of them sharing a successor, and a default with a phi (outline E6; 0.1's linear
+chain is replaced). Sorted keys 1, 5, 9, 20, 40: the root compares with key 2 (mid = ⌊(0 + 4)/2⌋ =
+2, the key 9) by `ult`; the left node [1, 5] is an `eq` chain in `^b0.s1` and `^b0.s3`, the right
+node [9, 20, 40] in `^b0.s2`, `^b0.s4`, `^b0.s5` (creation order: L and R of the root first, then
+each node's chain); the default reaches the phi through the edge block `^b0.e4`:
+
+```llvm lift=switch5 region=@sw desc=IN(8,zext);tgt=8
+define internal i8 @sw(i8 %x) {
+b0:
+  switch i8 %x, label %b4 [
+    i8 1, label %b1
+    i8 5, label %b2
+    i8 9, label %b3
+    i8 20, label %b1
+    i8 40, label %b2
+  ]
+
+b1:
+  br label %b4
+
+b2:
+  br label %b4
+
+b3:
+  br label %b4
+
+b4:
+  %r = phi i8 [ 7, %b0 ], [ 10, %b1 ], [ 20, %b2 ], [ 30, %b3 ]
+  ret i8 %r
+}
+```
+
+```text linkmap=switch5
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: largest stack 32, largest heap 0
+```
+
+```isa object=switch5
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"392899f449e6e22bed2a32e42883542b281d277a05dbea134a2818c6d2134a54","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[8],"kind":"oracle","mem":[],"tgt":8,"tier":"q"}},"1":{"interface_hash":"6b7c6a353c488124cde825c9c7fb9ff78b212432c5648554503c49bf8c1a21d9","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[8],"result":8,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref (x0:wire[8] in) (tgt:wire[8]) (fault:wire[4]) () ()
+regs { r:reg[8] }
+^entry():
+r = lift.call @L1 (x0)
+lift.retval r
+lproc @L1 (a0:reg[8]) (r:reg[8]) () () ()
+regs { c0:reg[8], t0:reg[1], c1:reg[8], t1:reg[1], c2:reg[8], t2:reg[1], c3:reg[8], t3:reg[1], c4:reg[8], t4:reg[1], c5:reg[8], t5:reg[1], c6:reg[8], v0:reg[8], c7:reg[8], c8:reg[8], c9:reg[8] }
+^b0():
+c0 = lift.const.i8 9
+t0 = lift.icmp.ult a0 c0
+qbranch t0 ^b0.s1 ^b0.s2
+^b0.s1():
+c1 = lift.const.i8 1
+t1 = lift.icmp.eq a0 c1
+qbranch t1 ^b1 ^b0.s3
+^b0.s2():
+c2 = lift.const.i8 9
+t2 = lift.icmp.eq a0 c2
+qbranch t2 ^b3 ^b0.s4
+^b0.s3():
+c3 = lift.const.i8 5
+t3 = lift.icmp.eq a0 c3
+qbranch t3 ^b2 ^b0.e4
+^b0.s4():
+c4 = lift.const.i8 20
+t4 = lift.icmp.eq a0 c4
+qbranch t4 ^b1 ^b0.s5
+^b0.s5():
+c5 = lift.const.i8 40
+t5 = lift.icmp.eq a0 c5
+qbranch t5 ^b2 ^b0.e4
+^b0.e4():
+c6 = lift.const.i8 7
+(v0) = lift.parmov (c6)
+qjump ^b4
+^b1():
+c7 = lift.const.i8 10
+(v0) = lift.parmov (c7)
+qjump ^b4
+^b2():
+c8 = lift.const.i8 20
+(v0) = lift.parmov (c8)
+qjump ^b4
+^b3():
+c9 = lift.const.i8 30
+(v0) = lift.parmov (c9)
+qjump ^b4
+^b4():
+lift.ret v0
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text run=switch5
+input=0 budget=100,0,32,1 -> code=0 payload=7 steps=15
+input=1 budget=100,0,32,1 -> code=0 payload=10 steps=12
+input=5 budget=100,0,32,1 -> code=0 payload=20 steps=15
+input=9 budget=100,0,32,1 -> code=0 payload=30 steps=12
+input=20 budget=100,0,32,1 -> code=0 payload=10 steps=15
+input=40 budget=100,0,32,1 -> code=0 payload=20 steps=18
+input=41 budget=100,0,32,1 -> code=0 payload=7 steps=18
+input=40 budget=17,0,32,1 -> code=1 payload=0 steps=17
+```
+
+```text step-check=switch5
+budget=18,0,32,1 -> status=ok cases=256 input_and_memory_bits=8
+```
+
+*(non-normative)* x = 1 takes `lift.call` (1), `^b0` (3), `^b0.s1` (3), `^b1` (3), `lift.ret` (1)
+and `lift.retval` (1): 12 steps; x = 40 visits `^b0`, `^b0.s2`, `^b0.s4`, `^b0.s5` and `^b2`:
+1 + 3 + 3 + 3 + 3 + 3 + 1 + 1 = 18, the most, so B = 18 suffices for all 256 inputs. The 0.1
+linear chain needed up to 5 compares; the tree needs at most 4 on this table (the `ult` at the
+root and up to 3 `eq`), and O(log k) for k cases.
+
+### 16.11 Round-1 interface contract vectors
+
+**Arena O1 (TDL-b).** @cnt and @other are coh offsets 0 and 1; neither has a G symbol.
+O1 returns old-other XOR (cnt+1). The wrapper passes @coh as a hidden base pointer:
+ISA interface-region names are local to the wrapper, not visible in its lprocs.
+
+```isa object=arena-o1
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"43a15f86d56a8ad2761d6cee9dd374200fdc51322a3bb633de286e518e461bf9","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":["i8"],"fault":4,"in":[],"kind":"oracle","mem":[{"A":1,"W":8,"role":"in"}],"tgt":8,"tier":"q"}},"1":{"interface_hash":"f368f07edf94e27ba311d228cc5b102d19e0efacc24f0c7262c81e910deaf8fd","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[8,64],"result":8,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref () (tgt:wire[8]) (fault:wire[4]) (coh:region[1,8] in) (a0:i8)
+regs { d0:reg[64], r:reg[8] }
+^entry():
+d0 = lift.addr @coh
+r = lift.call @L1 (a0, d0)
+lift.retval r
+lproc @L1 (a0:reg[8], a1:reg[64]) (r:reg[8]) () () ()
+regs { c0:reg[64], v0:reg[8], c1:reg[8], v1:reg[8], v2:reg[8] }
+^b0():
+c0 = lift.mov a1
+lift.boundscheck c0 1
+v0 = lift.load.i8 c0
+c1 = lift.const.i8 1
+v1 = lift.add v0 c1
+v2 = lift.xor a0 v1
+lift.ret v2
+
+section layout
+{"A_tab":1,"H":13,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{"coh":{"base":4096}}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=arena-o1
+ref 43a15f86d56a8ad2761d6cee9dd374200fdc51322a3bb633de286e518e461bf9
+L1 f368f07edf94e27ba311d228cc5b102d19e0efacc24f0c7262c81e910deaf8fd
+```
+
+```text run=arena-o1
+input= mem=coh:0000 arg=0 budget=100,0,32,1 -> code=0 payload=1 steps=10
+input= mem=coh:0500 arg=0 budget=100,0,32,1 -> code=0 payload=6 steps=10
+```
+
+**FP and aggregate ABI.** The source signature and constant return are:
+
+```text linkmap=fp-aggregate
+null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 32, heap max 0
+```
+
+```llvm lift=fp-aggregate region=@p desc=IN(64,zext);tgt=40
+define internal {i8, i32} @p(double %x) {
+  ret {i8, i32} {i8 1, i32 -1}
+}
+```
+
+A region returning {i8 1,i32 -1} with double +1.0
+as its parameter binds i64 carrier bits. Packing is 1 | (0xffffffff << 8)
+= 0xffffffff01 = 1099511627521, with no padding. The L1 body below is that constant
+aggregate return, packed by the aggregate-ret row.
+
+```isa object=fp-aggregate
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"645eb9ecb9443a9921439e9f6e92bdd5fb9f980beb44d99d10bde37cf65da473","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[64],"kind":"oracle","mem":[],"tgt":40,"tier":"q"}},"1":{"interface_hash":"ac34832a05dd4590910a3240047c28bc6b4916f48009c29f9fe2edc6eaf28ad9","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":40,"tier":"q","tokens":[]}}}
+
+section functions
+oracle @ref (x0:wire[64] in) (tgt:wire[40]) (fault:wire[4]) () ()
+regs { r:reg[40] }
+^entry():
+r = lift.call @L1 (x0)
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[40]) () () ()
+regs { c0:reg[8], c1:reg[32], t0:reg[40], t1:reg[40], c2:reg[40], t2:reg[40], t3:reg[40] }
+^b0():
+c0 = lift.const.i8 1
+c1 = lift.const.i32 4294967295
+t0 = lift.zext.i40 c0
+t1 = lift.zext.i40 c1
+c2 = lift.const.i40 8
+t2 = lift.shl t1 c2
+t3 = lift.or t0 t2
+lift.ret t3
+
+section layout
+{"A_tab":0,"H":12,"S_cells":5,"globals":{},"heap_base":4096,"heap_limit_max":0,"interface_regions":{"ref":{}},"null_size":4096,"ptr_width":64}
+```
+
+```text hash=fp-aggregate
+ref 645eb9ecb9443a9921439e9f6e92bdd5fb9f980beb44d99d10bde37cf65da473
+L1 ac34832a05dd4590910a3240047c28bc6b4916f48009c29f9fe2edc6eaf28ad9
+```
+
+```text run=fp-aggregate
+input=0x3ff0000000000000 budget=100,0,32,1 -> code=0 payload=1099511627521 steps=10
+```
+
+
+```text state=fp-sign-carrier at=0
+fneg binary64 +1.0 -> 0x3ff0000000000000 xor 0x8000000000000000 = 0xbff0000000000000
+```
+
+```text native=fp-aggregate
+p(1.0)={1,-1}; packed=1099511627521
+```
+
+**Replayed stack adoption.** This one-entry runtime contract microvector has a
+caller stack block of 16 bytes and state {base=4096,size=16,sp=4097}, with byte 7
+at its base. s0 contains k, size/live, 24 state bytes, then all 16 backing bytes.
+L1 replays this fixed one-entry table; L2 adopts its nonzero base without allocation;
+L3 is malloc(16) then ptrtoint. The new address is 4096+16=4112, not 4128.
+The explicit null/data bases are comparison-layout options. This contract microvector
+is not a canonical map of the general replay loop: its table shape is fixed to one
+live allocation to expose the allocator-state and idempotent-init boundary.
+
+```isa object=entry-stack
+bennett-object isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9 ptr_width=64
+
+section symbols
+{"0":{"interface_hash":"f4531163439ac14ae007b4d39517631f8c83e8d3492120996232410d7110f5a1","kind":"oracle","name":"ref","signature":{"abi":"0.9","args":[],"fault":4,"in":[],"kind":"oracle","mem":[{"A":6,"W":8,"role":"in"}],"tgt":64,"tier":"q"}},"1":{"interface_hash":"8ac41b54efdd8fc7ba9d4e2a47cd09a5f712a200087fd68c0e02e2c24defb009","kind":"lproc","name":"L1","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":1,"tier":"q","tokens":[]}},"2":{"interface_hash":"10bdce97d6882eb54ec0bb1a6311918e54357f7844a4788b3972cf0f6e7c3105","kind":"lproc","name":"L2","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[64],"result":1,"tier":"q","tokens":[]}},"3":{"interface_hash":"1d6252a842418163ab1e00fe70ba2e0a734c64e80e64155930b85591eb77c9a3","kind":"lproc","name":"L3","signature":{"abi":"0.9","args":[],"kind":"lproc","mem":[],"params":[],"result":64,"tier":"q","tokens":[]}},"4":{"interface_hash":"c80f43b0c1608f2b72b2e7a256910b9a01c49b17bfe9b3b62f0b508ab73d8eba","kind":"data","name":"G1","signature":{"abi":"0.9","kind":"data","size":24,"tier":"-"}}}
+
+section functions
+oracle @ref () (tgt:wire[64]) (fault:wire[4]) (s0:region[6,8] in) ()
+regs { s:reg[64], d0:reg[1], c0:reg[64], d1:reg[1], r:reg[64] }
+^entry():
+s = lift.addr @s0
+d0 = lift.call @L1 (s)
+c0 = lift.const.i64 16
+d1 = lift.call @L2 (c0)
+r = lift.call @L3 ()
+lift.retval r
+lproc @L1 (a0:reg[64]) (r:reg[1]) () () ()
+regs { c0:reg[64], t0:reg[64], n:reg[64], p:reg[64], c1:reg[64], t1:reg[64], v0:reg[128], g:reg[64], c2:reg[64], t2:reg[64], v1:reg[64], t3:reg[64], c3:reg[64], t4:reg[64], v2:reg[128] }
+^b0():
+c0 = lift.const.i64 8
+t0 = lift.add a0 c0
+lift.boundscheck t0 8
+n = lift.load.i64 t0
+p = lift.alloc n
+c1 = lift.const.i64 24
+t1 = lift.add a0 c1
+lift.boundscheck t1 16
+v0 = lift.load.i128 t1
+g = lift.addr @G1
+lift.boundscheck g 16
+lift.store.i128 g v0
+c2 = lift.const.i64 16
+t2 = lift.add t1 c2
+lift.boundscheck t2 8
+v1 = lift.load.i64 t2
+t3 = lift.add g c2
+lift.boundscheck t3 8
+lift.store.i64 t3 v1
+c3 = lift.const.i64 48
+t4 = lift.add a0 c3
+lift.boundscheck t4 16
+v2 = lift.load.i128 t4
+lift.boundscheck p 16
+lift.store.i128 p v2
+lift.ret r
+lproc @L2 (a0:reg[64]) (r:reg[1]) () () ()
+regs { g:reg[64], b:reg[64], z:reg[64], c:reg[1], p:reg[64] }
+^b0():
+g = lift.addr @G1
+lift.boundscheck g 8
+b = lift.load.i64 g
+z = lift.const.i64 0
+c = lift.icmp.eq b z
+qbranch c ^b1 ^b2
+^b1():
+p = lift.alloc a0
+lift.boundscheck g 8
+lift.store.i64 g p
+qjump ^b2
+^b2():
+lift.ret r
+lproc @L3 () (r:reg[64]) () () ()
+regs { c0:reg[64], v0:reg[64] }
+^b0():
+c0 = lift.const.i64 16
+v0 = lift.alloc c0
+lift.ret v0
+
+section data
+G1 000000000000000000000000000000000000000000000000
+
+section layout
+{"A_tab":7,"H":14,"S_cells":6,"globals":{"G1":{"base":256,"image":"G1","size":24}},"heap_base":4096,"heap_limit_max":64,"interface_regions":{"ref":{"s0":{"base":8192}}},"null_size":256,"ptr_width":64}
+```
+
+```text hash=entry-stack
+ref f4531163439ac14ae007b4d39517631f8c83e8d3492120996232410d7110f5a1
+L1 8ac41b54efdd8fc7ba9d4e2a47cd09a5f712a200087fd68c0e02e2c24defb009
+L2 10bdce97d6882eb54ec0bb1a6311918e54357f7844a4788b3972cf0f6e7c3105
+L3 1d6252a842418163ab1e00fe70ba2e0a734c64e80e64155930b85591eb77c9a3
+G1 c80f43b0c1608f2b72b2e7a256910b9a01c49b17bfe9b3b62f0b508ab73d8eba
+```
+
+```text run=entry-stack
+input= mem=s0:01000000000000001000000000000000010000000000000000100000000000001000000000000000011000000000000007000000000000000000000000000000 budget=200,64,64,2 -> code=0 payload=4112 steps=42
+```
+
+```text native=entry-stack
+caller bump=4096; nz_alloc(16) -> base=4096,size=16,sp=4097
+ss_init(16) -> unchanged base,size,sp; malloc(16) ptrtoint=4112
+```
+
+
+## 17. Device classical code: memory model, lowering, faults
+
+### 17.1 Memory model
+
+There is one classical memory, shared by H, CC, R and the entry state of every L invocation
+(§8.5; NS §3.2):
+
+- **Live allocations**: a shadow-stack frame from its push to its pop (§17.3); a global, always;
+  a heap allocation of the runtimes allocator from its allocation to its `free` (`free` of a null
+  pointer does nothing). The null region is never allocated.
+- **Zero fill**: shadow-stack frames and heap allocations are zero-filled in both builds; globals
+  hold their initialisers. Region inputs are not zero-filled: they are the bytes the host
+  supplies (NS §3.2).
+- **Bounds**: a load, store or memory-function range is valid iff all its bytes lie in one live
+  allocation (an address model: the object a pointer was derived from is irrelevant; NS §3.2
+  "faulting memory access is defined").
+- **Addresses**: the comparison link (§19.5) places globals and functions; the runtimes
+  allocator's fixed base places the heap; the shadow stack is heap memory, so native stack
+  addresses never reach device results. The residue is host-stack addresses passed in by host
+  code: executions in which they influence a result are *layout-dependent* (NS §3.2; §24 D12),
+  validated against the reference interpreter.
+- **Single thread**: atomics and volatile are sequentialised (N9; NS §3.2; §24 D24).
+
+**C allocation alignment.** The `__bennett_nz_alloc(n)` primitive MUST retain ISA §7.1's exact byte bump by max(n,1), zero fill, requested-size allocation record and nonreclaiming history; neither backend may insert hidden alignment into that primitive.
+
+The C `malloc`/`calloc` wrappers MUST provide the target ABI's `max_align_t` alignment by requesting a rounded extent from that primitive: with a = ABI alignment of `max_align_t`, allocate a × ceil(max(n,1)/a) bytes, checking multiplication/rounding overflow as fault 2 before mutation; `free` passes the returned base, and both builds use the same wrapper and history.
+
+If another runtime allocation leaves the next primitive address unaligned, runtimes MUST first allocate the minimal positive padding to reach the next a-aligned address, as an explicit ordinary primitive allocation charged to the same heap/history; it MUST track the next byte address across every runtime primitive allocation, and neither backend may conceal that padding or round a primitive result. Overflow/padding-budget failure faults before the corresponding allocation mutation. A heap with no intervening unaligned request needs no padding allocation.
+
+The §16.9 thin wrapper is a specialised witness for its only allocation size, 16 bytes (already aligned on its target), not a replacement for C allocation alignment after arbitrary odd-sized requests. Padding belongs to the wrapper's live allocation and budget charge; it does not change the primitive. Aligned allocation with a stronger requested alignment remains a runtimes operation, not a new primitive.
+
+Suites DR/DD check the §§17.1/19.5 allocation/layout boundary vector in `scripts/0212_allocation.c` and `scripts/dialect_0212_vectors.py`; this is a conformance vector, not a new primitive.
+
+### 17.2 Layout
+
+The device `layout` (ISA §9.1) replicates the comparison link (§19.5). CC and R code use ISA §7.1
+memory; L code uses ISA §7.2 memory with the same `heap_base` and global bases, so addresses are
+equal in every tier.
+
+### 17.3 Shadow stack (N24)
+
+NS §3.2: "Region allocas are rewritten by the normaliser onto a shim-managed shadow stack in both
+builds where possible"; in device variants it is always possible. The runtimes provide, with
+these contracts:
+
+| Entry point | Contract |
+|---|---|
+| `void __bennett_rt_ss_init(i64 size)` | is idempotent: if stack state is already set (by entry replay in an oracle), allocates nothing and keeps base, size and stack pointer; otherwise allocates one heap block of `size` bytes (`sstack`, §9.2), by `__bennett_nz_alloc`; called by the oracle wrapper prologue (§16.2), the R entry stub and the CC entry stub when their closure uses the shadow stack |
+| `ptr __bennett_rt_ss_push(i64 size, i64 align)` | pushes a frame of `size` bytes aligned to `align` and returns its base; the frame is zero-filled; overflow of the block is `__bennett_nz_fault(2)` (`FAULT_BUDGET_HEAP`) |
+| `void __bennett_rt_ss_pop(ptr fp)` | pops the frame fp and every frame pushed after it |
+| `ptr __bennett_rt_ss_alloca(i64 n, i64 align)` | a zero-filled dynamic allocation in the current frame, released by its pop |
+| `ptr __bennett_rt_ss_save()`, `void __bennett_rt_ss_restore(ptr)` | `llvm.stacksave`/`llvm.stackrestore` |
+
+Shadow-stack backing storage is physical storage, not a program allocation.
+Maintain logical frame base, extent and liveness, including dynamic allocations,
+extensions and saved restore points. A program access requires its entire nonwrapping
+byte range inside one live logical frame/allocation under §17.1; otherwise fault 7
+before any access or mutation. Containment in the backing ISA allocation is insufficient.
+Push registers a live frame; pop invalidates it and every younger frame; restore
+invalidates released ranges, truncating a surviving dynamic extent at the saved limit.
+Separate dynamic allocations in a frame keep their individual extents; an access may
+not span distinct live frames/allocations or unused capacity. The address model permits
+a reused address once a new live logical allocation contains the complete range.
+
+The default validation is the ordinary materialised runtime helper
+__bennett_rt_ss_check(p,n,table): reject wrapping ranges, visit logical entries in
+creation order, OR the live-and-contained predicates, and fault 7 if false. Its rows
+and metadata updates are charged in §16's reference object, and both builds implement
+the same checks and stack layout. Proven containment may eliminate the helper.
+Runtime bookkeeping, zero-fill and entry replay use an explicit internal path
+restricted to backing storage and metadata, never exposed to source program accesses;
+it is not a blanket exemption for ordinary calls into runtime-named functions.
+Replay the logical metadata as well as backing bytes under §8.5.
+
+N24 rewrites each function with allocas: `%nz.fp.<f> = call ptr @__bennett_rt_ss_push(i64 S,
+i64 A)` at entry, where the static allocas of the entry block are laid out in instruction order,
+each at the next offset aligned to its alignment, S is the total rounded up to A, the largest
+alignment. The pushed frame base is aligned to A; its end (the next frame start
+before any additional alignment) is base + S. Each static alloca becomes `getelementptr i8, ptr %nz.fp.<f>, i64 <offset>` with the
+alloca's name; every other alloca becomes `__bennett_rt_ss_alloca`; `call void
+@__bennett_rt_ss_pop(ptr %nz.fp.<f>)` precedes every `ret` (including the early returns of
+§14.4). `llvm.frameaddress(0)`, `llvm.sponentry`, `llvm.addressofreturnaddress`,
+`llvm.swift.async.context.addr` and `llvm.eh.dwarf.cfa` give `%nz.fp.<f>`;
+`llvm.frameaddress(n > 0)` and `llvm.returnaddress` give null (LangRef: "zero if it cannot be
+identified"); `llvm.stackaddress` gives the current shadow-stack pointer; `llvm.localescape`
+records the escaped allocas' offsets in a per-function table that `llvm.localrecover` reads with
+the parent's frame address; `llvm.structured.alloca` is an alloca.
+
+### 17.4 CC and R lowering
+
+All pointer conversions, carriers, memory widths and address bridges use P(a) and the
+incoming target conversion exactly as in §16.4, in CC/R and the native build alike.
+Every GEP, including constant expressions, uses §16.4's datalayout pointer-index
+width and preserves higher pointer bits. CC/R express its truncations, scaled
+modular offsets and high/low recombination with ordinary ISA integer operations.
+This follows [LangRef GEP semantics](https://llvm.org/docs/LangRef.html#getelementptr-instruction)
+and [datalayout pointer indices](https://llvm.org/docs/LangRef.html#data-layout),
+not full-width pointer addition when I<P(a); differing widths do not reject a layout.
+
+The lowering of device CC and R variants to ISA CC and R (ISA §4.1) is plugin-defined and
+constrained by §18.7, with these dialect rules: LLVM integer and memory instructions map to the
+ISA instructions of the same name (phis to block parameters, ISA §3.4); the primitives to `alloc`,
+`free` and §11.5; multi-result calls carry aggregates; marker calls lower to the region calls
+and `qreg.*` instructions of §18.3 with the handle register environment of §6.5; dispatch uses
+the compare trees of §14.2; host calls are §11.4; effect markers §11.1. In R, every executed
+instruction is one frame of the R history (ISA §7.4).
+
+### 17.5 Fault outcomes
+
+| Event | Fault code (ISA §5.4) |
+|---|---|
+| `udiv`, `urem`, `sdiv`, `srem` with divisor 0 | 5 `FAULT_UB_DIV0` |
+| `sdiv`, `srem` of the minimum value by −1 | 6 `FAULT_UB_SDIV_OVERFLOW` |
+| an access outside every live allocation; `free` of a non-null pointer that is not the base of a live heap allocation | 7 `FAULT_UB_MEMFAULT` |
+| `unreachable` reached; N11; an indirect call or `indirectbr` matching no candidate (§14.2, §14.9); unwinding out of a region (§14.4); a descriptor shape mismatch (`T-IFACE`); `T-TAINT-HOST`; every other run-time check of §18.3 | 4 `FAULT_UB_TRAP` |
+| `__bennett_nz_fault(C)` | C |
+| steps budget exhausted | 1 `FAULT_BUDGET_STEPS` |
+| heap budget or shadow stack exhausted | 2 `FAULT_BUDGET_HEAP` |
+| depth or lifted stack budget exhausted | 3 `FAULT_BUDGET_DEPTH` |
+| a trapped call, an unmodelled or unbound device | 8 `FAULT_EFFECT_UNMODELLED` |
+| entropy exhausted (ISA §7.3; §11.3) | 10 `FAULT_ENTROPY_EXHAUSTED` |
+
+In an oracle region a fault is the F_B outcome (ISA §5.2). In an action region it is TDL-8's. In
+other device code the run ends `FAILED` with that fault record (ISA §4.9, §10), reported by §11.5.
+A `FAILED` run is reverse-eligible under ISA §10 (K6); reversal removes the record and reverses the
+prefix, open activations included.
+
+### 17.6 The R tier
+
+- The R lowering inserts a **step counter**. Before each counted materialised LLVM
+  instruction, check that one step remains, then consume it before execution; otherwise
+  raise code 1 before executing the instruction. Count every instruction except phi,
+  debug intrinsics and N34 marks, including straight-line suffixes and returns. Batching
+  is permitted only if it has the identical first-fault boundary and effect-tape prefix
+  as these per-instruction checks. Heap/depth checks likewise precede mutation.
+- Exhaustion is `__bennett_nz_fault(1)`, `(2)` or `(3)`, lowered to `fault 1`, `fault 2` or `fault 3`.
+  R budget exhaustion MUST lower the existing pre-instruction counter check to fault 1, 2 or 3, preserve the preceding history and execute no later source effect. [deps: DLT-17.6-P1, DLT-17.6-P2, DLT-10-P37, ISA-4.1-P14, ISA-4.9-P13, ISA-10]
+- R faults end the whole run (ISA §4.1, §4.9): a CC caller receives no status and runs no successor;
+  the launch result carries the code (ISA §10).
+
+The counter is dialect instrumentation; ISA 0.9 does not turn an interpreter's host-fuel option
+into it (ISA §4.9 "Charge and history"). The materialised boundary after the failing pre-instruction check is:
+
+```llvm example=r-budget-prefix verdict=accept mode=materialised lowering=K5
+define internal void @budgeted(ptr %e) {
+  call void @__bennett_nz_fault(i64 1)
+  unreachable
+}
+define void @top() {
+  call void @__bennett_reversible(ptr @budgeted, ptr null, ptr null)
+  ret void
+}
+```
+
+```text lowering-report=r-budget-prefix
+K5 @budgeted pre-instruction step check: fault 1; terminal record, no later source effect, reversible prefix history retained
+```
+
+The witness runs the source R body `console.write("x"); return` under the §17.6 counter. Two instructions
+count, so the budget boundaries are 0, 1 and 2:
+
+```text state=r-budget-prefix at=0
+steps=0 run: status=FAILED fault=1 console= tape=0 records=1
+steps=0 reverse: status=REVERSED console= memory_equals_entry=true
+steps=1 run: status=FAILED fault=1 console=78 tape=1 records=1
+steps=1 reverse: status=REVERSED console= memory_equals_entry=true
+steps=2 run: status=COMPLETED fault=none console=78 tape=1 records=0
+steps=2 reverse: status=REVERSED console= memory_equals_entry=true
+```
+
+Both this example and `r-fault-code` are runtime/materialised IR, not producer inputs.
+
+The next module is runtime/materialised IR (reserved primitives are not producer inputs).
+
+```llvm example=r-fault-code verdict=accept mode=materialised lowering=K5
+define internal void @fail(ptr %e) {
+  call void @__bennett_nz_fault(i64 2)
+  unreachable
+}
+define void @top() {
+  call void @__bennett_reversible(ptr @fail, ptr null, ptr null)
+  ret void
+}
+```
+
+```text lowering-report=r-fault-code
+K5 @fail call @__bennett_nz_fault(2): fault 2; terminal record, no later source effect, reversible prefix history retained
+```
+
+The witness also runs the extreme codes, and an R call whose CC caller would fault with another code afterwards:
+
+```text state=r-fault-code at=1
+code=2 run: status=FAILED fault=2 records=1
+code=18446744073709551615 run: status=FAILED fault=18446744073709551615 records=1
+code=0 run: status=FAILED fault=4 records=1
+caller-successor code=2 run: status=FAILED fault=2 records=1
+```
+
+### 17.7 The native comparison build
+
+Differential testing (NS §5.1) compares the artefact with the **native comparison binary**: the
+materialised device variants, code-generated by the same LLVM major and linked with
+`bennett-runtimes` and `bennett-arith` (never host libc or libm) under the comparison link of
+§19.5. It is never an `-O0` build: optimisation legally changes marker operands (spike F4), and
+the materialised optimised module is the one program both builds implement. The driver MUST make
+division by zero and INT_MIN/−1 trap in the native build: on targets whose divide instruction does
+not trap it inserts, after materialisation and outside the materialised module, a check that
+calls `__bennett_nz_fault` with code 5 or 6. Results compare by the outcome table of §18.7.
+
+**Comparison-only support exception.** Only after the materialised device module has been fixed, the native comparison backend MAY define the three `__bennett_nz_` primitives of §3.1 as native support, and the driver MUST emit `__bennett_rt_native_layout` as specified in §19.5; these definitions MUST NOT enter producer inputs, production device bitcode, region identity or the materialised module used by the ISA map.
+
+The native primitive support MUST reproduce the resolved device addresses, zero fill, live allocation sizes, nonreclaiming allocation/free history and fault outcomes of §§17.1/17.5, with capacity for every history admitted by the resolved heap budget (at most one heap record per byte since max(n,1) ≥ 1), without an arbitrary smaller record cap; host setup/resource failure MUST terminate comparison with an explicit infrastructure failure, never silently relocate the heap, choose defaults, use host malloc, or report a successful dialect outcome.
+
+**Definedness classifiers.** The comparison binary MUST detect the materialised memory faults of §17.5 (out-of-live-allocation access, use after free and invalid/double free), division by zero and signed division overflow, and reached explicit fault/unreachable paths; instrumentation or a checked memory adapter may supply these checks outside the materialised module, and UBSan-only coverage MUST NOT be reported as satisfying the memory-fault obligation.
+
+The harness MUST separately classify source inputs using instrumented original-input builds or a checked reference interpreter as in NS §3.2, report flagged inputs as undefined/excluded, and record the classifier's actual detection coverage; no classifier claims source UB erased by optimisation is detectable in the comparison binary.
+
+## 18. Reference semantics
+
+### 18.1 State
+
+The reference semantics runs H functions natively and every device entry, region invocation and
+whole-program entry on the materialised module over a state Σ = (C, Q, H, G, K, T):
+
+- **C**, the classical state: LLVM's semantics of the materialised module (LangRef), with every
+  remaining choice fixed by §12–§14 and the fault outcomes of §17.5; it includes the shadows of
+  the arena (TDL-4). In particular GEP uses the pointer-index width, as fixed
+  in §16.4 and §17.4, also in constant expressions; pointer representations and
+  conversions use P(a), not an implicit pw-bit move;
+- **Q**, the quantum state of the ISA formal model (ISA §14.2): a unit vector over the live wires
+  in allocation order, including the arena's wires (TDL-4);
+- **H**, the handle table: for each handle, its wires, whether it is live, and the
+  generation it was allocated in, if any;
+- **G**, a stack of **recorders**, one per active generation (§18.4);
+- **K**, the coherence states of the object instances (TDL-2);
+- **T**, the device-model states and the effect tape (§11).
+
+Measurement and `observe` make the semantics a tree: every outcome sequence has its Born
+probability (ISA §14.2) and its own continuation.
+
+### 18.2 Events
+
+A marker call or a TDL store produces **events**: ISA-level operations, each with a **control
+set** (a set of wires, initially empty). The forms are:
+
+- `qalloc H n`, `qfree H`; the gates `x h s sdg t tdg cx cz swap ccx` (ISA §4.4) and `rx θ`,
+  `ry θ`, `rz θ` on wires; `qload D M A`, `qstore M A V`, `qprep H bytes`;
+- `oracle R B (ins..) tgt fault (mem..) (args..)` and `wide R …` (§8.6), `inplace G G′ B X`;
+- the TDL events of §10: `slice O (args..) (ins..) (mem..) -> regs`, `xmask X+o m`, `xstore X+a
+  m`, `perm P X+a (params..)`, `xchg X+a h`, `fault C` (TDL-12), `firstfault (f..) Φ`;
+- `qcopy S -> D`: allocate D clean then XOR S into it; `quncopy S D`: XOR S into D and
+  release clean D; `qxor S T`: T XOR= S; `copy F -> G` means qalloc G then qxor F G (TDL-8);
+- `observe X+o len`, `measure` (outside generations), `effect dev.op` (R).
+
+When no recorder is active, an event is **applied** to Σ at once; otherwise it is appended to the
+innermost recorder. Applying an event with control set S applies it only on the basis states where
+every wire of S is 1 (ISA `ctl`, ISA §4.7, §5.3); `qalloc` and `qfree` are unconditional (ISA
+§3.5). Arena writes with nonempty control set, Co address or Co value first materialise
+Cl objects and make Cl or M objects Co. Otherwise apply events per form: `xmask` XORs its
+mask into shadow only for Cl (arena stays zero), both copies for M, arena only for Co;
+`xstore` does the same XOR at its selected address; `perm` applies its bijection to shadow
+only for Cl, both copies for M, arena only for Co. `xchg` with a Co register first
+materialises and makes X Co; with a classical basis operand it exchanges with shadow for
+Cl, both copies consistently for M (returning one old value), arena only for Co.
+Unconditional Cl-valued xmask/xstore/perm leave K unchanged. Event application does not
+also reapply its speculative generation-view update. Event-application writes invalidate observation coverage; permitted TDL-11 CC stores
+retain it as covering writes.
+The plugin realises applied events as CC-level region calls in event order (ISA §4.7), whose
+temporaries are released by `qreg.free` with the dynamic cleanliness check of ISA §3.3; it MAY
+compile an event list into one ISA action when that action satisfies ISA §6.
+
+**Adjoint** of an event list (ISA §5.3 adjoint table): reverse the list and replace each event:
+`x h cx cz swap ccx qload qstore qprep oracle wide slice xmask xstore xchg` are self-adjoint; `s`
+↔ `sdg`; `t` ↔ `tdg`; `rx θ` ↦ `rx −θ` (and `ry`, `rz`); `qalloc` ↔ `qfree` of the same wires;
+`inplace G G′ B X` ↦ `inplace G′ G B X`; `perm P` ↦ the library inverse of P. Control sets are
+unchanged. Ordinary workspace qcopy and quncopy are mutual adjoints. A deferred-measurement
+qcopy is a channel record and is never adjointed to quncopy. In standalone adj(f),
+keep non-record events in reverse-list order. Insert each fresh retained record
+immediately before its earliest reversed consumer, after every reversed event preceding
+that consumer. A record without consumers stays at its reversed source position.
+Records in the same insertion gap follow original source order, with record producers
+before dependent records. Thus record placement is deterministic, including when
+noncommuting events change its source. For local sources, hoist required unconditional
+inverse allocations before their copies and retain the sources through their last use;
+this lifetime extension does not commute a copy across an arbitrary quantum operation.
+Optimisations MUST preserve this complete instrument and the §7.5(a) measurement boundary.
+In compute(f,use), E_f's records survive E_u and adjoint(E_f),
+which reuses these wires without copying or uncopying them, and measurement is at the
+first §7.5(a) boundary after compute returns.
+
+A Co-loop adjoint is the inverse of the complete clean-workspace transition, not
+forward evaluation of the guard on the adjoint-entry mutable data. For conditions on
+preserved inputs, compute flags forward, apply body adjoints for i=N..1, then uncompute
+the flags with their exact computing slices. For overwritten inputs in a standalone adj,
+use the bounded inverse required by TDL-5(b) to reconstruct the unique forward entry on
+copies, compute its trajectory, apply the inverse iterations, and clean that reconstruction
+against the restored entry. No assumed earlier invocation supplies this entry. When no
+unique inverse exists on the declared interface, the existing TDL-5(d) applies; changing
+adj into an entry-guard instrument is not an alternative inverse. Out-of-place evaluation
+and compute retain the computation under TDL-5(c). compute's adjoint(E_f) reuses the actual
+forward flags/history and cleans them as each iteration state is restored, without a fresh
+trajectory. Only genuine measurement records and actual fault outputs have their separate
+retained lifetimes.
+
+qxor and firstfault are self-adjoint
+XORs. `fault C` is an xmask of C on a fresh declared fault register, also self-adjoint.
+Adjoint of `copy F -> G` is qxor F G then qfree G, not another allocation.
+
+### 18.3 Marker rules
+
+Wire `h.i` is wire i of handle h; n(h) its width. A wire is **named** by an event when it is one of
+the event's operand wires. The conditions are checked when the marker is called, against H, including generation-specific identity and liveness (not physical-slot
+liveness alone), and H is updated then; Q changes only when an event is applied. A failed condition is a run-time trap:
+fault code 4 (§17.5) with the named diagnostic (§22.2).
+
+| Marker | Conditions (trap) | Effect |
+|---|---|---|
+| `qalloc(cls, n)` | n ≥ 1 (`T-SIZE`); cls in the class table (`T-CLASS`) | a new live handle h of n wires; event `qalloc h n`, whose application appends the n wires to Q in state 0; h belongs to the innermost active generation, if any |
+| `qborrow(cls, n)` | as `qalloc` | inside a generation compiled as an ISA action, ISA `qborrow`/`qreturn` with borrow-frame verification (ISA §5.6); otherwise as `qalloc` (a correct user of borrowed wires also works on clean wires; ISA-9, §25.3). 0.1's `T-BORROW` is deleted |
+| `qfree(h)` | h live (`T-DEAD`); if a recorder is active, h belongs to it (`T-FOREIGN`); when applied, Q is the product of the all-zero state on h's wires and a state of the other wires (`T-CLEAN`) | event `qfree h` |
+| `gate(op, h, i)` | h live (`T-DEAD`); i < n(h) (`T-INDEX`); op in the table (`T-OP`) | the realisation of §3.4 on `h.i` |
+| `gate2(op, a, i, b, j)` | as above for both; `a.i` ≠ `b.j` (`T-ALIAS`) | `cx a.i b.j`, `cz a.i b.j` or `swap a.i b.j` |
+| `gate3(op, a, i, b, j, c, k)` | as above; the three wires distinct (`T-ALIAS`) | `ccx a.i b.j c.k` |
+| `rot(op, h, i, θ)` | as `gate`; θ finite (`T-THETA`) | `rx θ`, `ry θ` or `rz θ` on `h.i` |
+| `measure(h, i)` | as `gate`; no recorder active unless deferred (§7.5a) (`T-MEASURE`) | projective measurement of `h.i` (ISA §14.2); outcome m with its Born probability; the wire stays live in state m (ISA: copy h.i onto a fresh one-wire non-view register and measure that copy; h is never whole-register measured, ISA-6 not a gap); returns m |
+| `qload(dst, mem, addr)` | the three handles live and distinct (`T-DEAD`, `T-ALIAS`); n(mem) = 2^n(addr) · n(dst) (`T-SIZE`) | event `qload`: for every cell c, on the basis states where addr holds c, `dst.b ⊕= mem.(c·W + b)` for b < W = n(dst) (ISA §4.6 cell order) |
+| `qstore(mem, addr, val)` | as `qload` with W = n(val) | event `qstore`: `mem.(c·W + b) ⊕= val.b` under addr = c |
+| `qprep(h, src, n)` | h live; n ≤ n(h)/8 (`T-SIZE`); [src, src + n) valid (fault 7) | event `qprep h bytes`: wire 8k + j ⊕= bit j of byte k |
+| `observe(p, len)` | [p, p + len) valid (fault 7); no recorder active (`T-MEASURE`) | TDL-11 |
+| `ctrl(q, qi, f, budget, env)` | q live, qi < n(q); after generation, the wire `q.qi` is named by no event of E (`T-CTRL`) | E = gen(f, env) (§18.4); each event of E with `q.qi` added to its control set; then the TDL-8 combine |
+| `adj(f, budget, env)` | – | E = gen(f, env); the adjoint of E |
+| `compute(f, use, budget, env)` | – | E_f = gen(f, env); the TDL-8 copies of E_f's fault registers; E_u = gen(use, env) with E_f's retained recorder visible (TDL-2); then the events E_f, copies, E_u, adjoint(E_f) |
+| `reversible(f, budget, env)` | no recorder active (else §7.4 applies) | §18.6 |
+| `oracle(f, budget, desc)` | the descriptor's checks (§8.1–§8.4: `T-IFACE`, `T-SIZE`, `T-DEAD`, `T-ALIAS`) | event `oracle` or `wide` of the dispatched shape: on every basis state, outputs ⊕= payload(F_B), fault ⊕= code(F_B) (ISA §5.2), F_B from the reference object of §16 on the entry state of §8.5 |
+| `inplace(g, ginv, budget, desc)` | the descriptor's checks; budget ≥ B_min (exhaustive) or B_bound (sampled), `T-BUDGET` | event `inplace`: x ← g(x; args), the permutation admitted by §8.7, using its native call or CC expansion. [deps: DLT-8.7, DLT-18.3, ISA-4.5, ISA-4.7] |
+| effect markers | §11 | §11 per tier |
+
+A region operand whose value matches no source of its candidate set traps (`T-REGION`, §7.2); a
+dispatched ill-formed candidate traps (`T-REGION-INVALID`).
+
+A borrow outside a verified static action frame MUST retain the clean-allocation construction, while static action borrows MUST meet the ISA borrow-frame restoration conditions. [deps: DLT-18.3, DLT-25.3, ISA-4.3, ISA-5.6, ISA-9.4]
+
+### 18.4 Generation of action regions
+
+`gen(R, env)` pushes a recorder, runs `R(env)`'s CC variant under §18.1 with the TDL partition of
+§10 (its G instructions run once on the generation's view; its slices, stores to outliving objects
+and marker calls produce events per §10 and §18.3, nested `ctrl`, `adj` and `compute` producing
+their events into this recorder), pops the recorder and returns its event list E. On generation exhaustion, finalise by cancellation exactly as TDL-9 specifies, outside
+the exhausted budget; no unmatched provisional allocation is applied, no foreign register
+changes and a failed compute does not apply either part. **Leak rule** (successful source
+generation only, excluding the declared fault/measurement outputs):
+(`T-LEAK`): for `ctrl` and `adj`, every register allocated during the generation is freed during
+it; for `compute`, every register allocated during gen(use) is freed during it, while a register
+allocated during gen(f) and not freed during it is freed by adjoint(E_f), in which its `qalloc`
+event becomes a `qfree` event, so gen(use) MUST NOT free it (`T-FOREIGN`). Outside generations
+the check is at program end (§6.6): a register that is still live then, neither freed by device
+code or the host (`bennett_qreg_free`) nor consumed by a `measure`, is `T-LEAK`. *(non-normative)* The
+classical part of an action region (G) runs once per invocation; its effect on outliving memory
+is the events of TDL-5, so under `ctrl` it happens exactly on the branch where the control is 1
+(the audit's counterexample to 0.1). NS §4.2 requires "allocations inside released clean or
+borrowed and restored": `T-LEAK` and `T-CLEAN` are those checks.
+
+### 18.5 Oracle semantics
+
+An `oracle` event applies, on every basis state of its operands, the permutation |x⟩|t⟩|e⟩ ↦
+|x⟩|t ⊕ payload(F_B(x, S))⟩|e ⊕ code(F_B(x, S))⟩ where F_B is the reference interpreter's result on
+the reference object of the dispatched shape (§16) with the token's budget, and S is the entry
+state of §8.5 (the caller's classical memory at the call). It is an involution (ISA §5.2).
+
+### 18.6 Reversible semantics
+
+`reversible(f, budget, env)` and the whole-program R mode (§19.2) run f on the R tier (ISA §3.1):
+its classical effects on memory are those of §18.1, its effects are ISA device models on the tape
+(§11.2), its region calls are R-tier region calls (§7.5b), and the run history (ISA §7.4) is
+retained, so the whole run is reversible by `bennett_reverse` (ISA §10). A fault ends the run
+(§17.6); the `FAILED` run is reversible too, under the same eligibility (ISA K6).
+
+### 18.7 Conformance
+
+A plugin and an executor (ISA §1.2) together conform iff, for every module the rules accept,
+every host input and every sequence of measurement and `observe` outcomes: the probability of that sequence, every classical value
+the host observes (return values of device entries, memory they write, console output), every
+fault code and every trap equal those of the reference semantics; and the quantum state at every
+measurement and at every device-entry return equals the reference state, exactly when the program
+uses permutation gates only, and otherwise within the error bound its certificate states (ISA
+§12.3). A program that reaches `T-CLEAN` in the reference semantics is erroneous; an executor that
+cannot test cleanliness (hardware) need not reproduce that trap (ISA §17 item 14).
+
+**Outcome table** (NS §5.1: "one outcome table governs §3.2, §5.1 and §8"). For every input of a
+declared domain the comparison with the native comparison build (§17.7) has one of four outcomes:
+
+| Outcome | When | Comparison |
+|---|---|---|
+| native-comparable success | the reference completes without fault and no layout-dependent value influences the result | the artefact's results equal native |
+| reference fault | the reference faults (code ≠ 0) | the artefact reports the same code. The comparison binary detects the materialised faults required by §17.7; the reference interpreter supplies the authoritative cause. Source-definedness classification is a separate build and is reported separately. |
+| layout-dependent | the reference interpreter's address provenance shows a host-stack address, or a `blockaddress` value (§14.9), influencing the result | validated against the reference interpreter instead of native, counted separately |
+| classifier-flagged undefined | an instrumented build (UBSan, ASan, MSan) flags the input (NS §3.2) | excluded from comparison, counted separately |
+
+### 18.8 Worked examples
+
+**Round-3 loop witnesses.** co-loop-identity executes both council circuits with
+an external |+> control c copied into the count and a separate basis-one invocation
+control: count 0/1 with two X gates per iteration, and count 0/2 with one X per iteration.
+After exact flag uncomputation, undo count preparation and H(c): P(c=1)=0, z=0,
+all flags zero, no T-CLEAN or T-LEAK. Keeping flags instead gives P(c=1)=1/2.
+
+B2 is `while(x<2){x+=1;z+=1;}` on two-bit x,z. Entries (0,0), (1,1),
+and (2,2) collide at (2,2), so it has no data-only inverse. TDL-5(b)/(d) already
+exclude that standalone in-place interface; the proposed no-trap entry-guard adjoint
+would not be U-dagger. co-loop-adj-overwritten checks the collision and executes
+compute(B2,empty)'s exact saved-trajectory inverse for all three entries, restoring
+each entry and cleaning flags. In particular (2,2) remains (2,2), without a trap,
+inside compute. This keeps the computation without inventing an inverse.
+
+```text state=co-loop-identity at=0
+{"counts":[1,2],"p_one":[0,0],"flags_clean":true,"trap":0}
+```
+
+```text state=co-loop-adj-overwritten at=0
+{"entry":[2,2],"compute_restored":[2,2],"collision":true,"bijective":false,"trap":0}
+```
+
+**Adjoint channel interleaving.** For f = measure(a); if(m) X(t); H(a),
+with deferred measure, the forward list is [qcopy a->w, CX(w,t), H(a)].
+The standalone adjoint instrument is exactly [H(a), qcopy a->w, CX(w,t)].
+With a=|+>, t=0 this gives a=t=w=0; with a=t=0 and a final H(a),
+P(a=0)=P(a=1)=1/2. The record remains until the §7.5(a) boundary.
+Copy-at-entry would instead give P(a=0)=1 for the second probe, so these
+vectors distinguish the previously allowed schedules.
+
+```text state=deferred-channel-adj-place at=0
+{"zero_then_H":[0.5,0.5],"plus_joint_zero":1,"record_retained":true,"trap":0}
+```
+
+**Partial observe, covering store, completion.** X has two Co bytes 1,2.
+Observe byte 0, CC-store 9 to it, then observe byte 1. Byte 0 stays covered
+because its known covering write updates arena and shadow together. Full coverage
+dematerialises X to Cl, so the final CC load returns 9/code 0. A store before
+observation instead traps 4 without mutation; an applied event invalidates coverage.
+
+```text state=co-observe-write-observe at=0
+{"after_first":[2,1],"after_store":[2,1,9,9],"after_second":[0,9,2,0,0],"load":[9,0],"event_invalidates":true,"unobserved_store":4}
+```
+
+**Round-2 action lifecycle witnesses.** In generation-cancel the source is qalloc(0,1),
+gate(1,h,0), gate(1,h,0), qfree(h), ret; steps=1 stops before the first gate. Recorder
+cancellation leaves no local handle; result tuples are [Phi, live_locals, trap]. The same
+cancellation applies when either compute part fails. In nested-cl-view the parent stores 9,
+then ctrl(c2,g) tests t==9 and flips z; tuples are [t,z]. fault-output-lifetime uses a
+superposed control, a zero-budget slice on its 1 branch and null budget fault field;
+tuples are [control,f,Phi] with equal branch probabilities. No declared wire is freed
+at invocation return; statistics are sampled only at program end.
+
+co-loop-adjoint's B is `for(i=0;i<n;i++) cnt+=1`, n=(|0>+|2>)/sqrt(2), cnt initially 0.
+The inverse from cnt=2,n=2 yields 0, then compute(B,use) exposes cnt=0/2 during use and
+restores 0 on both branches, with clean flags. deferred-channel-adj starts q=|+>, defers
+an unused measure in adj(body) or compute(body,empty), then H(q) and measure(q).
+co-store-release inserts a CC store after tdl-a ctrl, with/without observe first; an
+adj-body allocation/write-Co/free/realloc fails at free before any reused read.
+
+```text state=generation-cancel at=0
+{"source":["qalloc","gate-x","gate-x","qfree","ret"],"steps":1,"controls":[0,1],"results":[[0,0,0],[1,0,0]],"compute_failure":["f","use"],"foreign_before":7,"foreign_after":7}
+```
+
+```text tdl=nested-cl-view
+parent: store 9 @t; child: ctrl(c2,g) where g flips z iff @t==9; invoke parent under c1
+xmask @t+0 0x09 ctrl c1
+x z ctrl c1 c2
+```
+
+```text state=nested-cl-view at=0
+{"parent_store":9,"child_test":9,"controls":[[1,1],[0,1],[1,0]],"results":[[9,1],[0,0],[9,0]]}
+```
+
+```text state=fault-output-lifetime at=0
+{"budget_fault":null,"branch_probability":0.5,"fault":1,"after_invocation":[[0,0,0],[1,1,1]],"program_end_probability":0.5,"remaining_after_end":0,"trap":0}
+```
+
+```text state=co-loop-adjoint at=0
+{"n_values":[0,2],"steps":4,"use_counts":[0,2],"after_compute":[0,0],"standalone_start":2,"standalone_result":0,"flags_clean":true}
+```
+
+```text state=deferred-channel-adj at=0
+{"modes":["adj","compute"],"probabilities":[0.5,0.5],"record_retained":true,"trap":0}
+```
+
+```text state=co-store-release at=0
+{"co_values":[0,5],"store_value":0,"store_code":4,"observe_first_results":[0,0],"release_code":4,"reuse_permitted":false}
+```
+
+
+**Shadow-stack logical liveness.** The materialised f pushes one byte, stores 7,
+pops it and returns its address. With no new frame covering it, caller load returns
+payload 0/code 7, even though the physical 16-byte backing block remains live. While
+the frame is live the load returns 7/code 0. The microvector also checks spanning
+two frames, unused capacity, restore-released bytes, wrapping ranges and fault-gated
+stores. Replaying the live frame table and backing bytes reproduces 7/code 0. Native
+execution exercises push/pop/restore/replay; Rust executes the charged two-entry
+materialised logical helper with run-time metadata before physical boundscheck/load.
+
+```text state=shadow-stack-liveness at=0
+{"live":[7,0],"popped":[0,7],"spanning":[0,7],"padding":[0,7],"restored":[0,7],"wrap":[0,7],"replay":[7,0],"store_unchanged":true}
+```
+
+**Round-2 memory witnesses.** With caller heap_base=4096 and a live 16-byte
+allocation, the next address is 4112; another caller allocation invalidates the cache
+and makes it 4128. A heap limit of 16 faults 2 before a private allocation. No invocation
+changes the caller table. Two one-byte arena globals at offsets 0 and 1 cannot contain
+a two-byte access: 01 02 is physically 513, but the logical access faults 7.
+
+```text state=entry-allocation-only at=0
+{"base":4096,"caller_sizes":[16],"request":16,"heap_limits":[64,16],"results":[[4112,0],[0,2]],"next_caller_size":16,"next_result":[4128,0],"caller_unchanged":true}
+```
+
+```text state=arena-logical-bounds at=0
+{"bytes":[1,2],"objects":[[0,1,1],[1,1,1]],"accesses":[[0,2],[0,1],[1,1]],"results":[[0,7],[1,0],[2,0]],"physical_i16":513,"padding_code":7,"freed_code":7,"store_unchanged":true}
+```
+
+
+**0.1 examples at ABI 0.2.** These programs are also legality cases in the corpus. The checker
+builds each with the trace runtime (`corpus/legality/runtime/`), whose `ctrl` and `adj` call the
+region once and whose `compute` calls `f`, `use`, `f`; it converts the trace into events by §18.3–
+§18.4 (for `compute` it keeps the first `f` recording and checks that the third equals it) and
+simulates them. Wire `Hk.i` is wire i of the k-th allocated handle; basis states list wires in
+allocation order, leftmost first; the state is given before event `at` (0-based).
+
+**Control.** A `ctrl` on a control in superposition entangles; a second `ctrl` disentangles:
+
+```llvm semantics=sem2-ctrl corpus=spec-sem2-ctrl
+; CASE: spec-sem2-ctrl
+; HAZARD: dialect 0.2 reference-semantics example (spec section 18.8): ctrl of an action region that flips a target read from an environment, on a control in superposition, twice
+; INPUTS: 0..3
+; EXPECT: legal
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-pc-linux-gnu"
+
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+declare void @__bennett_gate(i32, ptr, i64)
+declare void @__bennett_ctrl(ptr, i64, ptr, ptr, ptr)
+
+define void @flip(ptr %e) {
+  %t = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %t, i64 0)
+  ret void
+}
+
+define i64 @case_entry(i64 %x) {
+  %e = alloca ptr
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %t, ptr %e
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @flip, ptr null, ptr %e)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @flip, ptr null, ptr %e)
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_qfree(ptr %t)
+  call void @__bennett_qfree(ptr %c)
+  ret i64 %x
+}
+```
+
+```text events=sem2-ctrl input=0
+qalloc H0 1
+qalloc H1 1
+h H0.0
+x H1.0 ctrl H0.0
+x H1.0 ctrl H0.0
+h H0.0
+qfree H1
+qfree H0
+```
+
+```text state=sem2-ctrl input=0 at=4
+|00> 0.70710678
+|11> 0.70710678
+```
+
+**Adjoint.** `adj` replays the recording reversed and inverted:
+
+```llvm semantics=sem2-adj corpus=spec-sem2-adj
+; CASE: spec-sem2-adj
+; HAZARD: dialect 0.2 reference-semantics example (spec section 18.8): a direct call of a region body applies h s t; adj of the same body applies tdg sdg h and returns the register to 0
+; INPUTS: 0..3
+; EXPECT: legal
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-pc-linux-gnu"
+
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+declare void @__bennett_gate(i32, ptr, i64)
+declare void @__bennett_adj(ptr, ptr, ptr)
+
+define void @phase(ptr %e) {
+  %q = load ptr, ptr %e
+  call void @__bennett_gate(i32 2, ptr %q, i64 0)
+  call void @__bennett_gate(i32 3, ptr %q, i64 0)
+  call void @__bennett_gate(i32 5, ptr %q, i64 0)
+  ret void
+}
+
+define i64 @case_entry(i64 %x) {
+  %e = alloca ptr
+  %q = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %q, ptr %e
+  call void @phase(ptr %e)
+  call void @__bennett_adj(ptr @phase, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %q)
+  ret i64 %x
+}
+```
+
+```text events=sem2-adj input=0
+qalloc H0 1
+h H0.0
+s H0.0
+t H0.0
+tdg H0.0
+sdg H0.0
+h H0.0
+qfree H0
+```
+
+```text state=sem2-adj input=0 at=4
+|0> 0.70710678
+|1> -0.5+0.5i
+```
+
+**Compute–use–uncompute.** Phase kickback through an ancilla that the uncompute returns clean:
+
+```llvm semantics=sem2-compute corpus=spec-sem2-compute
+; CASE: spec-sem2-compute
+; HAZARD: dialect 0.2 reference-semantics example (spec section 18.8): compute(f, use) with f = cx onto an ancilla and use = z on the ancilla; phase kickback leaves the ancilla clean
+; INPUTS: 0..3
+; EXPECT: legal
+target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-pc-linux-gnu"
+
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+declare void @__bennett_gate(i32, ptr, i64)
+declare void @__bennett_gate2(i32, ptr, i64, ptr, i64)
+declare void @__bennett_compute(ptr, ptr, ptr, ptr)
+
+define void @copy(ptr %e) {
+  %a = load ptr, ptr %e
+  %pb = getelementptr i8, ptr %e, i64 8
+  %b = load ptr, ptr %pb
+  call void @__bennett_gate2(i32 1, ptr %a, i64 0, ptr %b, i64 0)
+  ret void
+}
+
+define void @kick(ptr %e) {
+  %pb = getelementptr i8, ptr %e, i64 8
+  %b = load ptr, ptr %pb
+  call void @__bennett_gate(i32 7, ptr %b, i64 0)
+  ret void
+}
+
+define i64 @case_entry(i64 %x) {
+  %e = alloca [2 x ptr]
+  %a = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %b = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %a, ptr %e
+  %pb = getelementptr i8, ptr %e, i64 8
+  store ptr %b, ptr %pb
+  call void @__bennett_gate(i32 2, ptr %a, i64 0)
+  call void @__bennett_compute(ptr @copy, ptr @kick, ptr null, ptr %e)
+  call void @__bennett_gate(i32 2, ptr %a, i64 0)
+  call void @__bennett_gate(i32 1, ptr %a, i64 0)
+  call void @__bennett_qfree(ptr %b)
+  call void @__bennett_qfree(ptr %a)
+  ret i64 %x
+}
+```
+
+```text events=sem2-compute input=0
+qalloc H0 1
+qalloc H1 1
+h H0.0
+cx H0.0 H1.0
+s H1.0
+s H1.0
+cx H0.0 H1.0
+h H0.0
+x H0.0
+qfree H1
+qfree H0
+```
+
+```text state=sem2-compute input=0 at=8
+|10> 1
+```
+
+*(non-normative)* The states are those of 0.1 §8.8. Control: after h, one controlled flip gives
+(|00⟩ + |11⟩)/√2 and the second cancels it. Adjoint: h|0⟩ = (|0⟩ + |1⟩)/√2, s multiplies the |1⟩
+amplitude by i and t by e^{iπ/4}, so before the adjoint it is i·e^{iπ/4}/√2 = e^{i3π/4}/√2 =
+(−1 + i)/2. Compute: h, cx give (|00⟩ + |11⟩)/√2; s s = Z on the ancilla gives (|00⟩ − |11⟩)/√2;
+the uncomputing cx gives (|0⟩ − |1⟩)/√2 ⊗ |0⟩, and h maps it to |10⟩; x returns a to |0⟩ before
+release.
+
+**TDL.** The following programs exercise every case of TDL-5, TDL-10 and TDL-11 on the globals
+`@cnt` and `@other`, which are in the may-Co set (TDL-2) and hence in the arena. Each device
+entry ends by observing both globals, so that MC's state at every device entry is empty (MC3; a
+host may call the entries in any order). `text tdl=` blocks give the partition of each region and
+the run's events with their control sets; a register written `-> r:w` is a fresh register of w
+wires allocated by that event. `text state=` blocks list the handles in allocation order and then
+the arena bytes of `@cnt` (and `@other`) in hex, as `|q…; cnt other>`. Temporary and retained
+registers (TDL-7, TDL-8) hold 0 in these fault-free runs and are omitted. Every Co read is from
+the arena; every slice is an oracle bound to the arena region `coh`.
+
+```llvm example=tdl verdict=accept
+@cnt = internal global i8 0
+@other = internal global i8 0
+
+; TDL-5(a), classical value
+define internal void @bump(ptr %e) {
+  store i8 5, ptr @cnt
+  ret void
+}
+
+; TDL-5(a), Co value: the old contents of @other are Cl
+define internal void @copy1(ptr %e) {
+  %v = load i8, ptr @cnt
+  %w = add i8 %v, 1
+  store i8 %w, ptr @other
+  ret void
+}
+
+; TDL-5(b): a library bijection of a Co object
+define internal void @add3(ptr %e) {
+  %v = load i8, ptr @cnt
+  %w = add i8 %v, 3
+  store i8 %w, ptr @cnt
+  ret void
+}
+
+; TDL-5(c): an overwrite of a Co object inside compute's f
+define internal void @set9(ptr %e) {
+  store i8 9, ptr @cnt
+  ret void
+}
+
+define internal void @flip(ptr %e) {
+  %t = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %t, i64 0)
+  ret void
+}
+
+; TDL-10: a gate under a Co condition
+define internal void @maybe(ptr %e) {
+entry:
+  %v = load i8, ptr @cnt
+  %z = icmp eq i8 %v, 5
+  br i1 %z, label %yes, label %out
+
+yes:
+  %t = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %t, i64 0)
+  br label %out
+
+out:
+  ret void
+}
+
+define internal void @reset(ptr %h) {
+entry:
+  %m = call i1 @__bennett_measure(ptr %h, i64 0)
+  br i1 %m, label %one, label %done
+
+one:
+  call void @__bennett_gate(i32 1, ptr %h, i64 0)
+  br label %done
+
+done:
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+
+define internal void @settle() {
+  call void @__bennett_observe(ptr @cnt, i64 1)
+  call void @__bennett_observe(ptr @other, i64 1)
+  ret void
+}
+
+define i8 @tdl_a() {
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @bump, ptr null, ptr null)
+  call void @settle()
+  %v = load i8, ptr @cnt
+  call void @reset(ptr %c)
+  ret i8 %v
+}
+
+define void @tdl_b() {
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c2 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_gate(i32 2, ptr %c2, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @bump, ptr null, ptr null)
+  call void @__bennett_ctrl(ptr %c2, i64 0, ptr @copy1, ptr null, ptr null)
+  call void @__bennett_ctrl(ptr %c2, i64 0, ptr @add3, ptr null, ptr null)
+  call void @settle()
+  call void @reset(ptr %c2)
+  call void @reset(ptr %c)
+  ret void
+}
+
+define void @tdl_d() {
+  %e = alloca ptr
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %t, ptr %e
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @bump, ptr null, ptr null)
+  call void @__bennett_compute(ptr @set9, ptr @flip, ptr null, ptr %e)
+  call void @settle()
+  call void @reset(ptr %t)
+  call void @reset(ptr %c)
+  ret void
+}
+
+define void @tdl_f() {
+  %e = alloca ptr
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c2 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %t, ptr %e
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_gate(i32 2, ptr %c2, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @bump, ptr null, ptr null)
+  call void @__bennett_ctrl(ptr %c2, i64 0, ptr @maybe, ptr null, ptr %e)
+  call void @settle()
+  call void @reset(ptr %t)
+  call void @reset(ptr %c2)
+  call void @reset(ptr %c)
+  ret void
+}
+```
+
+`@tdl_a`: the store of `@bump` has view Cl(0), so it is the classical event of TDL-5(a); applied
+under H0.0 it materialises `@cnt` (its shadow is 0, so the XOR changes no wire) and makes it Co;
+`observe` then measures it (TDL-11):
+
+```text tdl=tdl-a
+@bump: G = { store i8 5, ptr @cnt -> xmask @cnt+0 0x05 }, slices = {}
+events of @tdl_a:
+qalloc H0 1
+h H0.0
+xmask @cnt+0 0x05 ctrl H0.0
+observe @cnt+0 1
+observe @other+0 1
+measure H0.0
+```
+
+```text state=tdl-a at=3
+|0; 00> 0.70710678
+|1; 05> 0.70710678
+```
+
+*(non-normative)* `observe` gives 0x00 with probability 1/2 (H0 collapses to |0⟩) or 0x05 with
+probability 1/2 (H0 to |1⟩); `@tdl_a` returns that byte, and `measure` of H0 agrees with it before
+the reset. Under 0.1's semantics the store would have happened on both branches and `@tdl_a`
+would return 5 with certainty.
+
+`@tdl_b` runs `@bump` under H0, then `@copy1` and `@add3` under H1. In `@copy1` the load of `@cnt`
+(state Co) is Co, so the load and the `add` form slice O1, and the store into `@other`, whose view
+is Cl(0), is TDL-5(a) with a Co value. In `@add3` the three instructions are the library bijection
+"add 3" of TDL-5(b):
+
+```text tdl=tdl-b
+@copy1 (signature: @cnt may-Co, @other Cl): slice O1 = { %v = load i8, ptr @cnt; %w = add i8 %v, 1 } with ARG c (the old byte of @other), MEM_IN coh, output m:8 = c xor %w; store i8 %w, ptr @other -> TDL-5(a) with a Co value
+@add3 (signature: @cnt may-Co): { %v = load; %w = add i8 %v, 3; store i8 %w, ptr @cnt } -> TDL-5(b) perm add.i8 with k = 3
+events of @tdl_b up to the observes:
+qalloc H0 1
+qalloc H1 1
+h H0.0
+h H1.0
+xmask @cnt+0 0x05 ctrl H0.0
+slice O1 args(0x00) mem(coh) -> m1:8 f1:4 ctrl H1.0
+xstore @other+0 m1 ctrl H1.0 success(f1)
+slice O1 args(0x00) mem(coh) -> m1 f1b:4 ctrl H1.0
+qxor f1 f1b
+qfree f1b
+qfree m1
+firstfault (f1) -> Phi1:4
+perm add.i8 @cnt+0 k=3 ctrl H1.0
+```
+
+```text state=tdl-b at=10
+|00; 00 00> 0.5
+|01; 00 01> 0.5
+|10; 05 00> 0.5
+|11; 05 06> 0.5
+```
+
+```text state=tdl-b at=13
+|00; 00 00> 0.5
+|01; 03 01> 0.5
+|10; 05 00> 0.5
+|11; 08 06> 0.5
+```
+
+*(non-normative)* Before event 10 the copy-out pair is complete: `@other` = cnt + 1 exactly where
+H1 is 1: 0 + 1 = 1 and 5 + 1 = 6. The permutation "add 3" under H1 then gives cnt = 5·H0 + 3·H1:
+0, 3, 5, 8.
+
+A second `@copy1` invocation would overwrite `@other`, whose state is then Co, with a value that
+is not a bijection of its old contents, outside `compute`: TDL-5(d) (NS §4.2):
+
+```llvm example=tdl-overwrite verdict=reject:BD-E-COHERENT-OVERWRITE
+@cnt = internal global i8 0
+@other = internal global i8 0
+
+define internal void @bump(ptr %e) {
+  store i8 5, ptr @cnt
+  ret void
+}
+
+define internal void @copy1(ptr %e) {
+  %v = load i8, ptr @cnt
+  %w = add i8 %v, 1
+  store i8 %w, ptr @other
+  ret void
+}
+
+define void @twice() {
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %c2 = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_gate(i32 2, ptr %c2, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @bump, ptr null, ptr null)
+  call void @__bennett_ctrl(ptr %c2, i64 0, ptr @copy1, ptr null, ptr null)
+  call void @__bennett_ctrl(ptr %c2, i64 0, ptr @copy1, ptr null, ptr null)
+  call void @__bennett_observe(ptr @cnt, i64 1)
+  call void @__bennett_observe(ptr @other, i64 1)
+  ret void
+}
+```
+
+`@tdl_d`: `compute(@set9, @flip)` with `@cnt` Co: the store of 9 is TDL-5(c); the new byte (a
+constant) is computed by a slice invocation, exchanged into the cell, kept as history h, and
+restored by the adjoint; the fault register f9 is copied into a retained g9 between E_f and E_use
+(TDL-8):
+
+```text tdl=tdl-d
+@set9 inside compute f (signature: @cnt may-Co): slice O9 = { the constant 9 } output h:8; store i8 9, ptr @cnt -> TDL-5(c) xchg
+events of @tdl_d up to the observes:
+qalloc H0 1
+qalloc H1 1
+h H0.0
+xmask @cnt+0 0x05 ctrl H0.0
+slice O9 -> h:8 f9:4
+xchg @cnt+0 h success(f9)
+copy f9 -> g9:4
+x H1.0
+xchg @cnt+0 h success(f9)
+slice O9 -> h f9
+qfree h
+qfree f9
+```
+
+```text state=tdl-d at=7
+|00; 09> 0.70710678 (h = 00)
+|10; 09> 0.70710678 (h = 05)
+```
+
+```text state=tdl-d at=12
+|01; 00> 0.70710678
+|11; 05> 0.70710678
+```
+
+*(non-normative)* Events 4–5 are E_f, 6 is the copy, 7 is E_use, 8–9 are adjoint(E_f): the
+exchange puts the displaced byte back and the second slice invocation XORs 9 into h, which held 9,
+so h and f9 are clean before release. During `use`, `@cnt` is 9 on both branches while h holds the
+old byte: the history is entangled with H0 exactly while it must be (NS §3.1
+compute-with-uncompute).
+
+`@tdl_f`: in `@maybe` the branch on `%z` is a Co branch (the load of `@cnt` is Co), so the gate is
+issued under `qpred` of the condition wire (TDL-10):
+
+```text tdl=tdl-f
+@maybe (signature: @cnt may-Co): slice Oz = { %v = load i8, ptr @cnt; %z = icmp eq i8 %v, 5 } output w:1; the gate in %yes is control-dependent on %z -> issued under qpred w
+events of @tdl_f up to the observes:
+qalloc H0 1
+qalloc H1 1
+qalloc H2 1
+h H0.0
+h H1.0
+xmask @cnt+0 0x05 ctrl H0.0
+slice Oz mem(coh) -> w:1 fz:4 ctrl H1.0
+x H2.0 ctrl H1.0 w success(fz)
+slice Oz mem(coh) -> w fzb:4 ctrl H1.0
+qxor fz fzb
+qfree fzb
+qfree w
+firstfault (fz) -> Phi1:4
+```
+
+```text state=tdl-f at=13
+|000; 00> 0.5
+|010; 00> 0.5
+|100; 05> 0.5
+|111; 05> 0.5
+```
+
+*(non-normative)* w = (cnt = 5) = H0, so the target H2 flips exactly where H0 and H1 are 1.
+
+A bound effect inside an action region (TDL-12): launch binds CONSOLE to a two-byte
+zero buffer plus length/undo state. The control-1 branch appends 0x21,0x0a; control-0
+preserves it. All external output waits for observation.
+
+```llvm example=tdl-effect verdict=accept
+@msg = private unnamed_addr constant [2 x i8] c"!\0A"
+
+define internal void @loud(ptr %e) {
+  %t = load ptr, ptr %e
+  call void @__bennett_gate(i32 1, ptr %t, i64 0)
+  call void @__bennett_effect_console_write(ptr @msg, i64 2)
+  ret void
+}
+
+define void @tdl_e() {
+  %e = alloca ptr
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %t, ptr %e
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @loud, ptr null, ptr %e)
+  ret void
+}
+```
+
+```text tdl=tdl-effect
+@loud: G = { load of %t; gate marker -> x }; bound console -> reversible append (TDL-12)
+events of @tdl_e:
+qalloc H0 1
+qalloc H1 1
+h H0.0
+x H1.0 ctrl H0.0
+perm console.append bytes=210a ctrl H0.0
+firstfault () -> Phi1:4
+```
+
+```text state=tdl-effect at=6
+|00; console=0000 length=0, Phi1=0> 0.70710678
+|11; console=210a length=2, Phi1=0> 0.70710678
+```
+
+*(non-normative)* `@tdl_e` returns with H0 and H1 live, as a REPL keeps registers (§6.6); the run's
+CC epilogue reports fault rate zero. Explicit console observation yields empty or 210a
+with probability 1/2 each; no console is implicitly observed. A
+program that ended without freeing H0 and H1 would trap `T-LEAK` at its end.
+
+Round-1 boundary witnesses. Masks are old XOR new; mutually exclusive arms start
+from the same old value. These state/TDL vectors specify expected executions.
+
+```text tdl=compute-view
+initial @t=0 Cl; H1=|0>; f: store 9 @t; use: if (@t==9) X H1
+xmask @t+0 0x09
+x H1.0
+xmask @t+0 0x09
+```
+
+```text state=compute-view at=3
+|1; t-shadow=00 t-arena=00 K=Cl> 1
+```
+
+```text tdl=branch-views
+initial @x=0 Cl; branch w: store 5 @x; else: store 7 @x
+xmask @x+0 0x05 ctrl w
+xmask @x+0 0x07 ctrl not-w
+workspace diamond: if(w) *local=1; else *local=2; return *local -> slice select(w,1,2)
+```
+
+```text state=branch-views at=2
+w=1 -> x=05; w=0 -> x=07; code=0; no coherent-overwrite
+workspace: w=1 -> payload=1; w=0 -> payload=2
+```
+
+```text state=partial-observe at=1
+initial X[2] Co, basis bytes=0102; observe(X,1) -> outcome=01, arena=0102, K=Co
+subsequent slice load X[0] -> payload=1; observe(X+1,1) -> shadow=0102, arena=0000, K=Cl
+observe length=17 -> chunk widths=[128,8], identical joint distribution to basis measurement
+```
+
+```text state=fault-consumers at=1
+initial X=05 Co; value slice budget=0 -> payload=0 code=1 success=0
+xchg X t success(f) -> X=05, t=00; firstfault(f) -> Phi=1
+condition slice code=1 -> neither arm fires (including negative predicate)
+```
+
+```text state=clean-predicate at=0
+Co x in {0,1}; if(x!=0) x^=1 -> visible images [0,0]; not injective
+verdict=reject:BD-E-COHERENT-OVERWRITE; no implicit condition measurement
+out-of-place oracle payload=(x!=0 ? x xor 1 : x), preserved IN x -> accept
+```
+
+```text state=deferred-channel at=1
+q=|+>; deferred measure(q), unused result; boundary: measure fresh outcome record
+then H(q); measure(q) -> P(0)=1/2, P(1)=1/2
+```
+
+```text tdl=generation-budget
+source: entry: br label loop; loop: br label loop
+steps=2 -> execute two branches; next branch emits fault 1 under invocation control, stop
+```
+
+```text state=generation-budget at=1
+control=0 -> Phi=0; control=1 -> Phi=1; finite event list; no later source effects
+```
+
+```text state=classical-event-application at=3
+initial @cnt shadow=03 arena=00 K=Cl; adj(store 5) mask=03 xor 05=06
+apply -> shadow=05 arena=00 K=Cl; classical load -> 5
+ctrl(q=1,add3) -> materialise 05; arena=08 K=Co; observe -> 8, shadow=08 arena=00 K=Cl
+```
+
+A rotation by an angle that is superposed and has an unbounded value set cannot be predicated per
+value (TDL-10): `@setang` stores a host value under control, so `@ang` is Co with value set ⊤,
+and `@spin` rotates by it:
+
+```llvm example=tdl-angle verdict=reject:BD-E-COHERENT-ANGLE
+@ang = internal global double 0.0
+
+define internal void @setang(ptr %e) {
+  %x = load double, ptr %e
+  store double %x, ptr @ang
+  ret void
+}
+
+define internal void @spin(ptr %e) {
+  %p = getelementptr i8, ptr %e, i64 8
+  %t = load ptr, ptr %p
+  %a = load double, ptr @ang
+  call void @__bennett_rot(i32 3, ptr %t, i64 0, double %a)
+  ret void
+}
+
+define void @top(double %x) {
+  %e = alloca { double, ptr }
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store double %x, ptr %e
+  %p = getelementptr i8, ptr %e, i64 8
+  store ptr %t, ptr %p
+  call void @__bennett_gate(i32 2, ptr %c, i64 0)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @setang, ptr null, ptr %e)
+  call void @__bennett_adj(ptr @spin, ptr null, ptr %e)
+  call void @__bennett_observe(ptr @ang, i64 8)
+  ret void
+}
+```
+
+## 19. The driver (driver 0.3)
+
+### 19.1 Pipeline position and bitcode sources
+
+Front ends emit bitcode with their stock pre-link pipelines; no Bennett code runs before the final
+link (Enzyme PR #3211: "forgetting it is a loud failure"), except in the explicit closed-unit mode
+(§19.7). The driver links all bitcode inputs (§19.8), links `bennett-runtimes` and `bennett-arith`
+bitcode of the link's major M, runs the post-link pipeline (`lto<O3>` by default, or any envelope
+pipeline of §21.1 the user selects), then runs the plugin on the whole program (NS §3.3). With
+`opt`:
+
+```
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.3 …
+```
+
+The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
+and MAY register a full-LTO last extension point for use from a linker plugin; it MUST do nothing
+in a pre-link phase. **Bitcode sources** (NS §3.3): Rust `std` from the bitcode embedded in rlibs
+(`.llvmbc`) where present and readable by §19.8, else `-Zbuild-std`; the Julia runtime by the
+runtimes' shim bitcode; every remaining call without bitcode is a `trapped` coverage line (§4.5).
+
+### 19.2 Mode `--bennett-tier=reversible --bennett-entry=<sym>`
+
+The whole program is the device program in tier R (NS §4.2: "entered through
+`__bennett_reversible` or a driver mode"; rungs 3, 5, 6):
+
+- a CC **launch stub** fetches the argv and envp bytes with `hostcall bennett.argv`, initialises
+  the shadow stack (§17.3), calls the R entry `<sym>` with (argc, argv, envp), catches the exit
+  pseudo-exception (§14.7) and returns the status;
+- effects are the ISA device models (§11.2): console, clock, entropy (the launch's entropy tape),
+  block with `block_image` from `--bennett-disk=<file>`;
+- un-run is `bennett_reverse` (ISA §10): whole-run reversal restores the entry state; tape replay is
+  deterministic from the tape and the entropy. Whole-program R mode MUST retain the unmodified entry route and effect tape, and MUST report terminal faults and reverse eligible completed or failed runs according to ISA 0.9. [deps: DLT-19.2, DLT-14.7, DLT-18.6, ISA-4.9-P1, ISA-7.4, ISA-10]
+- a `measure` reachable in the program is `BD-E-REVERSIBLE-MEASURE` (§7.5b).
+
+**Process context.** Before entering `<sym>`, the driver/runtimes preparation MUST establish a static single-thread musl process context with the supplied argc/argv/envp bytes, a null-terminated argv and envp, `environ`, program name, initial fenv and the libc/stdio state needed by the linked program; comparison-only Linux `_start` is permitted, but Linux ELF crt/TLS/auxv entry is not required in device tiers.
+
+For a C `main` entry, the runtimes entry wrapper MUST treat normal return as `exit(status)`, running registered exit handlers and flushing stdio exactly once under §14.7 before the launch stub catches the exit pseudo-exception; explicit `exit` follows that same path, and `_Exit` bypasses handlers/flush as §14.7 specifies.
+
+A terminal R fault (§17.6) is none of these paths: exit handlers and stdio flush do not run, the launch stub receives no status, and the launch result carries the code (ISA §4.9, §10). The effect tape holds exactly the effects before the fault. Reversal of that `FAILED` run removes them (ISA K6).
+
+### 19.3 Mode `--bennett-oracle=<sym>` ("oracle from program")
+
+A convenience: the driver synthesises the translation unit a quantum programmer would write
+(§16.7): a CC function that builds a descriptor binding `<sym>`'s parameters by
+`--bennett-bind=<param>:<kind>:<width>[:<value>]` (kind `in`, `arg`, `mem_in`, `out`), device
+bindings by `--bennett-dev=<model>:<width>[:<value>]`, and a payload: the return value, the exit
+status caught by the wrapper (§14.7), or the first L bytes of console output
+(`--bennett-payload=return|exit|console:<L>`), and applies the oracle once to registers it
+allocates, as a device entry the host calls with those registers. The normative route is the
+separate translation unit with marker calls naming the unmodified function (rungs 4, 7, 8).
+
+### 19.4 Placement: host vs device CC
+
+H functions stay native unless they share **pointer-rich** memory with device code: a pointer
+argument of a device-entry call, or a global accessed by both, whose pointee may contain pointers
+that device code reads (§5). Such H functions are **promoted** to CC variants, transitively up to
+their roots (in the limit `main`, and then H is the system-call proxy only: `hostcall
+bennett.syscall`). Results are equal by the materialised semantics; ISA-11 would let them stay
+native (an efficiency and placement item, §25.3; outline E11).
+
+### 19.5 Layout: the comparison link
+
+The driver links the materialised module natively (§17.7) with a linker script that fixes the
+addresses: non-PIE; identical-code folding and constant merging off; the null region [0,
+`null_size`) with `null_size` = 4096; the data sections (`.rodata`, `.data`, `.bss`, in that order)
+from `data_base` = 4096; the text from `text_base` = 0x400000, or, when the device ranges below
+(data, heap, arena, interface regions, computed first) end above 0x400000, from the first multiple
+of 0x200000 at or after their end, so that the native comparison binary maps its code disjointly
+from them; the defaults are options (`--bennett-layout-data-base`, `--bennett-layout-text-base`,
+§24). The link map gives A(F) for
+every function and the base of every global. The device `layout` (ISA §9.1) replicates it:
+
+- `globals`: every global of the link at its link address with its image;
+- `heap_base`: the first multiple of 4096 at or after the end of the data; `heap_limit_max`: the
+  largest `heap` of the budget table (which covers the shadow stack, §9.2);
+- the arena (TDL-4) at the first multiple of its size 2^A at or after the heap's end, with 2^A the
+  smallest power of two covering the may-Co globals and the coherent allocator's heap (its size
+  from `--bennett-arena-heap`, default the largest `heap` of the table); the arena's shadow
+  `__bennett_rt_shadow` is a global of the data sections;
+- interface regions per oracle above the arena (§16.3); H, A_tab and S_cells by §16.3;
+- the production host image is linked with the same addresses for every function and global
+  whose address may cross the boundary (§4.4).
+
+*(non-normative)* With data low and text high, H covers the data, heap and regions; function
+addresses are values only and never occupy device memory.
+
+**Native layout ABI v1.** The driver MUST define exactly one external constant `@__bennett_rt_native_layout = constant { i64, i64, i64 } { i64 1, i64 heap_base, i64 heap_limit_max }, align 8` in comparison-only support, with fields at byte offsets 0, 8 and 16 in target little-endian order and values from this same resolved §19.5 layout; runtimes declares that object and validates the version/range before use, with no weak/default definition. The third field is a byte capacity, not an end address; it includes shadow-stack allocations under §9.2. This object has no relationship to blockaddress identity objects `__bennett_rt_blk.<f>`.
+
+**Qreg table placement.** A program with a qreg-table site (§6.5) has the global `__bennett_rt_qtab` at the first multiple of 4096 at or after `heap_base + heap_limit_max`, in `layout.globals`, with an empty data image (ISA E4). Every other global and the heap keep the addresses they have without it, so the comparison-link addresses of §4.4 and the native layout ABI above are unchanged. If it does not fit below 2^pw the build fails with the layout diagnostic, naming the option that sizes it.
+
+### 19.6 Build-time snapshots
+
+`--bennett-snapshot=<dump>` rewrites the initialisers of the mutable globals listed in the dump
+(and the platform RAM global, §20.1) to the dump's bytes before the plugin runs; the data images
+then carry the snapshot and R of §8.5 is empty for them (rung 7: "kernel state snapshot fixed
+classically after boot"). The dump is recorded by hash in the build record.
+
+### 19.7 Closed-unit mode
+
+`-bennett-closed-unit` (the REPL fast path, NS §3.3: "a per-TU invocation remains available as a
+fast path for programs closed within one unit, with the same semantics"): the plugin runs on one
+module plus the runtimes and arith bitcode, after a **closedness check**: every device function's
+callees are defined in that set or are trapped exactly as in whole-program mode; no device
+function's address escapes the module; no function pointer enters through a device-entry
+parameter. If the check passes, processing is identical to whole-program mode. If it fails, the
+driver falls back to whole-program mode (it does not reject). Objects are content-addressed (ISA
+§9.2) and linked at launch (ISA §9.3), so the REPL is incremental.
+
+Closed-unit mode MUST retain whole-program semantics after its closedness check and fall back to whole-program processing when that check fails. [deps: DLT-19.1, DLT-19.7, ISA-9.2, ISA-9.3]
+
+### 19.8 Mixed LLVM majors
+
+The driver reads every bitcode input with the newest major M of the envelope (bitcode is readable
+by newer majors), links with M and runs plugin M; runtimes and arith ship bitcode for each M.
+Every input MUST have one target datalayout and triple (NS §3.2) (`BD-E-VERSION` otherwise: a
+tool-version mismatch, not a program property). An input newer than M is `BD-E-VERSION`. The
+tested (front end, major) pairs are published in the envelope; a corpus case links clang 18
+bitcode with Julia's and rustc's majors (§21.2; bd `.16`).
+
+Mixed-major bitcode links within the tested envelope MUST use its newest reader and matching plugin and library bitcode, retaining one target triple and DataLayout. [deps: DLT-19.8, DLT-21.1, ISA-9.1, ISA-9.2]
+
+### 19.9 Options, identity, outputs, module flag
+
+| Option | Meaning | Default |
+|---|---|---|
+| `-bennett-dialect=<v>` | MUST equal the plugin's dialect version (`BD-E-VERSION`) | required |
+| `-bennett-isa=<v>` | MUST equal the ISA version the plugin targets (`BD-E-VERSION`) | `0.9` |
+| `--bennett-budgets=<file>`, `--bennett-budget-default=<s,h,st,d,ss>` | §9.2 | §9.2 defaults |
+| `--bennett-class=<name>` | §3.4 | none |
+| `--bennett-tier=reversible`, `--bennett-entry=<sym>`, `--bennett-disk=<file>` | §19.2 | – |
+| `--bennett-oracle=<sym>`, `--bennett-bind=…`, `--bennett-dev=…`, `--bennett-payload=…` | §19.3 | – |
+| `--bennett-snapshot=<dump>` | §19.6 | – |
+| `-bennett-closed-unit` | §19.7 | off |
+| `--bennett-platform=<profile>` | §20 | none |
+| `--bennett-vscale=<V>`, `--bennett-cpu=<model>` | §12.5, §15.2 | §24 |
+| `--bennett-qreg-instances=<n>` | the optional static file of §6.5; never a limit on a program | 64 |
+| `--bennett-qreg-table-bytes=<n>` | the size of `__bennett_rt_qtab` (§6.5, §19.5) | §24 D29 |
+| `--bennett-shape-widths=<list>` | the emission order of shapes AV leaves ⊤ (§8.4) | §24 D34 |
+| `-bennett-inplace-exhaustive-bits=<n>` | §8.7 | 24 |
+| `-bennett-warn-qstore` | §6.7 | off |
+| `-bennett-out=<dir>` | the outputs below | required |
+
+**Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
+`dialect-0.3;isa-0.9`; the driver refuses a plugin whose string differs. [deps: DLT-19.9, DLT-23] One plugin build per LLVM
+major (NS §3.2).
+
+**Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
+variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
+objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
+pipeline, normaliser_version: "0.2.8"}` and `bindings.dialect_mapping_version = "0.3"`; the coverage
+report (ISA §13), whose `source` field is `dialect-0.3:<rule id>` (e.g. `dialect-0.3:N33`); the
+lowering reports (§25.1); and the **build record**, one JCS object with the build flags, the
+budget table (resolved, including each shape's selection_identity, final semantic identity,
+resolved components and frozen layout capacities under §9.2) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
+hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
+`producer.version` (`<driver version>+build.<hex>`) because ISA 0.9 has no dedicated field for it
+(§25.2). [deps: DLT-19.9, DLT-25.2] The certificate MUST bind the full invocation and explicit expected relation under ISA 0.9, retain build-record and resolved-table identities and deferred-measurement information in the existing documented metadata channel where no dedicated field exists, and label a fixed-region subdomain as evidence with its covered fraction. [deps: DLT-19.9, DLT-25.2, DLT-18.7, ISA-12.1-P7, ISA-12.2-P1, ISA-12.3-P2, ISA-12.3-P3] Labels are the checker's (ISA K74): a producer label is a checked request.
+
+**A missing plugin fails loud.** No production artefact defines a marker: `bennett-runtimes`,
+`bennett-arith` and the driver's link inputs define no `__bennett_*` marker symbol (test runtimes
+such as the trace runtime do, and are never linked into production). A link in which the plugin
+did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
+ignore unresolved symbols or supply weak marker definitions.
+
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.3"}` (behaviour Error, so an
+LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
+differs from its version (`BD-E-VERSION`). [deps: DLT-19.9, DLT-23]
+
+```llvm example=version-flag verdict=reject:BD-E-VERSION
+define void @top() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+
+!llvm.module.flags = !{!0}
+!0 = !{i32 1, !"bennett.dialect", !"0.1"}
+```
+
+## 20. Platform profile `riscv64-bennett-virt` (platform 0.3; rungs 6–7)
+
+NS §5: "The kernel compiles, boots on the VM in the reversible tier with its devices modelled,
+writes a serial console to the tape, and un-boots to the reset vector." This section fixes the
+mechanisms (outline E4: riscv64 first); its row lists come from the platform spike of §20.7, a
+mechanics deferral (§24): the capability is not in question (audit O-06).
+
+### 20.1 Model
+
+A virtual board, selected by `--bennett-platform=riscv64-bennett-virt`:
+
+- RAM: one runtimes global `__bennett_rt_platform_ram` of the configured size
+  (`--bennett-platform-ram`, default 128 MiB), which the profile's linker script places at the
+  board's physical base 0x80000000 after the other data (the heap and the text follow it by
+  §19.5), so kernel physical addresses are ordinary device addresses;
+- the CSR file (privilege mode, `satp`, `stvec`, `mtvec`, `sstatus`, `mstatus`, `sie`, `sip`,
+  `scause`, `sepc`, `stval`, `sscratch`, `mscratch`, `time`, …) as the runtimes global
+  `__bennett_rt_csr`;
+- devices: a UART 16550 (console), a CLINT and timer (clock), a PLIC, and a virtio-blk MMIO device
+  (block), each a runtimes C model over the effect markers.
+
+### 20.2 asm rows
+
+The privileged forms are `shimmed` rows of §15: `csrr`, `csrw`, `csrs`, `csrc` (and the immediate
+forms) → `__bennett_rt_csr_read(i32 csr)`, `_write(csr, v)`, `_set(csr, v)`, `_clear(csr, v)`;
+`sfence.vma` → `__bennett_rt_sfence_vma(va, asid)`; `wfi` → `__bennett_rt_wfi()` (advances the
+clock model to the next timer event); `ecall` in kernel mode → `__bennett_rt_sbi_call(…)` (the SBI
+of the board), in user mode → the trap path of §20.4; `mret`, `sret` → `__bennett_rt_trap_return
+(mode)`; `fence.i` and `fence` → deleted (lowered). The exact asm strings and constraint strings
+are those the §20.7 spike inventories.
+
+### 20.3 MMIO routing (N35)
+
+Under the platform profile, N9 first routes every volatile load and store, and every MMIO asm
+form, to `__bennett_rt_mmio_{load,store}_i<N>(addr[, v])`; these dispatch by address range to the
+device models' handlers (C code in runtimes that calls the effect markers), and otherwise access
+memory. A non-volatile access to an MMIO window lies outside every live allocation and faults with
+code 7, as the reference semantics defines (§17.1).
+
+### 20.4 Interrupts (N35)
+
+Poll points at loop back edges and function entries (N35) call `__bennett_rt_poll()`, which checks
+the timer model (deterministic, driven by the clock model) and the PLIC's pending bits; on
+delivery it sets the CSRs (`scause`, `sepc`, `stval`, `sstatus`) and calls the trap vector
+`stvec` by A(F) dispatch (§14.2). Interrupts are therefore taken at poll points only, a
+deterministic choice recorded in the certificate; NS §3.2's single-thread assumption covers the
+uniprocessor kernel (`CONFIG_SMP=n`, xv6 `CPUS=1`).
+
+### 20.5 Context switch and traps
+
+The assembly entry points (`swtch`, `trampoline`, `uservec`, `userret`, `kernelvec`, Linux
+`__switch_to`, `handle_exception`, `ret_from_exception`) are platform shims by symbol (§15.3),
+written in C over the fibers of §14.6: a kernel context switch is a fiber switch; a trap entry
+saves the user registers into the trap frame from the platform register file and calls the
+kernel's handler; a trap return restores them and resumes the user fiber.
+
+### 20.6 User processes
+
+N35 translates **all guest memory accesses** in translation-enabled effective privilege
+contexts through the modelled satp and Sv39 page tables/permissions, including supervisor
+kernel accesses and user accesses (and effective privilege selected by MPRV for data).
+Bare/physical accesses use physical addresses. Runtime model helpers and page-table walks
+access physical backing storage directly, and are excluded from reinstrumentation.
+LLVM guest pointers remain virtual values through GEP, ptrtoint and comparisons; translate
+only on memory access. The layout records virtual data/code addresses and their physical
+backing. A physical RAM address and every permitted virtual alias name the same backing
+byte. Indirect dispatch and trap resumption preserve this mapping: A(F), stvec and sepc
+retain guest virtual code addresses, resolved through the code-address map after Sv39
+validation. Translation failures deliver the modelled guest page/access trap before memory
+mutation; they are not accidental accesses to an unallocated high host/device address.
+Runtime helpers avoid a second translation. These rules apply equally to CC/R and L variants.
+
+User programs are built to bitcode and linked into the device program under the comparison layout
+(§19.5); their ELF images on the disk image are the same link, so entry and function addresses
+are A(F). `exec` and `sret` to user mode dispatch the user entry by A(F); user loads and stores go
+through a **soft-MMU**: N35 instruments all guest functions in translation-enabled privilege contexts with an Sv39 walk
+over the modelled `satp`, including supervisor kernel accesses, with guest page faults
+delivered through §20.4.
+
+```text state=sv39-kernel-alias at=2
+RAM physical P=0x80000000 holds 0x12
+supervisor satp=Sv39; valid writable kernel V=0xffffffe000000000 maps to P
+store 0x34 through V; load P -> 0x34; load V -> 0x34; no code 7
+reverse store -> both P and V read 0x12; page-table state restored
+```
+
+The riscv64 platform MUST retain modelled MMIO, deterministic interrupt polls, rewindable contexts and Sv39 data/code translation in CC, R and L, with guest aliases naming the same backing bytes. [deps: DLT-14.5, DLT-14.6, DLT-20, ISA-4.1, ISA-4.2, ISA-7.3, ISA-7.4]
+
+### 20.7 Platform spike (mechanics)
+
+Build xv6-riscv and Linux `tinyconfig` riscv64 (uniprocessor, `CONFIG_SMP=n`) to bitcode with
+build flags only (NS §0); inventory every asm form, `.S` symbol, MMIO site and switch path, as
+SQLite §3 did; fix the row lists of §20.2 and §20.5 and the board constants of §20.1. Until then
+those rows are this section's patterns (§24).
+
+
+Checked driver and platform boundary scenarios. Each state block specifies the
+requested driver operation on the accompanying input, not just a recogniser
+verdict. Missing driver/platform adapters fail under P-2; parsing alone never
+satisfies these scenarios.
+
+**`driver-oracle-synthesis` (§19.3).** The input is an unmodified integer program. Binding x to eight input wires gives wrapping x+1: x=7 gives 8 and x=255 gives 0. The driver-generated descriptor has one IN, an eight-wire target and a four-wire fault; it launches one oracle invocation. This is the synthesis obligation, not an assertion that parsing f executes the driver.
+
+```llvm example=driver-oracle-synthesis verdict=accept
+define i8 @program(i8 %x) {
+  %r = add i8 %x, 1
+  ret i8 %r
+}
+```
+
+```text state=driver-oracle-synthesis at=0
+driver: --bennett-oracle=program --bennett-bind=0:in:8 --bennett-payload=return
+synthesise: nparam=1 IN(8,zext); tgt width=8; fault width=4; one invocation
+input=7 -> code=0 payload=8
+input=255 -> code=0 payload=0
+```
+
+**`driver-pointer-promotion` (§19.4).** The host mutation changes tail.value from 1 to 9. Device code follows head.next and reads 9. Since head contains a pointer the device follows, the shared memory is pointer-rich: mutate and its root main must be promoted to CC. Keeping a native host-only tail store without coherent state would instead leave the image value 1.
+
+```llvm example=driver-pointer-promotion verdict=accept
+%Node = type { ptr, i8 }
+@tail = internal global %Node { ptr null, i8 1 }
+@head = internal global %Node { ptr @tail, i8 0 }
+define internal void @mutate() {
+  %p = getelementptr %Node, ptr @tail, i64 0, i32 1
+  store i8 9, ptr %p
+  ret void
+}
+define internal i8 @device(ptr %p) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %next = load ptr, ptr %p
+  %v = getelementptr %Node, ptr %next, i64 0, i32 1
+  %r = load i8, ptr %v
+  call void @__bennett_qfree(ptr %h)
+  ret i8 %r
+}
+define i8 @main() {
+  call void @mutate()
+  %r = call i8 @device(ptr @head)
+  ret i8 %r
+}
+```
+
+```text state=driver-pointer-promotion at=0
+placement: mutate=CC main=CC device=CC; host retains only system-call proxy
+run: main returns 9; device follows head.next; tail image 1 is not the call-entry value
+```
+
+**`driver-comparison-layout` (§19.5).** The first global occupies [4096,4099), the aligned pointer slot [4104,4112), so heap_base=8192. With heap_limit_max=4194304 the heap ends at 4202496, above 0x400000. With no arena or interfaces, text begins at the next multiple of 0x200000: 6291456 (0x600000). The initial pointer slot contains 4096 in little-endian; native and device layouts must agree.
+
+```llvm example=driver-comparison-layout verdict=accept
+@bytes = internal global [3 x i8] [i8 7, i8 8, i8 9], align 1
+@slot = internal global ptr @bytes, align 8
+define i8 @f() {
+  %p = load ptr, ptr @slot
+  %r = load i8, ptr %p
+  ret i8 %r
+}
+```
+
+```text state=driver-comparison-layout at=0
+driver: data_base=4096 heap_limit_max=4194304; no arena/interface
+layout: bytes=4096 slot=4104 heap_base=8192 heap_end=4202496 text_base=6291456
+slot image=0010000000000000
+native and device: f returns 7; no code/data overlap
+```
+
+**`driver-snapshot-initializer` (§19.6).** The dump supplies the single mutable byte g=7 before materialisation. Its former zero image is replaced by 07; no function outside the closure writes g, so this build-time case needs no call-entry transfer. Both builds return 7 from the same fixed image.
+
+```llvm example=driver-snapshot-initializer verdict=accept
+@g = internal global i8 0
+define i8 @f() {
+  %r = load i8, ptr @g
+  ret i8 %r
+}
+```
+
+```text state=driver-snapshot-initializer at=0
+driver: --bennett-snapshot=dump; dump bytes for @g=07
+materialised global: @g = internal global i8 7
+data image=07; entry read-set requiring transfer=empty; no snapshot register
+native and device: f returns 7; build record includes dump SHA-256
+```
+
+**`driver-closed-unit-fallback` (§19.7).** The entry receives a function pointer, violating the closedness check even though g is defined and address-taken. The requested fast path therefore falls back to the whole-program route; it does not reject the program. Dispatching p=g returns 7 on either route.
+
+```llvm example=driver-closed-unit-fallback verdict=accept
+@address = internal constant ptr @g
+define internal i8 @g() {
+  ret i8 7
+}
+define i8 @entry(ptr %p) {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  %r = call i8 %p()
+  call void @__bennett_qfree(ptr %h)
+  ret i8 %r
+}
+```
+
+```text state=driver-closed-unit-fallback at=0
+driver: -bennett-closed-unit; entry parameter p supplies function pointer
+closedness=false; selected route=whole-program; verdict=accept
+p=@g -> return 7; same result without -bennett-closed-unit
+```
+
+**`driver-mixed-majors` (§19.8).** Produce the first module with LLVM 18 and the second with LLVM 23. Both have the same datalayout and triple; M=23 reads and links both. The linked result is 3+4=7. Producing either module above envelope M, or changing its triple/datalayout to conflict, instead gives BD-E-VERSION. Parsing these modules separately is not evidence of the mixed-major link.
+
+```llvm example=driver-mixed-majors verdict=accept
+target datalayout = "e-p:64:64"
+target triple = "x86_64-unknown-linux-gnu"
+define i32 @from18() {
+  ret i32 3
+}
+```
+
+```llvm example=driver-mixed-majors-second verdict=accept
+target datalayout = "e-p:64:64"
+target triple = "x86_64-unknown-linux-gnu"
+declare i32 @from18()
+define i32 @main() {
+  %a = call i32 @from18()
+  %r = add i32 %a, 4
+  ret i32 %r
+}
+```
+
+```text state=driver-mixed-majors at=0
+driver: input from18.bc major=18; input from23.bc major=23; envelope newest M=23
+read/link/plugin/runtime/arith major=23; common datalayout=e-p:64:64 triple=x86_64-unknown-linux-gnu
+linked main -> return 7
+conflicting triple or datalayout -> reject:BD-E-VERSION
+input newer than M -> reject:BD-E-VERSION
+```
+
+**`platform-uart-write` (§20).** At the profile UART transmit window 0x10000000, N35 routes the volatile byte store to the model before N9. It appends x (hex 78) to the console tape without a raw unallocated store. With sufficient budgets and no pending interrupt, reverse restores the entry device/CSR state and empty tape. This is a successful platform path.
+
+```llvm example=platform-uart-write verdict=accept lowering=K5 rmode=@main
+define i32 @main() {
+  %p = inttoptr i64 268435456 to ptr
+  store volatile i8 120, ptr %p, align 1
+  ret i32 0
+}
+```
+
+```text lowering-report=platform-uart-write
+K5 R entry: pre-instruction step checks lower to fault 1 (§17.6); terminal record, intact reversible prefix
+```
+
+```text state=platform-uart-write at=0
+driver: --bennett-platform=riscv64-bennett-virt --bennett-tier=reversible --bennett-entry=main
+entry: console=empty tape=empty; interrupts pending=none
+materialisation: entry poll; volatile store -> MMIO helper -> UART model -> console.write
+run: status=COMPLETED result=0 console=78; tape has console.write(78); no code 7
+reverse: status=REVERSED console=empty tape=empty CSR=entry RAM=entry
+```
+
+## 21. Legality corpus and conformance suites (corpus 0.2)
+
+### 21.1 The corpus
+
+`corpus/legality/` holds the cases (`cases/`: the 56 spike cases plus the `spec-*` cases of this
+document), four negative controls (`controls/`), the harness (`harness/run.py`), the trace runtime
+(`runtime/`) and the spike's results. Spike cases use the provisional ABI v0 and arbitrary
+operation codes: they are **legality** cases (what LLVM passes do to marker programs), not
+well-formedness cases; the legality property (§3.6) does not depend on a marker's signature. The
+harness selects the historical ABI v0 or ABI 0.2 trace runtime from each module's marker
+signatures; `spec-sem2-*` uses the budget-record ABI of §3.2 and the normative header.
+The harness checks and their 0.2 reading:
+
+| Check | Property | 0.2 reading |
+|---|---|---|
+| L1 | the dynamic marker sequence and the classical result are preserved | unchanged; for cases whose marker operands are computed from floating point or query intrinsics, the baseline is the materialised module (§17.7) |
+| L2 | no pass adds a forbidden attribute | the three lists of §3.6 |
+| L3 | handles stay contained (guard page, `BADHANDLE`; static review of new casts) | dynamic part unchanged; the static review is decided by §6 |
+| L4 | region identity | every region operand resolves (§7.2) to candidates content-equal (§7.3) to the baseline's: aliases, forwarding thunks and merged twins pass (harness relaxation, bd `-cjb`) |
+| L5 | native code generation keeps L1 and every marker an undefined external | unchanged |
+| L6 | region-operand shapes | every shape resolves (§7.2: the candidate set is bounded by the program) |
+
+**Supported envelope**: LLVM 18, 20 and 23; `default<O0>` … `default<O3>`; `default<Os>`,
+`default<Oz>` on 18 and 20 (LLVM 23's `opt` rejects them); `lto-pre-link<O3>`, `lto<O3>`,
+`thinlto-pre-link<O3>`, `thinlto<O3>`, `default<O3>` three times; clang `-O0` … `-O3` with
+`-flto`; rustc `-C opt-level` 0, 1, 2, 3, s, z, including its MergeFunctions in aliases mode;
+Julia 1.13's own pipeline; `strip`, `strip-nondebug` and `mergefunc` alone. **Unsupported**
+(LLVM bugs outside the contract on every supported major; spike findings §2): the Attributor,
+module and CGSCC (llvm-project #234748, #236104, and on 18 and 20 the constant-table fold fixed by
+PR #151359); `normalize` without `preserve-order` (#236128); `structurizecfg` without its
+prerequisites; the passes the harness classes `non-preserving` and the sanitizer and
+instrumentation passes; any other single pass not run inside an envelope pipeline (§24 D20).
+
+Work items the corpus owns for 0.2: rerun P4 (clang `-flto` end to end) and add a rustc
+`-Clinker-plugin-lto` case (bd `-j88`);
+minimise the three P3-only interactions (bd `-ape`); a `-g` variant of every `.c` case (bd
+`-u6a`); Windows funclet and non-x86-64 cases (bd `-kdj`).
+
+### 21.2 New legality cases
+
+Before this version freezes, the corpus gains cases (each `EXPECT: legal` unless stated) for:
+descriptor construction by constant stores in C, Rust and Julia surviving `default<O3>` (§3.8,
+§8.1); the budget record (§9.1); every changed or new marker signature (§3.2); the effect markers
+(§3.2, §11); `observe`; a cross-major link (§19.8); region pointers from host input and from a
+Julia `@cfunction` (§7.2); handle `Vec`, `std::vector` and linked lists (§6.4); EH, sjlj and
+varargs through the pipeline (§14); the benign attributes of §3.6 on the three majors. The
+`spec-sem2-*` cases are byte-identical to the §18.8 programs; `spec-sem-*` are their 0.1-ABI
+predecessors and stay as legality cases.
+
+### 21.3 Conformance suites
+
+| Suite | Class | Content |
+|---|---|---|
+| DA | Plugin, Validator | recognition, reserved names, attributes, Julia check, unwinding of markers: the §3 examples; L2 over the corpus |
+| DB | Plugin, Validator | the device analysis and handles: the §5 and §6 examples; L3 over the corpus |
+| DC | Plugin, Validator | candidate sets, identity, kinds, well-formedness: the §7 examples; L4, L6 over the corpus |
+| DO | Plugin | descriptors, shapes, entry state, wide outputs, in-place: the §8 examples |
+| DN | Plugin, Validator | normalisation pairs, native differentials and validator verdicts: the §12–§15 examples; two independent validators agree on the corpus after materialisation |
+| DM | Plugin | the lifting map: the §16 objects, hashes, runs and step checks, executed on the ISA reference interpreter |
+| DS | Plugin + executor | marker semantics: the §18.8 programs, events and states; differential runs against the reference semantics (§18.7) |
+| DT | Plugin + executor | TDL partitions, events and states (§10, §18.8) |
+| DE | Plugin + executor | effects per tier (§11): R console with reversal, CC host effects, L device models |
+| DV | Plugin | varargs, EH, sjlj and fibers (§14) on the three target ABIs |
+| DR, DF | Runtime | the contract rows of `bennett-runtimes` (§11, §14, §17.3, §20) and `bennett-arith` (§13): test vectors |
+| DD | Driver | the driver modes (§19.2–§19.7), closed-unit equivalence, mixed majors, layouts |
+| DP | Platform | the platform profile (§20) |
+| DX | everything | the rung-mini programs end to end (§21.4) |
+| DL | Toolchain | the legality matrix of §21.1 |
+
+### 21.4 The pre-flight checker and rung minis
+
+`scripts/dialect_check.py` executes every tagged example of this document (§1.5) under rules P-1
+to P-3. The capabilities it needs and the executor of each are Appendix B. Its seeds live in
+`spec/seeds/` (C, used only by the checker; `bennett-runtimes` and `bennett-arith` implement
+independently, CLAUDE.md rule 5): a minimal allocator over the layout heap, the shadow stack,
+memmove/memset/memcmp, the EH state and a personality subset, setjmp/longjmp, swapcontext,
+binary64 soft-float add/mul/cmp/conversions, `exp`/`log` from musl, a console/entropy device stub
+over the effect markers and the musl `__syscall` row; their semantics equal the contract rows of
+§11, §13, §14 and §17.3. Suite DX holds the rung minis: R1 (an Int8 Rust function, exhaustive:
+§16.6), R2 (a C hashtable; the heap example §16.9 is its kernel), R3 (a `puts` through the runtimes
+seed in R, reversed: §11.6), R4 (§16.7), R8 (§16.8).
+
+## 22. Diagnostics
+
+### 22.1 Compile-time rejections
+
+Every row cites the north-star clause or maintainer decision that requires the rejection; a
+rejection without one may not exist (standing rule).
+
+| Code | Rule | Required by |
+|---|---|---|
+| `BD-E-VERSION` | §19.8, §19.9 | NS §3.2 (per-major builds, "one target datalayout", "tested compatibility envelope"); a tool mismatch, not a program property |
+| `BD-E-MARKER-DEFINED` | §3.1 rule 1 | NS §3.1 ("declared external marker functions") |
+| `BD-E-MARKER-UNKNOWN` | §3.1 rule 2 | NS §3.1 (recognition by name; reserved names) |
+| `BD-E-MARKER-ADDRESS` | §3.1 rule 3 | NS §3.1 ("recognises them by name and signature": a marker is never called indirectly) |
+| `BD-E-MARKER-SIGNATURE` | §3.5 | NS §3.1 ("fixed signatures") |
+| `BD-E-MARKER-ATTRIBUTE` | §3.6 | NS §3.1 (the positive legality requirement) |
+| `BD-E-JULIA-CCALL` | §3.8 | NS §3.3 (per-front-end integration; the `llvmcall` route keeps the capability, audit B-13) |
+| `BD-E-EFFECT-LIE` | §3.8 | NS §3.1 (positive legality), NS §3.2 (definedness) |
+| `BD-E-OPERAND` | §3.4 (a constant outside its table) | NS §3.1 (fixed operand encodings); the marker faults on every execution that reaches it |
+| `BD-E-HANDLE-USE` | §6.2 | maintainer decision 2; NS §3.1 ("never dereferenced") |
+| `BD-E-HANDLE-ESCAPE` | §6.4 | NS §3.1 ("any handle use that survives into host native code is rejected") |
+| `BD-E-HANDLE-UNTRACKED` | §6.2 | NS §3.1 (handles are the results of `qalloc`; linearity is a fail-loud verifier obligation) |
+| `BD-E-REGION-TYPE` | §7.2 (the unique candidate) | decision 3 (candidates of the required type); the call is undefined on every execution |
+| `BD-E-REGION-MEASURE` | §7.5(a) (the unique candidate), unless deferred | NS §3.1 ("user measurement inside it is refused") |
+| `BD-E-REVERSIBLE-MEASURE` | §7.5(b) | NS §4.2 (reversible tier); ISA §10 (a run that measured is not reversible) |
+| `BD-E-RESIDUAL` | §12.4 | NS §3.2 (residual-poison validator) |
+| `BD-E-INPLACE-NOT-INVERSE` | §8.7 | NS §3.1 ("an in-place update with no inverse fails loud at compile time") |
+| `BD-E-COHERENT-OVERWRITE` | TDL-5(d) | NS §4.2 ("writing a register not known to be clean is a compile-time error … else it fails loud") |
+| `BD-E-COHERENT-ANGLE` | TDL-10 | NS §4.2 (predication, not superposed parameters); ISA §3.1 ("angles are literals or classical arguments") |
+
+**Deleted** from 0.1 (each was a narrowing, audit §1): `BD-E-EH`, `BD-E-LIFT-SUBSET`,
+`BD-E-DEVICE-ADDRESS`, `BD-E-REGION-UNBOUNDED`, `BD-E-REGION-EXTERNAL`, `BD-E-REGION-THUNK`,
+`BD-E-REGION-TIER`, `BD-E-REVERSIBLE-MARKER` (except measurement), `BD-E-INPLACE-UNVERIFIED`,
+`BD-E-OPERAND-UNBOUNDED`, `BD-E-HANDLE-STORE`, and `BD-E-REGION-TYPE` for oracle candidates.
+
+### 22.2 Blocker reports
+
+No blocker code is active on ISA 0.9. A blocker report is not a rejection (§1.6). The plugin emits the
+lowering report of §25.1 in the outputs; it changes neither verdict nor exit status.
+
+### 22.3 Run-time traps
+
+Fault code 4 (§17.5) with the named diagnostic: `T-DEAD`, `T-FOREIGN`, `T-CLEAN`, `T-INDEX`,
+`T-ALIAS`, `T-THETA`, `T-MEASURE`, `T-SIZE`, `T-CTRL`, `T-LEAK`, `T-REGION`, `T-REGION-INVALID`,
+`T-OP`, `T-CLASS`, `T-IFACE`, `T-BUDGET`, `T-TAINT-HOST`. Deleted: `T-BORROW` (outside generations
+`qborrow` is a clean allocation, bd `.9`), `T-TIER` (§7.4).
+
+### 22.4 Warnings
+
+`BD-W-QSTORE-UNCLEAN` (§6.7), `BD-W-TAINT-HOST` (TDL-11). A
+warning never changes a verdict.
+
+## 23. Versioning
+
+- The **full version string** of this document (`0.3`) is the unit of compatibility: a plugin
+  implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
+  not compatible with each other. [deps: DLT-23, DLT-19.9]
+- The move to ISA 0.9 revises the full dialect to `0.3`, with handles, regions, oracle-abi, tdl, effects, map, platform and
+  driver at `0.3`. `norm` remains `0.2.8`; marker/header, asm and corpus remain `0.2`. Every reference object and hash is
+  recomputed (ISA §9.2). 0.2.x objects remain valid 0.2.x artefacts of ISA 0.8. The map version
+  is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
+- Every semantic change bumps the version; the reference objects and hashes of §16 depend on the
+  ISA version string, the map and the layout, and change with any of them (0.1's hashes changed
+  with the wrapper form of §16.2).
+- The build record (§19.9) records the runtimes, arith and asm-table hashes and the budget-table
+  hash; `SPEC_VERSIONS.toml` records `dialect` and the targeted `isa`; the change rules are in
+  `spec/README.md`.
+
+## 24. Deferred mechanics (with defaults)
+
+Only mechanics appear here. Each row states the capability it keeps; none has a default of
+reject, refuse, fault or no effect for something the north star promises.
+
+| Id | Mechanics | Default | Capability kept |
+|---|---|---|---|
+| D12 | host-stack addresses passed into device code (NS §3.2 "where possible") | executions they influence are layout-dependent (§18.7) and validated against the reference interpreter | every program runs; only the comparison oracle changes |
+| D13 | a region key stable across LLVM majors (§7.3) | the key depends on the major, which the certificate records | identity within a link is by content |
+| D15 | the comparison-link bases (§19.5) | `null_size` 4096, data at 4096, text at 0x400000 or above the device ranges, options to change them | native-equal addresses |
+| D20 | single passes outside the envelope (§21.1) | unsupported unless listed (they are LLVM bugs, spike findings §2) | every envelope pipeline |
+| D22 | output file names and diagnostic text | plugin-defined; the codes of §22 are normative | – |
+| D23 | ThinLTO with the plugin | full LTO: one merged module | every program merges into one module (audit D23, M) |
+| D24 | multi-threaded device code (NS §9.11) | the single-thread assumption (N9), recorded in the certificate | uniprocessor programs, rung 6's configurations |
+| D26 | the binary layout of descriptors and budget records beyond the C view | the LLVM struct layout under the module's datalayout (§8.1, §9.1) | every target |
+| D27 | budget defaults (§9.2) | 1048576 steps, 1048576 heap bytes, 65536 stack cells, depth 256, `sstack` 65536 | every budget is overridable |
+| D28 | the in-place exhaustive width (§8.7) | 24 bits; sampled evidence and the `T-CLEAN` net above | every pair is verified, as proof or evidence |
+| D29 | the size of `__bennett_rt_qtab` (§6.5) | 2^(pw−3) bytes capped at 2^40, placed above the heap; exhaustion is code 2, as for the heap | every register the table's budget covers; the option raises it |
+| D34 | object emission for a width or extent AV leaves ⊤ (§8.4) | the plugin emits the shapes the driver's `--bennett-shape-widths=<list>` names first; it is a compile-order hint and the conformance contract remains the full domain, whose remaining shapes it MUST emit or report unfinished at build time, never a run-time `T-IFACE` for a valid shape | every valid shape |
+| D30 | further device models (ISA §17 item 3) | the four of ISA §7.3; another device's effect is `FAULT_EFFECT_UNMODELLED` until the ISA adds it | the four modelled devices in every tier |
+| D31 | target ABI rows for `va_list` (§14.3), asm (§15) and target intrinsics beyond x86-64, AArch64 and RISC-V64 | added with the target | the three targets of the rungs |
+| D32 | the platform row lists and board constants (§20) | the patterns of §20.2–§20.6 until the §20.7 spike | rungs 6 and 7 |
+| D33 | `vscale` (§12.5) and the declared CPU model for `cpuid` (§15.2) | `vscale_range` minimum; the `cpuid` leaves of the build machine, recorded in the build record | scalable-vector and CPU-feature code |
+
+## 25. Blockers and ISA items
+
+### 25.1 Blockers
+
+A **blocker** is a capability the dialect fully specifies whose stated case has no realisation on
+the targeted ISA. **No blocker is active on ISA 0.9.** Each 0.2.x blocker is retired by the ISA row below; its former code
+is never reported, and a module that had that verdict on ISA 0.8 has verdict `accept` with the lowering named here.
+
+| Former | Former code | NS capability | ISA 0.9 row | Lowering | Witnesses |
+|---|---|---|---|---|---|
+| BLK-1 = ISA-4 | `BD-B-ISA4` | NS §3.1 handle tables; §4.1, §4.2 dynamic allocation; Bennett.jl vectors of qubits | K1, E11, E12 | `qreg[*]` widths (§3.4); qreg table with `qreg.id`/`qreg.from_id`/`qreg.width` (§6.5); coherent widths stay padded to a classical bound (TDL-10) | `k1-width`, `k1-table`, `k1-stale`, `handle-*` lowering reports |
+| BLK-2 = ISA-1 | `BD-B-ISA1` | NS §4.2 "run-time budgets come from the host or from measurement results" | K3 | `budget.mint` before region entry (§9.5) | `k3-mint`, `budget-device-computed` |
+| BLK-3 = ISA-3 | retired in 0.2 | NS §4.2 in-place updates with parameters | K4 (optional) | CC expansion kept; native `qinplace` under a covering inverse-pair entry (§8.7) | `k4-native` |
+| BLK-4 = ISA-12 | `BD-B-ISA12` | NS §4.2 quantum allocation inside reversible-tier code | K2, K7 | R `qreg.*` frames (§7.5(b), §8.5) | `k2-ledger`, `region-reversible-qalloc-*` |
+| BLK-5 = ISA-7 | `BD-B-ISA7` | NS §4.2 named fault outcomes and R reversible prefixes | K5, K6 | `fault C` in CC and R (§11.5, §17.6); `FAILED` runs reverse | `r-budget-prefix`, `r-fault-code`, `k5-failed-open-activation`, R-entry examples |
+
+**Lowering report** (one line per row, in processing order, in the outputs, §19.9):
+`<row> <function> <value or call>: <reason>; <lowering>`. It is informative: it names what the object uses, so a
+consumer pinned to an executor without that row fails loudly at admission rather than at run time.
+
+**Blocker report and blocker trap**, if a later ISA target ever needs one (§1.6): the report is
+`<code> <function> <value or call>: <reason>; <ISA constraint>; <id> <change>`; a blocker point lowered to the realisation
+that exists for its bounded cases, and on an execution outside them `fault 4` with the report naming the dependency.
+
+### 25.2 Wording items
+
+Every 0.2.x wording item has its answer in ISA 0.9, which this draft adopts:
+
+| 0.2.x item | ISA 0.9 answer |
+|---|---|
+| ISA-8 R fault status and reverse eligibility | K5, K6: R faults are terminal, no status reaches a CC caller, `FAILED` runs reverse |
+| ISA-3 editorial, `args` JSON spelling | E16.8 |
+| `qreg.slice` run-time `lo` | E12 |
+| `qreg` across CC calls | E11 |
+| code 10 in oracles | E13 |
+| certificate fields for the build record, budget table and `deferred_measurement` | no dedicated field; the metadata channel below is the contract (K13 binds the invocation and expected relation) |
+| fixed classical regions in §12.2 domains | K69–K74: a strict subdomain is evidence with its covered fraction; the checker owns the label |
+
+Certificates MUST retain build-record and resolved-table identities and deferred-measurement information in the existing documented metadata channel where no dedicated field exists, and a fixed-region strict subdomain MUST be labelled evidence with its covered fraction by the checker, treating a producer label as a checked request. [deps: DLT-19.9, DLT-25.2, DLT-18.7, ISA-12.1, ISA-12.2, ISA-12.3]
+
+### 25.3 Efficiency items
+
+Correct on ISA 0.9 by the stated construction; later ISA candidates on evidence only:
+
+| Item | Construction on ISA 0.9 |
+|---|---|
+| sampled in-place pairs | CC-level oracle/swap/inverse expansion (§8.7); K4 needs an exhaustive or library inverse-pair entry |
+| ISA-5 (two simultaneous slices of one `qreg`) | one action on the parent register, or a quantum-addressed gate |
+| ISA-9 (borrowing outside static Q regions) | clean allocation for CC-spanning borrows (§18.3) |
+| ISA-11 (host memory by reference) | promotion (§19.4) |
+| G-12 (oracle entry state at native addresses) | entry-state transfer by replay (§8.5) |
+| G-13 (interface-region base at call time) | a static arena (TDL-4) |
+| G-14 (predicated step machine in actions) | unrolled padded events (TDL-10) |
+| G-15 (payloads wider than 128 bits) | 2k − 1 oracle calls (§8.6); ISA 0.9 E17.1 would also permit a single wide target, which would change budgets and is not adopted |
+| G-17 (an oracle whose interface width is a run-time value) | static dispatch over every valid width (§8.4); a width-parametric region signature is a request to the ISA, bead `b-isa-spec-lpe` |
+| G-16 (fibers and interrupts in CC/R) | rewindable frames (§14.6) and poll points (§20.4) |
+| SQLite E1–E5 | per-function cell widths, frame width, an indirect-call row, a block-copy row, a classical-content hint for `in` regions |
+
+ISA-2 is not a gap (the R step counter, §17.6). ISA-6 is not a gap (fresh one-wire copy and measurement, §18.3). ISA-10 is settled by the ISA's test vectors. **LLVM changes needed**: none; the legality
+findings' LLVM bugs are outside the envelope (§21.1).
+
+### 25.4 ISA 0.9 lowering witnesses
+
+Each block states the results of an object the checker builds from the lowering of §25.1 and runs on the reference interpreter. These are lowering fixtures: they witness that the ISA 0.9 text supports the construction, not that a plugin emits it. A row whose ISA construct the executor cannot yet admit reports `blocked` (P-2), and the gate is not green until it runs.
+
+```text witness09=k1-width row=K1
+n=5 run: status=COMPLETED fault=none records=0
+n=0 run: status=FAILED fault=4 records=1
+```
+
+A run-time width with the `T-SIZE` check (§3.4), each wire flipped twice through a run-time slice, then a clean free.
+
+```text witness09=k1-table row=K1,E11,E12
+registers=65 run: status=COMPLETED fault=none records=0 registers_used=65
+```
+
+65 simultaneously live registers, one more than the former fallback file, named through a table of ids in device memory (§6.5), each reloaded, flipped twice through `qreg.from_id` and freed.
+
+```text witness09=k1-stale row=K1
+stale run: status=FAILED fault=4 records=1
+```
+
+A marker use through an id whose register was freed is code 4, with no later effect.
+
+```text witness09=k2-ledger row=K2
+n=3 run: status=COMPLETED fault=none records=0
+n=3 reverse: status=REVERSED memory_equals_entry=true
+fault-after-new run: status=FAILED fault=9 records=1
+fault-after-new reverse: status=REVERSED memory_equals_entry=true
+```
+
+R allocation, use and release (§7.5(b)), with whole-run reversal; then a fault with a live R-allocated register, reversed.
+
+```text witness09=k3-mint row=K3
+steps=3 run: status=COMPLETED result=1 fault=none records=0
+steps=2 run: status=COMPLETED result=0 fault=none records=0
+overdraw run: status=FAILED fault=4 records=1
+```
+
+A token minted on the device from a run-time value (§9.5): at B = 3 `@inc8` adds 1 to a zero input; at B = 2 the oracle's fault register takes the budget outcome and the payload stays 0; a tuple the ISA's validation refuses is code 4.
+
+```llvm example=tdl-co-width-top verdict=accept lowering=K1
+define internal void @body(ptr %e) {
+  %n = load i64, ptr %e
+  %h = call ptr @__bennett_qalloc(i64 0, i64 %n)
+  call void @__bennett_qfree(ptr %h)
+  ret void
+}
+define void @top(ptr %e) {
+  %c = call ptr @__bennett_qalloc(i64 0, i64 1)
+  call void @__bennett_ctrl(ptr %c, i64 0, ptr @body, ptr null, ptr %e)
+  call void @__bennett_qfree(ptr %c)
+  ret void
+}
+```
+
+```text lowering-report=tdl-co-width-top
+K1 @body %h: qalloc operand n has value set TOP inside a generation; classical n: qreg.new any n; Co n: padded to the full unsigned domain (TDL-10)
+```
+
+The recogniser's value set does not separate Cl from Co; the classical-or-padded choice is the TDL partition's (TDL-3). The padded form itself:
+
+```text witness09=tdl-co-width row=TDL-10
+w=1 run: mut=1
+w=2 run: mut=3
+w=3 run: mut=7
+w=1+2 state: 10010,11001
+```
+
+A Co width w in 1 to 3, padded to the bound 3: all three wires are allocated unconditionally by the caller and the operation on wire i is predicated on i < w. Basis inputs flip exactly the first w wires; a superposition of widths gives the entangled sum, which no classical inspection of w could produce.
+
+```text witness09=k4-native row=K4
+uncertified run: status=FAILED fault=4 records=1
+```
+
+Parametrised `qinplace` with no covering inverse-pair entry is code 4 before any effect; this is why a sampled pair keeps the CC expansion (§8.7).
+
+```text witness09=k5-failed-open-activation row=K5,K6
+run: status=FAILED fault=11 records=1 console=78
+reverse: status=REVERSED console= memory_equals_entry=true
+```
+
+An R fault with a program-defined code two activations deep, after a store and a console byte: the prefix is retained, nothing later runs, and reversal removes the record and restores the entry state through the open activations.
+
+## Appendix A. Changes from the ratified outline
+
+The text follows `spec/outline-0.2.md` and its rulings. Where it departs, the reason is below;
+every departure keeps or widens the capability the outline gives.
+
+| # | Outline | This text | Reason |
+|---|---|---|---|
+| A1 | §8.6: k + 2 calls, cleaning each slice's fault bundle by `qxor` from a copy computed by a separate variant W_c | 2k − 1 calls: a copy-out pair per extra slice, issued as CC-level region calls (§8.6) | the outline's `qxor` cleanup is neither `reverse` nor `recompute` of the bundle's own computing sequence (ISA §6.2, §6.4), so as an action it would be ill-formed; the copy-out pair cleans its temporaries by the oracle's involution (ISA §5.2), checked by `qreg.free` (ISA §3.3) |
+| A2 | §8.5 snapshot release | chunked unpreparation using retained classical bytes, then clean free | D02-10: whole qreg measurement exceeds ISA 0.8 width limits |
+| A3 | §6.5: every root in a static register file; unbounded instance counts are BLK-1 | a handle that never reaches memory is a direct CC `qreg` value with no bound; BLK-1 only for memory-reaching sites without a reference bound (§6.5) | ISA 0.8's dynamic SSA instances already name unboundedly many registers; the blocker's case shrinks to what ISA 0.8 truly lacks |
+| A4 | §6.5, §7.5(b): "statically bounded number of live instances", "static count" | an exact reference instance bound (self-disjoint sites, constant trip counts) (§6.5) | verdicts must not depend on a plugin's analysis precision |
+| A5 | TDL-2: states Cl, Co | Cl, M (materialised, both copies valid), Co (§10) | materialising an object before a slice reads it would otherwise make it Co, and later classical reads would trap (`T-TAINT-HOST`) on classical data |
+| A6 | TDL-3: slices outlined; stores in slices | slices never contain outliving stores or markers (those are events); each slice keeps a classical twin selected dynamically | the event forms of TDL-5 need the stores as events; the twin avoids slice cost when the data is classical at run time |
+| A7 | TDL-5(a), Co value: XOR v, then `xmask c`, then uncompute | one XOR of the mask c ⊕ v (c a classical argument of the slice) | equal effect, one event fewer |
+| A8 | TDL-5(a)/§18: "the uncompute is valid (ISA §6.2)" | events are applied as CC-level region calls with dynamic cleanliness checks; a static ISA action only when it satisfies ISA §6 (§18.2) | ISA §6.1 makes an oracle's value depend on every cell of a region it reads, so a static action cannot uncompute a slice after writing any arena cell; at CC level the uncompute is exact because the slice does not read the written cells |
+| A9 | TDL-8: combine into Φ; plugin register when null | per-slice fault registers retained and combined by `@firstfault`; in `compute`, copied between E_f and E_use (TDL-8) | the uncomputing call XORs the code out again, and in `compute` adjoint(E_f) would erase f's faults |
+| A10 | TDL-12 effects | inherited per-run virtual bindings and reversible state | D02-07 removes the action-effect narrowing |
+| A11 | TDL-7 history | clean control workspace; explicit fault/channel outcomes | D02-05 restores ratified E3; no implicit history channel |
+| A12 | §3.1: primitive `__bennett_nz_fault` | also `__bennett_nz_alloc`, `__bennett_nz_free`; reserved-name rules apply to producer inputs (§3.1) | the runtimes allocator must reach `lift.alloc`/`alloc`; runtimes bitcode uses reserved names |
+| A13 | §3.8: a `@cfunction` constant "resolves whenever the body is in the link" | it is dispatched by value and traps unless it equals some A(F) (§3.8, §5.2) | A(F) is fixed by the comparison link after the analysis, and a Julia-process address never equals it; Bennett.jl's `ptr @f` route keeps the capability (audit B-14) |
+| A14 | §7.2: thunk resolution as 0.1 C1 (a cycle is `BD-E-REGION-THUNK`) | a thunk on a cycle resolves to itself; the code is deleted | a rejection with no NS clause behind it |
+| A15 | §12.2: N1–N35 | adds N0 (LLVM's own lowering passes for coroutines, matrices, type tests, profiling, alloc tokens, guards) and extends N10, N11 | the completeness obligation: those families are defined by LLVM through those passes |
+| A16 | §12.2 N34: "point marks only" | marks are `!bennett.rstep` metadata, exempt from N3 and V2 | a mark must survive normalisation |
+| A17 | §16: the wrapper form | `@ref` always calls the region function's lproc; every reference object has a layout; layout rules of §16.3 (closure-reachable globals; A_tab so that table overflow never precedes heap exhaustion) | recursion of the region function itself, and an identity that does not change with unrelated globals |
+| A18 | §16.4: compare-tree blocks | names `^b<i>.s<j>` in creation order and `^b<i>.q<q>c<k>`/`d`/`r` for indirect calls | deterministic text and hashes |
+| A19 | – | §14.9 `blockaddress`/`indirectbr`, §13.1 all seven formats in one table, §14.7 `exit` from a CC device entry by `hostcall bennett.exit`, §8.7 B_min and `T-BUDGET` | outline B1 ("all of materialised LLVM") and run-time budgets for in-place pairs |
+| A20 | §25: wording items | adds certificate fields (build record, budget table, deferred measurement) and ISA §12.2 domains with a fixed classical region | NS §0, §5.1 require them in the certificate; NS §8 rung 4(a) is such a domain |
+| A21 | §20.1 `__bennett_platform_ram` | `__bennett_rt_platform_ram` | the reserved-prefix rule of §3.1 |
+| A22 | §21: corpus cases for the changed signatures | `spec-sem2-*` added beside the 0.1-ABI `spec-sem-*` | harness selects ABI 0.2 for `spec-sem2-*` and ABI v0 for the unchanged historical cases (bd `-566` resolved) |
+| A23 | §12.1: rules in table order | table order except that N33 runs immediately before N32 (§12.1) | any floating-point instructions introduced by N33 expansions are processed by N32; own-format carrier calls and bit-exact reconstruction remain as specified in §13.4 |
+
+## Appendix B. Example index
+
+Every checked example, the rules it exercises, and the checker capability (§1.5) and executor it
+needs. "isa-ref" is the Rust ISA reference interpreter `bennett-isa-ref` (`check`, `hash`,
+`run-oracle`, `step-check` exist; `run-cc`, `reverse`, `run-action`, `run-program` are requested,
+bd `b-isa-spec-xam`); "trace" uses the ABI 0.2 trace runtime; Python capabilities
+compute expected artefacts only (P-3).
+
+| Examples | Rules | Capability | Executor |
+|---|---|---|---|
+| `markers-ir`, `markers-c` | §3.2, §3.3 | parse, header | LLVM 18/20/23, clang 18/20/23 |
+| `operand-phi-codes`, `operand-code-table`, `operand-runtime-op`, `operand-bad-code`, `operand-class`, `operand-width-masked`, `operand-width-host` (+ lowering report) | §3.4, §5.3, PT5, PT6, §25.1 K1 | parse, recognise | LLVM; Python recogniser |
+| `recog-*` (8) | §3.1, §3.5 | parse, recognise | LLVM; Python |
+| `attr-*` (4) | §3.6 | parse, recognise | LLVM; Python |
+| `unwind-invoke` | §3.7 | parse, recognise | LLVM; Python |
+| `julia-jlplt`, `effect-lie` | §3.8 | parse, recognise | LLVM; Python |
+| `pt6-byte-width`, `pt6-subrange` (+ `state=`, `lowering-report=`) | PT6–PT8 byte/interval load rule | parse, recognise, state, lowering | LLVM; native 257/513-wire run |
+| `pt-variable-index` | §5.1, PT1, PT2, PT6, PT7 | parse, recognise | LLVM; Python |
+| `handle-*` (20) | §6.2–§6.6, PT3, PT4, PT8–PT11, §25.1 K1 | parse, recognise | LLVM; Python |
+| `qstore-twice` | §6.7 | parse, recognise | LLVM; Python |
+| `region-*` (18) | §7.1–§7.5, §25.1 K2 | parse, recognise | LLVM; Python |
+| `oracle-inc8`, `oracle-two-in`, `oracle-two-shapes`, `oracle-wide-out`, `budget-launch-arg`, `budget-device-computed` (+ lowering report) | §8.1–§8.6, §9.1, §9.5, §25.1 K3 | parse, recognise | LLVM; Python |
+| `oracle-empty-marker`, `oracle-empty-output`, `oracle-empty-fault`, `oracle-discard-return` | §8.2, §8.6, §16.2 | parse, recognise, map, check, run-oracle, state | LLVM; Rust run-oracle and CC hidden-target free/control |
+| `inplace-*` (4) | §8.7 | parse, recognise, run-oracle | LLVM; Python; isa-ref `run-oracle` (verification) |
+| `budget-table=rung4-mini` | §9.2 | driver | Python |
+| `tdl`, `tdl-overwrite`, `tdl-effect`, `tdl-angle` with `tdl=` and `state=` blocks | TDL-1–TDL-12, §18.2–§18.4 | parse, recognise, tdl, run-action | LLVM; Python TDL; isa-ref `run-action` (requested) |
+| `effect-console-r`, `effect-console-cc` | §11.1, §11.2 | parse, recognise, run-cc, reverse | isa-ref `run-cc`, `reverse` (requested) |
+| `n-flags`, `n-shift`, `n-undef`, `n-query`, `n-trap` | N1–N8, N10, N11, N14 | parse, normalise | LLVM; Python normaliser |
+| `handle-param-cross-entry` (+ `lowering-report=`, `state=`) | §6.5 parameter/result boundary liveness | parse, recognise, lowering, state | LLVM; native clang 18/23 bounded run; `k1-table` |
+| `handle-cross-entry` (+ `lowering-report=`, `state=`) | §6.5 entry-boundary liveness | parse, recognise, lowering, state | LLVM; native clang 18/23 bounded run; `k1-table` |
+| `n-narrow-lane` (+ `native=`) | N15/N21 narrow index | parse, normalise, native | LLVM; clang 18/23 |
+| `n-vector-i24` (+ `native=`) | N21 vector memory spacing | parse, normalise, native | LLVM; clang 18/23 |
+| `pointer-as270`, `gep-index-obj`, `gep-index-const` | §1.5, §16.4, §17.4 | parse, map, check, hash, run-oracle; pointer native | LLVM; Rust; clang 18/23 |
+| `n-gep-index` (+ `native=`, `state=`) | §16.4 pointer-index widths | parse, normalise, native, state | LLVM; clang 18/23; Rust mapped run-oracle |
+| `n-wide-sub` (+ `native=`) | N22 subtraction borrows | parse, normalise, native | LLVM; clang 18/23 |
+| `n-fpconv-wide`, `n-wide-intrinsics` (+ `native=`) | N22 repeated after N27/N32; §13.1 wide integer sides | parse, normalise, native | LLVM; clang 18/23 source/output |
+| `n-atomic-wrap`, `n-atomic-usub` (+ `native=`) | N9 wrap/conditional/saturating arithmetic | parse, normalise, native | LLVM; clang source/output |
+| `n-atomic-nand`, `atomic-nand` | N9, §16.4 | parse, normalise, native, map, check, hash, run-oracle | clang 18/23; Rust interpreter (16 rows) |
+| `n-budget-stage`, `budget-stage-runtime`, `budget-stage` | N24, §9.2 | parse, normalise, recognise, state | LLVM; Rust hashes, wrappers and token executions |
+| `pt5-int-wrap`, `pt4-wide-wrap`, `pt6-unknown-address` | PT4/PT5/PT6 modular integer pointers | parse, recognise, state | LLVM O0/instcombine; clang 18/23 native dispatch |
+| `pt2-wrap`, `pt5-range`, `pt5-range-load` | PT2, PT5, N3, N4 | parse, recognise, state | LLVM O0/instcombine; clang 18/23 materialised execution |
+| `n-vector`, `n-wideint`, `n-shadow-stack`, `n-memintrinsics`, `n-intrinsics`, `n-atomic` with `native=` | N9, N21, N22, N24, N26, N27 | parse, normalise, native | LLVM; Python; clang + seeds |
+| `residual-nsw`, `residual-clean` | §12.4 V1 | validate | Python |
+| `n-libm-{x86,arm,riscv}-*`, `libm-invalid-casts` | N33 own-format carriers, §13.4 | parse, normalise, state | LLVM 18/23 per-triple verifier; host carrier numerical execution |
+| `n-fmuladd` (+ `native=`), `n-fp80`, `n-libm` | N16, N32, N33, §13 | parse, normalise, native | LLVM; Python; clang + seeds |
+| `indirect-table`, `indirect-host-pointer` | §14.2 | parse, recognise | LLVM; Python |
+| `n-varargs` (+ `native=`) | N23, §14.3, N24 | parse, normalise, native | LLVM; Python; clang + seeds |
+| `n-eh` (+ `native=`) | N28, §14.4 | parse, normalise, native | LLVM; Python; clang++ and clang + seeds |
+| `sjlj-two-frames`, `fiber-pingpong`, `exit-status` with `cc-run=` | N29, N30, §14.5–§14.7, §19.2 | frontend, run-cc, reverse | clang; isa-ref `run-cc`, `reverse` (requested); native status computed |
+| `asm-musl-syscall`, `n-asm` | N31, §15.5 | parse, recognise, normalise | LLVM; Python |
+| `inc8`, `add2`, `rung4-mini`, `rung8-mini`, `listsum`, `switch5`: `lift=`, `linkmap=`, `object=`, `hash=`, `run=`, `step-check=` | §16.1–§16.5, §8.2 (IN, ARG, MEM_IN), §8.3 (ENTROPY), §9.4, §11.3, §14.2, §16.4 rows (memory, calls, recursion, alloc/free, phis, dispatch, switch) | map, check, hash, run-oracle, step-check | Python map; isa-ref `check`, `hash`, `run-oracle`, `step-check` |
+| `rung4-minidb`, `rung4-grover-tu` (+ `native=rung4-mini`) | §3.3, §8, §16.7 | frontend, recognise, native | clang 18/20/23; Python; clang native |
+| `sem2-ctrl`, `sem2-adj`, `sem2-compute` with `events=`, `state=` | §18.3, §18.4 | trace, run-action | trace runtime (ABI 0.2 for `adj` and `compute`); isa-ref `run-action` (requested) |
+| `version-flag` | §19.9 | parse, recognise | LLVM; Python |
+
+| `n-lower-widenable` | N0 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `n-defined-zero` | N12 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `pt6-zero-stack`, `pt6-zero-heap`, `pt8-zero-copy` | PT1/PT6/PT8/PT10, N24; DB/DN/DS | parse, recognise, state | LLVM 18/23 source O0 and materialised verification; clang O0/O3 widths 1/3, clean frees |
+| `pt3-pack257`, `pt3-pack256`, `pt3-unpack` | PT3/PT4/PT5, N21; DB/DN/DS | parse, recognise, state | LLVM 18/23 O0/instcombine/materialised; clang O0/O3 width guards, gates and clean free |
+| `pt10-lane-zero`, `n-constant-lane` | PT10, N15/N21 | parse, recognise, normalise, native, state | LLVM O0; clang 18/23 materialised widths and constant lanes |
+| `n-dynamic-lane` | N15 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `n-byval-copy` | N25 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `n-rstep-return` | N34 | parse, normalise | LLVM 18/20/23; Python normaliser |
+| `n-platform-mmio` | N35 | parse, normalise | LLVM 18/20/23; Python normaliser |
+
+| `validator-v2-clean`, `validator-v2-residue` | V2 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v3-clean`, `validator-v3-residue` | V3 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v4-clean`, `validator-v4-residue` | V4 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v5-clean`, `validator-v5-residue` | V5 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v6-clean`, `validator-v6-residue` | V6 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v7-clean`, `validator-v7-residue` | V7 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v8-clean`, `validator-v8-residue` | V8 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v9-clean`, `validator-v9-residue` | V9 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v10-clean`, `validator-v10-residue`, `validator-v10-carriers` | V10 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v11-clean`, `validator-v11-residue` | V11 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v12-clean`, `validator-v12-residue` | V12 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v13-clean`, `validator-v13-residue` | V13 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v14-clean`, `validator-v14-residue` | V14 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v15-clean`, `validator-v15-residue` | V15 | parse, validate | LLVM 18/20/23; independent validator |
+| `validator-v16-clean`, `validator-v16-residue` | V16 | parse, validate | LLVM 18/20/23; independent validator |
+
+| `pt12-root-return` | PT12 | parse, recognise | LLVM 18/20/23; points-to recogniser |
+
+| `binding-out-byte` | §8.2 OUT, §8.6 | parse, map, check, run-oracle | LLVM; isa-ref |
+| `binding-block-byte` | §8.3 BLOCK, §11.3 | parse, map, check, run-oracle | LLVM; isa-ref |
+| `binding-clock-read` | §8.3 CLOCK, §11.3 | parse, map, check, run-oracle | LLVM; isa-ref |
+| `binding-console-byte` | §8.3 CONSOLE, §11.3 | parse, map, check, run-oracle | LLVM; isa-ref |
+| `entry-replay-byte` | §8.5 entry-state transfer | parse, map, check, run-oracle | LLVM; isa-ref |
+| `indirectbr-two-blocks` | §14.9 indirectbr | parse, map, check, run-oracle | LLVM; isa-ref |
+
+| `driver-oracle-synthesis` | §19.3 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `driver-pointer-promotion` | §19.4 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `driver-comparison-layout` | §19.5 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `driver-snapshot-initializer` | §19.6 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `driver-closed-unit-fallback` | §19.7 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `driver-mixed-majors` | §19.8 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+| `platform-uart-write` | §20 | parse, recognise, state (driver contract) | LLVM; driver/native/ISA execution required |
+
+| `r-budget-prefix`, `r-fault-code` (+ lowering report and state) | N34, §25.1 K5, §17.6 | parse, recognise, lowering, state | LLVM; isa-ref `run-cc` and `reverse` on ISA 0.9 objects |
+| `k1-width`, `k1-table`, `k1-stale`, `k2-ledger`, `k3-mint`, `k4-native`, `k5-failed-open-activation` | §3.4, §6.5, §7.5(b), §8.7, §9.5, §25.1 | isa09 | isa-ref on ISA 0.9 objects; a row the executor cannot yet admit is `blocked`, naming `b-isa-spec-fuk.7` (P-2) |
+
+**Execution status of the former 35 omissions.** The historical frozen-checker
+failures are superseded by the round-3-fixes freeze receipt in the progress files
+and round-3 response, which identify the spec and independent interpreter snapshots
+and give per-family counts. All normalisation, binding/indirectbr and driver/platform
+adapters execute; the round-3 receipt also names every A–G witness executed in the gate.
+Index discovery alone is not P-2 execution. A green example count establishes the
+checks identified by its receipt, not equivalence of every hand-written object to
+every source rule.
+
+| `n-bitcast-lanes`, `n-bitcast-scalar`, `n-vp-merge`, `n-vp-select`, `n-vp-product` | N21 | parse, normalise, native | LLVM; clang |
+| `validator-v4-false-residue`, `n-defined-zero` | V4, N12, N27 | parse, recognise, normalise | LLVM; validator |
+
+| `shadow-stack-liveness` | §8.5, §16.4, §17.1/17.3 | state | native stack runtime; Rust run-oracle logical helper |
+| `entry-allocation-only`, `arena-logical-bounds` | §8.5, TDL-4, §16.2–§16.4 | state | native seed; Rust lifted helper |
+
+| `co-observe-write-observe` | TDL-2, TDL-11, §18.2 | state | native coherence seed, clang 18/23 |
+| `deferred-channel-adj-place` | §7.5(a), §18.2 | state | Rust run-action with deterministic record scheduler |
+| `co-loop-identity`, `co-loop-adj-overwritten` | TDL-7, TDL-10, §18.2 | state | Rust run-action; native inverse-domain check |
+| `generation-cancel`, `nested-cl-view`, `fault-output-lifetime`, `co-loop-adjoint`, `deferred-channel-adj`, `co-store-release` | TDL-2, TDL-7–TDL-11, §18.2–§18.4 | state | native lifecycle; Rust run-action |
+
+| `handle-stale-generation` | §6.1–§6.5, §18.3 T-DEAD | parse, recognise, state | LLVM reference N(s); native generation-tag dispatch |
+| `handle-setjmp-interproc` (+ lowering report/state) | §6.5, §7.5(b), §25.1 K1 | parse, recognise, lowering, state | LLVM; interprocedural reference bound; native setjmp |
+| `handle-setjmp-reentry` (+ lowering report/state) | §6.5, §25.1 K1 | parse, recognise, lowering, state | LLVM; reference bound; native setjmp |
+| `region-reversible-marker`, `region-reversible-qalloc-static`, `effect-console-r`, `sjlj-two-frames`, `fiber-pingpong`, `exit-status`, `platform-uart-write` (+ lowering report) | §25.1 K5 | recognise, lowering; success execution | isa-ref on ISA 0.9 objects |
+
+| `sjlj-two-frames-cc`, `fiber-pingpong-cc` | N29, N30 | frontend, native status | clang 18/20/23 and native 18/23 |
+
+## Appendix C. Generic intrinsics of LLVM 18, 20 and 23
+
+The completeness obligation of §12.2: every generic (target-independent) intrinsic name that
+LLVM 18, 20 or 23 defines (546 names, from each major's `IntrinsicEnums.inc`, with the target
+families `aarch64 amdgcn arm bpf dx hexagon loongarch mips nvvm ppc r600 riscv s390 spv ve wasm
+x86 xcore` excluded; those are §15.4), with the rule that removes or realises it. A name defined
+only by some majors carries them in brackets. None is `trapped`.
+
+| Rule | Count | Intrinsics |
+|---|---|---|
+| N0: the coroutine passes | 38 | `coro.align`, `coro.alloc`, `coro.alloca.alloc`, `coro.alloca.free`, `coro.alloca.get`, `coro.async.context.alloc`, `coro.async.context.dealloc`, `coro.async.resume`, `coro.async.size.replace`, `coro.await.suspend.bool`[20,23], `coro.await.suspend.handle`[20,23], `coro.await.suspend.void`[20,23], `coro.begin`, `coro.begin.custom.abi`[20,23], `coro.dead`[23], `coro.destroy`, `coro.done`, `coro.end`, `coro.end.async`, `coro.end.results`, `coro.frame`, `coro.free`, `coro.id`, `coro.id.async`, `coro.id.retcon`, `coro.id.retcon.once`, `coro.is_in_ramp`[23], `coro.noop`, `coro.prepare.async`, `coro.prepare.retcon`, `coro.promise`, `coro.resume`, `coro.save`, `coro.size`, `coro.subfn.addr`, `coro.suspend`, `coro.suspend.async`, `coro.suspend.retcon` |
+| N0: `lower-matrix-intrinsics` | 4 | `matrix.column.major.load`, `matrix.column.major.store`, `matrix.multiply`, `matrix.transpose` |
+| N0: `lowertypetests` | 5 | `icall.branch.funnel`, `public.type.test`, `type.checked.load`, `type.checked.load.relative`, `type.test` |
+| N0: `instrprof` | 9 | `instrprof.callsite`[20,23], `instrprof.cover`, `instrprof.increment`, `instrprof.increment.step`, `instrprof.mcdc.condbitmap.update`[18], `instrprof.mcdc.parameters`, `instrprof.mcdc.tvbitmap.update`, `instrprof.timestamp`, `instrprof.value.profile` |
+| N0: `alloc-token` | 1 | `alloc.token.id`[23] |
+| N0: `lower-guard-intrinsic`, `lower-widenable-condition` | 2 | `experimental.guard`, `experimental.widenable.condition` |
+| N5: deleted | 32 | `asan.check.memaccess`, `assume`, `clear_cache`, `codeview.annotation`, `dbg.assign`, `dbg.declare`, `dbg.label`, `dbg.value`, `donothing`, `eh.unwind.init`, `experimental.convergence.anchor`, `experimental.convergence.entry`, `experimental.convergence.loop`, `experimental.noalias.scope.decl`, `experimental.stackmap`, `fake.use`[20,23], `hwasan.check.memaccess`, `hwasan.check.memaccess.fixedshadow`[20,23], `hwasan.check.memaccess.shortgranules`, `hwasan.check.memaccess.shortgranules.fixedshadow`[20,23], `pcmarker`, `prefetch`, `pseudoprobe`, `reloc.none`[23], `seh.scope.begin`, `seh.scope.end`, `seh.try.begin`, `seh.try.end`, `sideeffect`, `var.annotation`, `xray.customevent`, `xray.typedevent` |
+| N5: operand 0 | 15 | `annotation`, `arithmetic.fence`, `expect`, `expect.with.probability`, `launder.invariant.group`, `protected.field.ptr`[23], `ptr.annotation`, `ptrauth.auth`, `ptrauth.auth.with.pc.and.resign`[23], `ptrauth.resign`, `ptrauth.sign`, `ptrauth.strip`, `ssa.copy`, `strip.invariant.group`, `threadlocal.address` |
+| N6: deleted | 4 | `invariant.end`, `invariant.start`, `lifetime.end`, `lifetime.start` |
+| N10: a constant | 10 | `allow.runtime.check`[20,23], `allow.sanitize.address`[23], `allow.sanitize.hwaddress`[23], `allow.sanitize.memory`[23], `allow.sanitize.thread`[23], `allow.ubsan.check`[20,23], `get.dynamic.area.offset`, `is.constant`, `objectsize`, `vscale` |
+| N11 | 5 | `cond.loop`[23], `debugtrap`, `looptrap`[23], `trap`, `ubsantrap` |
+| N16, then N32 | 1 | `fmuladd` |
+| N21 (§12.6), then N27/N32 per lane | 161 | `experimental.cttz.elts`, `experimental.get.vector.length`, `experimental.stepvector`[18], `experimental.vector.compress`[20,23], `experimental.vector.deinterleave2`[18], `experimental.vector.extract.last.active`[20,23], `experimental.vector.histogram.add`[20,23], `experimental.vector.histogram.uadd.sat`[23], `experimental.vector.histogram.umax`[23], `experimental.vector.histogram.umin`[23], `experimental.vector.interleave2`[18], `experimental.vector.match`[20,23], `experimental.vector.partial.reduce.add`[20], `experimental.vector.reverse`[18], `experimental.vector.splice`[18], `experimental.vp.reverse`, `experimental.vp.splat`[20], `experimental.vp.splice`, `experimental.vp.strided.load`, `experimental.vp.strided.store`, `get.active.lane.mask`, `loop.dependence.raw.mask`[23], `loop.dependence.war.mask`[23], `masked.compressstore`, `masked.expandload`, `masked.gather`, `masked.load`, `masked.scatter`, `masked.sdiv`[23], `masked.srem`[23], `masked.store`, `masked.udiv`[23], `masked.urem`[23], `stepvector`[20,23], `vector.deinterleave2`[20,23], `vector.deinterleave3`[23], `vector.deinterleave4`[23], `vector.deinterleave5`[23], `vector.deinterleave6`[23], `vector.deinterleave7`[23], `vector.deinterleave8`[23], `vector.extract`, `vector.insert`, `vector.interleave2`[20,23], `vector.interleave3`[23], `vector.interleave4`[23], `vector.interleave5`[23], `vector.interleave6`[23], `vector.interleave7`[23], `vector.interleave8`[23], `vector.partial.reduce.add`[23], `vector.partial.reduce.fadd`[23], `vector.reduce.add`, `vector.reduce.and`, `vector.reduce.fadd`, `vector.reduce.fmax`, `vector.reduce.fmaximum`, `vector.reduce.fmin`, `vector.reduce.fminimum`, `vector.reduce.fmul`, `vector.reduce.mul`, `vector.reduce.or`, `vector.reduce.smax`, `vector.reduce.smin`, `vector.reduce.umax`, `vector.reduce.umin`, `vector.reduce.xor`, `vector.reverse`[20,23], `vector.splice`[20], `vector.splice.left`[23], `vector.splice.right`[23], `vp.abs`, `vp.add`, `vp.and`, `vp.ashr`, `vp.bitreverse`, `vp.bswap`, `vp.ceil`, `vp.copysign`, `vp.ctlz`, `vp.ctpop`, `vp.cttz`, `vp.cttz.elts`[20,23], `vp.fabs`, `vp.fadd`, `vp.fcmp`, `vp.fdiv`, `vp.floor`, `vp.fma`, `vp.fmul`, `vp.fmuladd`, `vp.fneg`, `vp.fpext`, `vp.fptosi`, `vp.fptoui`, `vp.fptrunc`, `vp.frem`, `vp.fshl`, `vp.fshr`, `vp.fsub`, `vp.gather`, `vp.icmp`, `vp.inttoptr`, `vp.is.fpclass`, `vp.llrint`[20,23], `vp.load`, `vp.load.ff`[23], `vp.lrint`[20,23], `vp.lshr`, `vp.maximum`, `vp.maxnum`, `vp.merge`, `vp.minimum`, `vp.minnum`, `vp.mul`, `vp.nearbyint`, `vp.or`, `vp.ptrtoint`, `vp.reduce.add`, `vp.reduce.and`, `vp.reduce.fadd`, `vp.reduce.fmax`, `vp.reduce.fmaximum`[20,23], `vp.reduce.fmin`, `vp.reduce.fminimum`[20,23], `vp.reduce.fmul`, `vp.reduce.mul`, `vp.reduce.or`, `vp.reduce.smax`, `vp.reduce.smin`, `vp.reduce.umax`, `vp.reduce.umin`, `vp.reduce.xor`, `vp.rint`, `vp.round`, `vp.roundeven`, `vp.roundtozero`, `vp.sadd.sat`[20,23], `vp.scatter`, `vp.sdiv`, `vp.select`, `vp.sext`, `vp.shl`, `vp.sitofp`, `vp.smax`, `vp.smin`, `vp.sqrt`, `vp.srem`, `vp.ssub.sat`[20,23], `vp.store`, `vp.sub`, `vp.trunc`, `vp.uadd.sat`[20,23], `vp.udiv`, `vp.uitofp`, `vp.umax`, `vp.umin`, `vp.urem`, `vp.usub.sat`[20,23], `vp.xor`, `vp.zext` |
+| N23 (§14.3) | 3 | `va_copy`, `va_end`, `va_start` |
+| N24 (§17.3) | 14 | `addressofreturnaddress`, `eh.dwarf.cfa`, `eh.recoverfp`, `frameaddress`, `localaddress`, `localescape`, `localrecover`, `returnaddress`, `sponentry`, `stackaddress`[23], `stackrestore`, `stacksave`, `structured.alloca`[23], `swift.async.context.addr` |
+| N25 | 3 | `call.preallocated.arg`, `call.preallocated.setup`, `call.preallocated.teardown` |
+| N26 | 9 | `experimental.memset.pattern`[20,23], `memcpy`, `memcpy.element.unordered.atomic`, `memcpy.inline`, `memmove`, `memmove.element.unordered.atomic`, `memset`, `memset.element.unordered.atomic`, `memset.inline` |
+| N27 (§12.8) | 105 | `abs`, `adjust.trampoline`, `bitreverse`, `bswap`, `clmul`[23], `ctlz`, `ctpop`, `cttz`, `experimental.deoptimize`, `experimental.gc.get.pointer.base`, `experimental.gc.get.pointer.offset`, `experimental.gc.relocate`, `experimental.gc.result`, `experimental.gc.statepoint`, `experimental.patchpoint`[20,23], `experimental.patchpoint.i64`[18], `experimental.patchpoint.void`, `fshl`, `fshr`, `gcread`, `gcroot`, `gcwrite`, `init.trampoline`, `load.relative`, `loop.decrement`, `loop.decrement.reg`, `objc.arc.annotation.bottomup.bbend`, `objc.arc.annotation.bottomup.bbstart`, `objc.arc.annotation.topdown.bbend`, `objc.arc.annotation.topdown.bbstart`, `objc.autorelease`, `objc.autoreleasePoolPop`, `objc.autoreleasePoolPush`, `objc.autoreleaseReturnValue`, `objc.claimAutoreleasedReturnValue`[23], `objc.clang.arc.noop.use`, `objc.clang.arc.use`, `objc.copyWeak`, `objc.destroyWeak`, `objc.initWeak`, `objc.loadWeak`, `objc.loadWeakRetained`, `objc.moveWeak`, `objc.release`, `objc.retain`, `objc.retain.autorelease`, `objc.retainAutorelease`, `objc.retainAutoreleasedReturnValue`, `objc.retainAutoreleaseReturnValue`, `objc.retainBlock`, `objc.retainedObject`, `objc.storeStrong`, `objc.storeWeak`, `objc.sync.enter`, `objc.sync.exit`, `objc.unretainedObject`, `objc.unretainedPointer`, `objc.unsafeClaimAutoreleasedReturnValue`, `pdep`[23], `pext`[23], `preserve.array.access.index`, `preserve.static.offset`, `preserve.struct.access.index`, `preserve.union.access.index`, `ptrauth.blend`, `ptrauth.resign.load.relative`[23], `ptrauth.sign.generic`, `ptrmask`, `read_register`, `read_volatile_register`, `sadd.sat`, `sadd.with.overflow`, `scmp`[20,23], `sdiv.fix`, `sdiv.fix.sat`, `set.loop.iterations`, `smax`, `smin`, `smul.fix`, `smul.fix.sat`, `smul.with.overflow`, `sshl.sat`, `ssub.sat`, `ssub.with.overflow`, `stackguard`, `stackprotector`, `start.loop.iterations`, `test.set.loop.iterations`, `test.start.loop.iterations`, `thread.pointer`, `uadd.sat`, `uadd.with.overflow`, `ucmp`[20,23], `udiv.fix`, `udiv.fix.sat`, `umax`, `umin`, `umul.fix`, `umul.fix.sat`, `umul.with.overflow`, `ushl.sat`, `usub.sat`, `usub.with.overflow`, `write_register`, `write_volatile_register`[23] |
+| N28 (§14.4) | 5 | `eh.exceptioncode`, `eh.exceptionpointer`, `eh.return.i32`, `eh.return.i64`, `eh.typeid.for` |
+| N29 (§14.5) | 6 | `eh.sjlj.callsite`, `eh.sjlj.functioncontext`, `eh.sjlj.longjmp`, `eh.sjlj.lsda`, `eh.sjlj.setjmp`, `eh.sjlj.setup.dispatch` |
+| N31 (§15.2) | 1 | `callbr.landingpad` |
+| N31 (§15.2): the clock model | 2 | `readcyclecounter`, `readsteadycounter`[20,23] |
+| N33 (§13.4): runtimes libm | 21 | `acos`[20,23], `asin`[20,23], `atan`[20,23], `atan2`[20,23], `cos`, `cosh`[20,23], `exp`, `exp10`, `exp2`, `log`, `log10`, `log2`, `modf`[23], `pow`, `powi`, `sin`, `sincos`[20,23], `sincospi`[23], `sinh`[20,23], `tan`[20,23], `tanh`[20,23] |
+| N33 (§13.5) | 49 | `experimental.constrained.acos`[20,23], `experimental.constrained.asin`[20,23], `experimental.constrained.atan`[20,23], `experimental.constrained.atan2`[20,23], `experimental.constrained.ceil`, `experimental.constrained.cos`, `experimental.constrained.cosh`[20,23], `experimental.constrained.exp`, `experimental.constrained.exp2`, `experimental.constrained.fadd`, `experimental.constrained.fcmp`, `experimental.constrained.fcmps`, `experimental.constrained.fdiv`, `experimental.constrained.floor`, `experimental.constrained.fma`, `experimental.constrained.fmul`, `experimental.constrained.fmuladd`, `experimental.constrained.fpext`, `experimental.constrained.fptosi`, `experimental.constrained.fptoui`, `experimental.constrained.fptrunc`, `experimental.constrained.frem`, `experimental.constrained.fsub`, `experimental.constrained.ldexp`, `experimental.constrained.llrint`, `experimental.constrained.llround`, `experimental.constrained.log`, `experimental.constrained.log10`, `experimental.constrained.log2`, `experimental.constrained.lrint`, `experimental.constrained.lround`, `experimental.constrained.maximum`, `experimental.constrained.maxnum`, `experimental.constrained.minimum`, `experimental.constrained.minnum`, `experimental.constrained.nearbyint`, `experimental.constrained.pow`, `experimental.constrained.powi`, `experimental.constrained.rint`, `experimental.constrained.round`, `experimental.constrained.roundeven`, `experimental.constrained.sin`, `experimental.constrained.sinh`[20,23], `experimental.constrained.sitofp`, `experimental.constrained.sqrt`, `experimental.constrained.tan`[20,23], `experimental.constrained.tanh`[20,23], `experimental.constrained.trunc`, `experimental.constrained.uitofp` |
+| N33 (§13.5): the fenv state | 8 | `get.fpenv`, `get.fpmode`, `get.rounding`, `reset.fpenv`, `reset.fpmode`, `set.fpenv`, `set.fpmode`, `set.rounding` |
+| §13.1: bit-exact, unchanged | 2 | `copysign`, `fabs` |
+| N32 (§13.1): soft-float | 30 | `canonicalize`, `ceil`, `convert.from.arbitrary.fp`[23], `convert.from.fp16`[18,20], `convert.to.arbitrary.fp`[23], `convert.to.fp16`[18,20], `floor`, `fma`, `fptosi.sat`, `fptoui.sat`, `fptrunc.round`, `frexp`, `is.fpclass`, `ldexp`, `llrint`, `llround`, `lrint`, `lround`, `maximum`, `maximumnum`[20,23], `maxnum`, `minimum`, `minimumnum`[20,23], `minnum`, `nearbyint`, `rint`, `round`, `roundeven`, `sqrt`, `trunc` |
+| §16.4: `getelementptr` | 1 | `structured.gep`[23] |
+
+Total: 546 names (the `llvm.` prefix is omitted above).

@@ -1,0 +1,31 @@
+{
+ "reviewed": "2026-11-01: blocker bodies became lowering reports (\u00a725.1); budget-stage and its table carry ISA-0.9 hashes; handle states carry verdict accept; r-budget-prefix and r-fault-code states are executed results (\u00a717.6).",
+ "changed": [
+  "blocker=budget-device-computed",
+  "blocker=effect-console-r",
+  "blocker=exit-status",
+  "blocker=fiber-pingpong",
+  "blocker=handle-cross-entry",
+  "blocker=handle-param-cross-entry",
+  "blocker=handle-setjmp-interproc",
+  "blocker=handle-setjmp-reentry",
+  "blocker=handle-vec-unbounded",
+  "blocker=operand-width-host",
+  "blocker=platform-uart-write",
+  "blocker=pt6-subrange",
+  "blocker=r-budget-prefix",
+  "blocker=r-fault-code",
+  "blocker=region-reversible-marker",
+  "blocker=region-reversible-qalloc-dynamic",
+  "blocker=region-reversible-qalloc-static",
+  "blocker=sjlj-two-frames",
+  "budget-table=budget-stage",
+  "state=budget-stage",
+  "state=handle-cross-entry",
+  "state=handle-param-cross-entry",
+  "state=handle-setjmp-interproc",
+  "state=handle-setjmp-reentry",
+  "state=r-budget-prefix",
+  "state=r-fault-code"
+ ]
+}
