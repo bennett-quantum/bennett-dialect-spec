@@ -136,7 +136,7 @@ def read_commit(repo):
 
 class Interpreter:
     def __init__(self):
-        self.exe = ISA_DIR / 'source' / 'target' / 'debug' / 'bennett-isa-ref'
+        self.exe = ISA_DIR / 'source' / 'target' / 'release' / 'bennett-isa-ref'
         self.ready = False
         self.commit = None
         self.fingerprint = None
@@ -159,7 +159,7 @@ class Interpreter:
             return files
 
         before = source_hashes()
-        fingerprint = hashlib.sha256(json.dumps({'commit':commit,'files':before}, sort_keys=True).encode()).hexdigest()
+        fingerprint = hashlib.sha256(json.dumps({'commit':commit,'files':before,'profile':'release'}, sort_keys=True).encode()).hexdigest()
         if self.ready and self.fingerprint == fingerprint:
             return
         self.ready = False
@@ -168,7 +168,7 @@ class Interpreter:
         # the executable another checker process is still using.
         source = ISA_DIR.resolve() / ('source-'+fingerprint[:20])
         manifest = source / 'reference-interpreter' / 'Cargo.toml'
-        self.exe = manifest.parent / 'target' / 'debug' / 'bennett-isa-ref'
+        self.exe = manifest.parent / 'target' / 'release' / 'bennett-isa-ref'
         stamp = ISA_DIR / ('BUILD-'+fingerprint[:20]+'.json')
         with (ISA_DIR/'build.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)
@@ -184,10 +184,12 @@ class Interpreter:
                 after = source_hashes()
                 if before != after or before != copied or read_commit(ISA_SOURCE.parent)!=commit:
                     raise d.Fail('interpreter sources changed during snapshot; rerun to take a consistent copy')
-                command(['cargo', 'build', '--offline', '--manifest-path', manifest,
+                # Exhaustive execution checks require optimized code. Include the
+                # profile in the fingerprint to preserve earlier debug snapshots.
+                command(['cargo', 'build', '--release', '--offline', '--manifest-path', manifest,
                          '--target-dir', manifest.parent / 'target'], timeout=120)
                 stamp.write_text(json.dumps({'commit': commit,
-                    'source_sha256': fingerprint, 'files': before}, indent=2) + '\n')
+                    'source_sha256': fingerprint, 'profile': 'release', 'files': before}, indent=2) + '\n')
             (ISA_DIR/'BUILD.json').write_text(stamp.read_text())
         if read_commit(ISA_SOURCE.parent)!=commit:
             raise d.Fail("interpreter HEAD moved during build; rerun for a consistent snapshot")

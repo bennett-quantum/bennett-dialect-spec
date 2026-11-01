@@ -45,8 +45,10 @@ edition = "2021"
                 self.assertEqual(interpreter.call('run-program'), {})
                 first = interpreter.exe
                 self.assertTrue(first.is_file())
+                self.assertEqual(first.parent.name, 'release')
                 stamp = (cache / 'BUILD.json').read_text()
                 self.assertIn('conformance/src/lib.rs', json.loads(stamp)['files'])
+                self.assertEqual(json.loads(stamp)['profile'], 'release')
                 with patch.object(v, 'command', side_effect=AssertionError('unnecessary rebuild')):
                     v.Interpreter().build()
                 for path in (dep / 'src/lib.rs', ref / 'src/main.rs'):
