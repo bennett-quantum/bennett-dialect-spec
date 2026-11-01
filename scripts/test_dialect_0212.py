@@ -51,6 +51,25 @@ define {t} @from(i{n} %x) {{
                 self.verify(out,'23')
 
 
+    def test_constrained_comparison_operands(self):
+        from dialect_normalise import normalise
+        for major in d.MAJORS:
+            for op in ('fcmp','fcmps'):
+                for behavior in ('ignore','maytrap','strict'):
+                    for p,pred in enumerate('false oeq ogt oge olt ole one ord uno ueq ugt uge ult ule une true'.split()):
+                        text=f'''declare i1 @llvm.experimental.constrained.{op}.f64(double, double, metadata, metadata)
+define i1 @f(double %x, double %y) {{
+ %r = call i1 @llvm.experimental.constrained.{op}.f64(double %x, double %y, metadata !"{pred}", metadata !"fpexcept.{behavior}")
+ ret i1 %r
+}}
+'''
+                        out=normalise(text,major=major)
+                        stem='cmps' if op=='fcmps' and behavior!='ignore' else 'cmp'
+                        suffix='_rm' if behavior!='ignore' else ''
+                        tail=', i32 0' if suffix else ''
+                        self.assertIn(f'call i1 @__bennett_sf_{stem}_f64{suffix}(i64 %nz.0.r, i64 %nz.1.r, i32 {p}{tail})',out)
+                        self.verify(out,major)
+
 class InstantiationRequest(unittest.TestCase):
     def test_schema_canonicalisation_and_no_width_subset(self):
         import copy,json

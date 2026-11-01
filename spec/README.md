@@ -28,7 +28,7 @@ Rules for changing it:
     no example is removed or weakened to make the checker pass; the freeze gate is all green.
   - P-3: executed results come from independent executors (LLVM tools, native binaries, the Rust
     ISA reference interpreter `bennett-isa-ref`); Python computes expected artefacts only.
-- Run `python3 scripts/dialect_check.py` before anyone grades a draft; it must exit 0. (For 0.2 the
+- Run `python3 scripts/dialect_check_v02.py` before anyone grades this draft; it must exit 0. (For 0.2 the
   checker is being extended against the Rust interpreter in a separate job; until then the 0.2
   examples were executed by the writing job as its progress file records.)
 - Add every new example or stated result as a tagged block, so the checker executes it; an

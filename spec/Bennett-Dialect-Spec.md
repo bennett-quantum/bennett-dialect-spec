@@ -6974,6 +6974,12 @@ musl's `<fenv.h>` functions in `bennett-runtimes` do the same. Unconstrained ope
 to nearest and raise no flags, as LLVM assumes of the default environment. A `strictfp` call-site
 attribute on a marker is benign (§3.6).
 
+**Quiet and signaling comparison ABI.** N32 MUST lower `llvm.experimental.constrained.fcmp` to `i1 @__bennett_sf_cmp_B_rm(C_B, C_B, i32 P, i32 R)` and `llvm.experimental.constrained.fcmps` to the distinct `i1 @__bennett_sf_cmps_B_rm(C_B, C_B, i32 P, i32 R)`, with P exactly the 0..15 predicate encoding of §13.1 and R = 0 (these intrinsics have exception metadata but no rounding metadata); vector forms scalarise first, and no predicate-bit extension encodes signalingness.
+
+Both entries MUST compute the same LLVM predicate truth value, while quiet `cmp` raises invalid only for a signaling NaN operand and signaling `cmps` raises invalid for either quiet or signaling NaN, even for predicates false/true; neither raises divbyzero, overflow, underflow or inexact, and no comparison canonicalises or modifies its input bits.
+
+For `fpexcept.ignore`, the normaliser MUST use `i1 @__bennett_sf_cmp_B(C_B, C_B, i32 P)` for either intrinsic so the observable fenv is unchanged; for `fpexcept.maytrap` or `fpexcept.strict` it MUST use the corresponding `_rm` entry, OR invalid into the sticky flags and return the predicate without a host trap (the dialect's deterministic exception convention), identically on LLVM 18 and 23. The plain cmp entry therefore has no flag side effect, and every `_rm` comparison entry always records the flags it raises.
+
 All seven formats MUST retain own-format arithmetic and transcendental semantics, with vector operations scalarised first and identical deterministic carrier implementations in the materialised native and lifted builds. [deps: DLT-13.1, DLT-13.2, DLT-13.3, DLT-13.4, DLT-13.5, DLT-12.1-P1, ISA-4.2]
 
 ### 13.6 Examples

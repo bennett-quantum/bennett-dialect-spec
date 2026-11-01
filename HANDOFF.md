@@ -1,28 +1,28 @@
 # Handoff: bennett-dialect-spec
-## Checker follow-ups complete — 2026-11-01 12:24:39 UTC
 
-Both gates are green: required headless root gate **2834/2834, exit 0**;
-`bash scripts/pre-push` run once in its clean sibling worktree on `a0b7c47f8d5e`
-**2834/2834, exit 0**; validator Cargo tests passed. Hook removed its worktree.
-Receipts/logs: `scripts/.tmp/followups.json`, `followups.log`, `followups-pre-push.log`.
+Updated: 2026-11-01 15:59:39 UTC (real `date -u`).
 
-`0492c62` uses published `ISA-0.9.json` for exact clarification dependency membership.
-Audited current `ISA-0.9.statements.json`: every ledger ISA dependency is a section/clause,
-with no statement ID/text pins. Graph regeneration can add/change statements without a
-whole-graph hash/count assertion; missing declared dependencies still fail.
-`a0b7c47` builds immutable execution snapshots in release and includes profile in the
-fingerprint/receipt. Debug add2 reproduced at **175.38 s**; release **24.89 s**, both
-**65,536 exhaustive cases**, unchanged `6,0,9,1` budget and 180 s execution timeout.
-The original snapshot includes O(1) checkpoints from ISA `7193103`; source hashes verified.
-Both targeted snapshot regressions pass. No spec/sibling edits; ISA 0.8 grading unchanged.
-Beads **b-dialect-spec-cbt** and **b-dialect-spec-088** closed; JSONL exported. Nothing pushed.
-Full evidence and snapshot identities: top block of `scripts/dialect_check.PROGRESS.md`.
+**Running:** none. Draft **0.2.12**, eight consumer-chosen passes complete, awaiting council;
+ISA grading target remains **0.8**. Final pass commit carries this handoff. Spec SHA-256:
+`71e929f4d9af45ac539f16dec1c6c9d7e08a9500fa99d320ac2afafdc4b48c0b`.
+Superseded accepted 0.2.11 at eaad067 has exact-byte SHA `05101a18e04098cfca5fdfb52edc9d9027723455adf2569da2fa49ef7a47c7c1`;
+its separate freeze SHA 67157631…82ba is also retained in the header. Accepted 0.2.10
+@023f5a7 is unchanged; eight binding interpretations/new-rule distinctions are in
+`spec/errata-0.2.10.md`. SPEC_VERSIONS.toml unchanged. Nothing pushed.
 
-State (2026-10-31 ~12:50Z): draft 0.2.11 (compatible track, ISA 0.8) accepted by the sol and codex seats
-(round 10; gate 2834/2834; spec SHA 67157631…82ba); muse advisory for this track. 0.2.10 remains the last
-frozen receipt; 0.2.11 is the accepted draft. outline-0.3.md carries the maintainer's rulings D01-D22.
-Next: (1) the 33 evidence closures of b-dialect-spec-oxs as a staged job (gate rows per item); (2) the 0.3
-capability track (D15-D19) once ISA 0.9 is published (muse vote); (3) consumer re-pins: bennett-plugin is
-being re-pinned to 0.2.10 now and moves to 0.2.11 after the oxs evidence lands.
-Gate: `scripts/dialect_check_v02.py --json scripts/.tmp/<name>.json` headless (TMPDIR under scripts/.tmp).
-Orchestrator state: bennett/HANDOFF.md.
+**Next:** orchestrator's one-reviewer council round. Review brief and all eight dispositions:
+`docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`. Required headless gates passed,
+in order mkb/jjr/lbq/0na/dfd/1av/z7u/21a: 2840/2840, 2846/2846, 2854/2854, 2868/2868, 2873/2873, 2880/2880, 2888/2888, 2893/2893;
+zero failed/blocked rows. Receipts `scripts/.tmp/0212-<bead>.json`; validator Cargo tests
+1/1 after every pass; new checker units 4/4. New checks distinguish wording/ABI evidence
+from missing runtime numerical conformance. All 497 accepted tagged blocks retained.
+
+**Waiting:** mkb closed as a contract clarification; bp-z9k tracks plugin implementation.
+Seven dialect beads remain open as implementation blockers: jjr, lbq, 0na, dfd, 1av, z7u, 21a.
+New follow-ups: runtimes brt-agy (alignment), brt-4w7 (process context), brt-2qs (native detection);
+arith bennett-arith-4yg (PPC), bennett-arith-wvh (libm), bennett-arith-38c.1 (instances),
+bennett-arith-chn.1 (signaling); plugin bp-o0h (arbitrary formats), bp-q6e (comparisons);
+driver bennett-driver-i0v (native comparison), bennett-driver-q4d (instances).
+All twelve carry dialect-0.2.12/topic labels. Only exported .beads/issues.jsonl was committed
+in siblings; no sibling code edits. Existing oxs evidence work and 0.3/ISA0.9 capability
+track remain separate; no automatic closure or full runtime/DF claim follows from these gates.

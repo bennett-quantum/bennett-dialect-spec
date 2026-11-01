@@ -191,5 +191,26 @@
     "id": "z7u/4",
     "sentence": "The arith distribution MUST provide a documented offline generator accepting that request and producing matching-major ordinary bitcode plus a JCS manifest containing `schema: \"bennett-arith-instances-1\"`, the request SHA-256 as `request_sha256`, `bitcode_sha256`, and `exports` (array of objects with exact `symbol` and LLVM `function_type` strings sorted by symbol); every requested definition and its reachable closure MUST be present, with no hardware FP or host libm import, and linked before normalisation identically in both builds. Default prebuilt exponent widths are a cache, never a capability bound; generation failure is an explicit implementation blocker, not a successful link, unsupported-format verdict, or silent narrower substitute.",
     "witnesses": []
+  },
+  {
+    "bead": "21a",
+    "section": "13.5",
+    "id": "21a/1",
+    "sentence": "**Quiet and signaling comparison ABI.** N32 MUST lower `llvm.experimental.constrained.fcmp` to `i1 @__bennett_sf_cmp_B_rm(C_B, C_B, i32 P, i32 R)` and `llvm.experimental.constrained.fcmps` to the distinct `i1 @__bennett_sf_cmps_B_rm(C_B, C_B, i32 P, i32 R)`, with P exactly the 0..15 predicate encoding of \u00a713.1 and R = 0 (these intrinsics have exception metadata but no rounding metadata); vector forms scalarise first, and no predicate-bit extension encodes signalingness.",
+    "witnesses": []
+  },
+  {
+    "bead": "21a",
+    "section": "13.5",
+    "id": "21a/2",
+    "sentence": "Both entries MUST compute the same LLVM predicate truth value, while quiet `cmp` raises invalid only for a signaling NaN operand and signaling `cmps` raises invalid for either quiet or signaling NaN, even for predicates false/true; neither raises divbyzero, overflow, underflow or inexact, and no comparison canonicalises or modifies its input bits.",
+    "witnesses": []
+  },
+  {
+    "bead": "21a",
+    "section": "13.5",
+    "id": "21a/3",
+    "sentence": "For `fpexcept.ignore`, the normaliser MUST use `i1 @__bennett_sf_cmp_B(C_B, C_B, i32 P)` for either intrinsic so the observable fenv is unchanged; for `fpexcept.maytrap` or `fpexcept.strict` it MUST use the corresponding `_rm` entry, OR invalid into the sticky flags and return the predicate without a host trap (the dialect's deterministic exception convention), identically on LLVM 18 and 23. The plain cmp entry therefore has no flag side effect, and every `_rm` comparison entry always records the flags it raises.",
+    "witnesses": []
   }
 ]

@@ -1,3 +1,10 @@
+## Draft 0.2.12 — 21a — 2026-11-01
+
+new ABI + clarified flags: Distinct signaling comparison entry, exact operands and exception lowering; arith chn.1 / plugin bp-q6e; 21a open.
+Disposition and clauses: `docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`.
+Headless gate **2893/2893**, zero failed/blocked; `scripts/.tmp/0212-21a.json`.
+Validator `cargo test`: **1/1**, doc-tests 0; passed. Consumer implementation limits remain in beads.
+
 ## Draft 0.2.12 — z7u — 2026-11-01
 
 clarified names + new ABI: Concrete named-format carriers and static request schema; 77 verified name/base pairs; producer/plugin/driver follow-ups; z7u open.

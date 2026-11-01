@@ -39,3 +39,7 @@ The explicit exact-conversion and correct-rounding guarantees take priority over
 ## z7u — §13.1 arbitrary-format row
 
 “Format named by metadata” means the LLVM major’s named interpretation MDString and its format/carrier semantics, not an unbounded user-created APFloat precision/exponent schema. LLVM 23 Intrinsics.td and LangRef define to(value, format, rounding, saturation) and from(bits, format). Draft 0.2.12 publishes NEW concrete carrier operand spellings and a static request/manifest protocol; those new ABI details are not claimed to have existed in 0.2.10.
+
+## 21a — §§13.1, 13.5
+
+The generic “soft-float call of §13.1 with suffix _rm” does not merge the distinct LLVM quiet fcmp and signaling fcmps operations. Quiet-NaN invalid behavior must remain distinguishable. Draft 0.2.12 publishes the NEW cmps_B_rm spelling and exact operand/exception lowering in §13.5; the absence of an earlier spelling was a contract gap, not authority to silently substitute quiet comparison.

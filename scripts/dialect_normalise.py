@@ -448,6 +448,21 @@ class Normaliser:
                     self.decl(name,carrier,[f'i{n}'])
                     return [f'%nz.i.{r} = call {carrier} @{name}(i{n} {c["args"][0][2]})',
                             f'{i.res} = bitcast {carrier} %nz.i.{r} to {t}']
+                comparison=re.match(r'@llvm\.experimental\.constrained\.(fcmps?)\.',c['callee'])
+                if comparison:
+                    t=d.tstr(c['args'][0][0]);suffix,bw=FP[t]
+                    predicate=c['args'][2][2].removeprefix('!"').removesuffix('"')
+                    predicates='false oeq ogt oge olt ole one ord uno ueq ugt uge ult ule une true'.split()
+                    if predicate not in predicates:raise d.Fail('invalid constrained comparison predicate '+predicate)
+                    behavior=c['args'][3][2].removeprefix('!"').removesuffix('"')
+                    if behavior not in ('fpexcept.ignore','fpexcept.maytrap','fpexcept.strict'):raise d.Fail('invalid exception behavior '+behavior)
+                    flags=behavior!='fpexcept.ignore'
+                    stem='cmps' if comparison[1]=='fcmps' and flags else 'cmp'
+                    name=f'__bennett_sf_{stem}_{suffix}'+('_rm' if flags else '')
+                    types=[f'i{bw}',f'i{bw}','i32']+(['i32'] if flags else [])
+                    self.decl(name,'i1',types)
+                    args=[f'i{bw} %nz.{k}.{r}' for k in range(2)]+[f'i32 {predicates.index(predicate)}']+(['i32 0'] if flags else [])
+                    return [f'%nz.{k}.{r} = bitcast {t} {arg[2]} to i{bw}' for k,arg in enumerate(c['args'][:2])]+[f'{i.res} = call i1 @{name}('+', '.join(args)+')']
                 fm=re.match(r'@llvm\.(maxnum|minnum|maximum|minimum|maximumnum|minimumnum)\.',c['callee'])
                 if fm:
                     t=d.tstr(c['ret']);sfx,bw=FP[t];name='__bennett_sf_'+fm[1]+'_'+sfx
