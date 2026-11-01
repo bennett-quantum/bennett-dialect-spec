@@ -978,6 +978,9 @@ entry:
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             repo=Path(tmp)/'isa';src=repo/'reference-interpreter';(src/'src').mkdir(parents=True)
             (src/'Cargo.toml').write_text('[package]\nname="bennett-isa-ref"\nversion="0.0.0"\nedition="2021"\n')
+            dep=repo/'conformance';(dep/'src').mkdir(parents=True)
+            (dep/'Cargo.toml').write_text('[package]\nname="bennett-isa-conformance"\nversion="0.0.0"\nedition="2021"\n')
+            (dep/'src'/'lib.rs').write_text('pub fn witness() {}\n')
             (src/'README.md').write_text('Snapshot fixture\n')
             v.command(['git','-C',repo,'init','--quiet'])
             def commit(revision):
