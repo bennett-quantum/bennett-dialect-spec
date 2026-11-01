@@ -1,3 +1,11 @@
+## Draft 0.2.12 — round 11 acceptance and S1 follow-up — 2026-11-01
+
+Draft 0.2.12 accepted by the sol seat in round 11 (2026-11-01; 0 blocking; gate 2893/2893).
+Seven consumer gaps jjr, lbq, 0na, dfd, 1av, z7u and 21a remain open as implementation blockers.
+Acceptance and boundary samples do not establish full-domain accuracy or exact-flag implementation conformance.
+Item 1: headless gate 2893/2893, zero failed/blocked; validator cargo test 1/1.
+Checker repair pc2: immutable ISA source capture now fingerprints/copies its included ref-0.9 catalog; grading remains ISA 0.8. Snapshot regression failed before repair, then passed.
+
 ## Draft 0.2.12 — 21a — 2026-11-01
 
 new ABI + clarified flags: Distinct signaling comparison entry, exact operands and exception lowering; arith chn.1 / plugin bp-q6e; 21a open.

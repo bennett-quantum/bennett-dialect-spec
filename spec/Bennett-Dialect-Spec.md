@@ -1,6 +1,6 @@
 # Bennett LLVM Dialect — Specification, draft 0.2.12
 
-**Date:** 2026-11-01. **Status:** draft 0.2.12, from consumer-named gaps of 2026-11-01; awaiting council review.
+**Date:** 2026-11-01. **Status:** draft 0.2.12 accepted by the sol seat in round 11 (2026-11-01; 0 blocking; gate 2893/2893).
 This draft supersedes 0.2.11, accepted by the council's sol and codex seats in round 10
 (2026-10-31; gate 2834/2834), retained at git `eaad067` with accepted-text SHA-256
 `05101a18e04098cfca5fdfb52edc9d9027723455adf2569da2fa49ef7a47c7c1`.

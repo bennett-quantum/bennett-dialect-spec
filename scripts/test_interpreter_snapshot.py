@@ -31,6 +31,10 @@ name = "bennett-isa-conformance"
 version = "0.0.0"
 edition = "2021"
 ''')
+            (isa / 'spec').mkdir()
+            catalog = isa / 'spec/ref-0.9.json'
+            catalog.write_text('{}')
+            (ref / 'src/lib.rs').write_text('pub const CATALOG: &str = include_str!("../../spec/ref-0.9.json");\n')
             (ref / 'README.md').write_text('`run-program `\n')
             (ref / 'src/main.rs').write_text('fn main() { println!("{{}}"); }\n')
             (dep / 'src/lib.rs').write_text('pub fn witness() {}\n')
@@ -51,7 +55,7 @@ edition = "2021"
                 self.assertEqual(json.loads(stamp)['profile'], 'release')
                 with patch.object(v, 'command', side_effect=AssertionError('unnecessary rebuild')):
                     v.Interpreter().build()
-                for path in (dep / 'src/lib.rs', ref / 'src/main.rs'):
+                for path in (dep / 'src/lib.rs', ref / 'src/main.rs', catalog):
                     previous = interpreter.exe
                     path.write_text(path.read_text() + '// changed\n')
                     interpreter.build()

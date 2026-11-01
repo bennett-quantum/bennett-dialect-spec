@@ -146,6 +146,7 @@ class Interpreter:
         # Include both crates with their sibling layout: Cargo resolves the
         # interpreter's ../conformance path even for a non-test offline build.
         crates = (ISA_SOURCE, ISA_SOURCE.parent / 'conformance')
+        catalog = ISA_SOURCE.parent / 'spec' / 'ref-0.9.json'
 
         def source_hashes():
             files = {}
@@ -156,6 +157,8 @@ class Interpreter:
                         p = Path(directory) / name
                         if p.suffix == '.rs' or name in ('Cargo.toml', 'Cargo.lock', 'README.md'):
                             files[str(p.relative_to(ISA_SOURCE.parent))] = hashlib.sha256(p.read_bytes()).hexdigest()
+            if catalog.exists():
+                files['spec/ref-0.9.json'] = hashlib.sha256(catalog.read_bytes()).hexdigest()
             return files
 
         before = source_hashes()
@@ -180,6 +183,9 @@ class Interpreter:
                 for crate in crates:
                     shutil.copytree(crate, source / crate.name,
                                     ignore=shutil.ignore_patterns('target', '.git', '.tmp', '.beads'))
+                if catalog.exists():
+                    (source / 'spec').mkdir(exist_ok=True)
+                    shutil.copy2(catalog, source / 'spec/ref-0.9.json')
                 copied = {k: hashlib.sha256((source / k).read_bytes()).hexdigest() for k in before}
                 after = source_hashes()
                 if before != after or before != copied or read_commit(ISA_SOURCE.parent)!=commit:
