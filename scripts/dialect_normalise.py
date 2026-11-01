@@ -427,6 +427,27 @@ class Normaliser:
             b=i.text.split(' = ',1)[-1];op=i.op
             if op=='call' and ' asm ' not in b:
                 c=d.parse_call(i);m=re.match(r'@llvm\.(acos|asin|atan|atan2|cos|cosh|exp|exp10|exp2|log|log10|log2|modf|pow|powi|sin|sincos|sincospi|sinh|tan|tanh)\.',c['callee'])
+                arbitrary=re.match(r'@llvm\.convert\.(to|from)\.arbitrary\.fp\.', c['callee'])
+                if arbitrary:
+                    direction=arbitrary[1]
+                    fmt=c['args'][1][2].removeprefix('!"').removesuffix('"')
+                    widths={name:8 for name in ('Float8E5M2','Float8E5M2FNUZ','Float8E4M3','Float8E4M3FN','Float8E4M3FNUZ','Float8E4M3B11FNUZ','Float8E3M4','Float8E8M0FNU')}
+                    widths.update(Float6E3M2FN=6,Float6E2M3FN=6,Float4E2M1FN=4)
+                    if fmt not in widths:raise d.Fail('unknown LLVM arbitrary FP interpretation '+fmt)
+                    n=widths[fmt]
+                    t=d.tstr(c['args'][0][0] if direction=='to' else c['ret'])
+                    suffix,bw=FP[t];carrier=f'i{bw}'
+                    name=f'__bennett_sf_convert_{direction}_{fmt}_{suffix}'
+                    if direction=='to':
+                        modes={'round.tonearest':0,'round.downward':1,'round.upward':2,'round.towardzero':3,'round.tonearestaway':4}
+                        mode=c['args'][2][2].removeprefix('!"').removesuffix('"')
+                        if mode not in modes:raise d.Fail('unsupported explicit conversion rounding '+mode)
+                        self.decl(name,f'i{n}',[carrier,'i32','i1'])
+                        return [f'%nz.0.{r} = bitcast {t} {c["args"][0][2]} to {carrier}',
+                                f'{i.res} = call i{n} @{name}({carrier} %nz.0.{r}, i32 {modes[mode]}, i1 {c["args"][3][2]})']
+                    self.decl(name,carrier,[f'i{n}'])
+                    return [f'%nz.i.{r} = call {carrier} @{name}(i{n} {c["args"][0][2]})',
+                            f'{i.res} = bitcast {carrier} %nz.i.{r} to {t}']
                 fm=re.match(r'@llvm\.(maxnum|minnum|maximum|minimum|maximumnum|minimumnum)\.',c['callee'])
                 if fm:
                     t=d.tstr(c['ret']);sfx,bw=FP[t];name='__bennett_sf_'+fm[1]+'_'+sfx

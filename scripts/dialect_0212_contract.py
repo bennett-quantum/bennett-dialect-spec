@@ -12,6 +12,11 @@ def check_all(runner):
     from test_dialect_0212 import N0Resolution
     runner.check('coverage', '0212/mkb/n0-resolution-source', '§7.2 N0 order',
                  N0Resolution('test_widenable_definition_and_original_addresses').test_widenable_definition_and_original_addresses)
+    from test_dialect_0212 import CarrierABI, InstantiationRequest
+    runner.check('coverage', '0212/z7u/carriers', '§13.1 metadata carrier ABI',
+                 CarrierABI('test_arbitrary_names_and_operands').test_arbitrary_names_and_operands)
+    runner.check('coverage', '0212/z7u/request', '§13.1 request schema',
+                 InstantiationRequest('test_schema_canonicalisation_and_no_width_subset').test_schema_canonicalisation_and_no_width_subset)
     for item in json.loads(Path(__file__).with_name('dialect_0212_items.json').read_text()):
         def check(item=item):
             equal(item['id'], 'normative wording retained', True, item['sentence'] in runner.spec)

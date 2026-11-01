@@ -1,3 +1,10 @@
+## Draft 0.2.12 — z7u — 2026-11-01
+
+clarified names + new ABI: Concrete named-format carriers and static request schema; 77 verified name/base pairs; producer/plugin/driver follow-ups; z7u open.
+Disposition and clauses: `docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`.
+Headless gate **2888/2888**, zero failed/blocked; `scripts/.tmp/0212-z7u.json`.
+Validator `cargo test`: **1/1**, doc-tests 0; passed. Consumer implementation limits remain in beads.
+
 ## Draft 0.2.12 — 1av — 2026-11-01
 
 new accuracy/flag requirement: Full-domain carrier envelope and constrained flags; honest lowered reporting; bennett-arith-wvh; 1av open.

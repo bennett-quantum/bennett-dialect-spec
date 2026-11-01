@@ -35,3 +35,7 @@ The explicit exact-conversion and correct-rounding guarantees take priority over
 ## 1av — §§13.4–13.5
 
 “No correct-rounding claim” does not authorise an arbitrary deterministic non-numerical substitute for the named operation or waive the specified IEEE flags. The accepted text does not quantify its numerical error. The one-local-ulp carrier bound and precise constrained accuracy/flag policy in draft 0.2.12 are NEW requirements, not retroactive assertions that 0.2.10 contained a numeric bound or that measured sweeps prove a full-domain bound.
+
+## z7u — §13.1 arbitrary-format row
+
+“Format named by metadata” means the LLVM major’s named interpretation MDString and its format/carrier semantics, not an unbounded user-created APFloat precision/exponent schema. LLVM 23 Intrinsics.td and LangRef define to(value, format, rounding, saturation) and from(bits, format). Draft 0.2.12 publishes NEW concrete carrier operand spellings and a static request/manifest protocol; those new ABI details are not claimed to have existed in 0.2.10.

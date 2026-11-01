@@ -163,5 +163,33 @@
     "id": "1av/3",
     "sentence": "For `_rm` carrier transcendentals, implementations MUST choose a result within the same envelope on the requested side of the exact result for directed modes, use nearest-side selection for the two nearest modes, and raise IEEE invalid for a domain error or signaling NaN, divbyzero for a pole, overflow when the correctly rounded mathematical result overflows B, underflow when that result is tiny after rounding and inexact, and inexact iff the returned finite value differs from the exact mathematical result; approximation work alone MUST NOT set a flag on an exactly representable mathematical result. For nearest-side selection, compare the distances to the two B neighbours bracketing the exact result, with ties to even or away as requested; this constrained case is correctly rounded. Unconstrained carrier operations retain the one-ulp allowance. Flags for modf/powi follow their exact split/sequenced arithmetic semantics. The native-format musl libm accuracy policy remains the recorded, versioned musl implementation; the quantitative carrier envelope applies to every own-format carrier route.",
     "witnesses": []
+  },
+  {
+    "bead": "z7u",
+    "section": "13.1",
+    "id": "z7u/1",
+    "sentence": "**Arbitrary-format naming and carriers.** Format metadata MUST be the LLVM-major LangRef interpretation MDString, not a user-defined precision/exponent record; the integer carrier is exactly the interpretation's storage width, scalarised lane by lane by N21. LLVM 23's names are `Float8E5M2`, `Float8E5M2FNUZ`, `Float8E4M3`, `Float8E4M3FN`, `Float8E4M3FNUZ`, `Float8E4M3B11FNUZ`, `Float8E3M4`, `Float8E8M0FNU` (i8), `Float6E3M2FN`, `Float6E2M3FN` (i6), and `Float4E2M1FN` (i4). These intrinsics are absent on LLVM 18; the name set is the major's published set, not a list of formats that its current APFloat converter happens to implement.",
+    "witnesses": []
+  },
+  {
+    "bead": "z7u",
+    "section": "13.1",
+    "id": "z7u/2",
+    "sentence": "For each such name fmt and each B of \u00a713.1, N32 MUST emit `iN @__bennett_sf_convert_to_<fmt>_B(C_B, i32 R, i1 Sat)` for to-arbitrary (format MDString removed, rounding encoded by \u00a713.5, immediate saturation retained), and `C_B @__bennett_sf_convert_from_<fmt>_B(iN)` for from-arbitrary; fmt is spelled exactly as its case-sensitive MDString, N is its listed bit width, and results are integer bits / bitcast B respectively. Finite conversions use the named format's rounding, saturation and nonfinite rules with canonical NaNs; N1 defines a source-poison conversion result as zero bits, including unsaturated out-of-range FP4/FP6 inputs. A missing APFloat lowering is an implementation obligation, never permission to reject a valid named format or emit an unresolved numerical placeholder.",
+    "witnesses": []
+  },
+  {
+    "bead": "z7u",
+    "section": "13.1",
+    "id": "z7u/3",
+    "sentence": "**Static instantiation request v1.** The driver MUST collect required concrete arith instances before the final link and supply a UTF-8 JSON object with exactly `schema: \"bennett-arith-instantiations-1\"`, `llvm_major` (integer), `target_triple` (string), `data_layout` (LLVM string), and `entries` (array); a conversion entry has exactly `op: \"convert_to\" | \"convert_from\"`, `format` (the MDString above), and `base` (B suffix), and a powi entry has exactly `op: \"powi\"`, `base`, and `exponent_bits` (integer K, 1..8388608). A powi entry requests both `C_B @__bennett_sf_powi_<B>_i<K>(C_B, iK)` and `C_B @__bennett_sf_powi_<B>_i<K>_rm(C_B, iK, i32 R)` (the suffix `_rm` is last); a conversion entry requests its exact signature above. Duplicate entries denote one instance; canonical request bytes are JCS with entries sorted by (op, base, format or empty string, exponent_bits or zero).",
+    "witnesses": []
+  },
+  {
+    "bead": "z7u",
+    "section": "13.1",
+    "id": "z7u/4",
+    "sentence": "The arith distribution MUST provide a documented offline generator accepting that request and producing matching-major ordinary bitcode plus a JCS manifest containing `schema: \"bennett-arith-instances-1\"`, the request SHA-256 as `request_sha256`, `bitcode_sha256`, and `exports` (array of objects with exact `symbol` and LLVM `function_type` strings sorted by symbol); every requested definition and its reachable closure MUST be present, with no hardware FP or host libm import, and linked before normalisation identically in both builds. Default prebuilt exponent widths are a cache, never a capability bound; generation failure is an explicit implementation blocker, not a successful link, unsupported-format verdict, or silent narrower substitute.",
+    "witnesses": []
   }
 ]
