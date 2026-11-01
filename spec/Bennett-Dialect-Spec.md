@@ -241,9 +241,9 @@ other than the markers of §3.2 are:
 
 | Prefix | Who defines | Who may reference it |
 |---|---|---|
-| `__bennett_nz_` | nobody: **primitives**, lowered by the map (§16.4) and the CC/R lowering (§17.4) | the normaliser (§12) and runtimes bitcode |
+| `__bennett_nz_` | production: nobody; comparison-only native support exception (§17.7); **primitives**, lowered by the map (§16.4) and the CC/R lowering (§17.4) | the normaliser (§12) and runtimes bitcode |
 | `__bennett_sf_` | `bennett-arith` bitcode (§13) | the normaliser and runtimes bitcode |
-| `__bennett_rt_` | `bennett-runtimes` bitcode (§11, §14, §17, §20); the driver's layout objects `__bennett_rt_blk.<f>` (§14.9) | the normaliser, the driver's synthesised code (§19) and runtimes bitcode |
+| `__bennett_rt_` | `bennett-runtimes` bitcode (§11, §14, §17, §20); the driver's layout objects `__bennett_rt_blk.<f>` (§14.9) and comparison-only `__bennett_rt_native_layout` (§19.5) | the normaliser, the driver's synthesised code (§19) and runtimes bitcode |
 | `__bennett_dev_` | `bennett-runtimes` bitcode: device-model entry points and device state (§11.3) | the plugin's L lowering of effect markers and runtimes bitcode |
 
 The primitives are exactly:
@@ -10182,6 +10182,14 @@ division by zero and INT_MIN/−1 trap in the native build: on targets whose div
 not trap it inserts, after materialisation and outside the materialised module, a check that
 calls `__bennett_nz_fault` with code 5 or 6. Results compare by the outcome table of §18.7.
 
+**Comparison-only support exception.** Only after the materialised device module has been fixed, the native comparison backend MAY define the three `__bennett_nz_` primitives of §3.1 as native support, and the driver MUST emit `__bennett_rt_native_layout` as specified in §19.5; these definitions MUST NOT enter producer inputs, production device bitcode, region identity or the materialised module used by the ISA map.
+
+The native primitive support MUST reproduce the resolved device addresses, zero fill, live allocation sizes, nonreclaiming allocation/free history and fault outcomes of §§17.1/17.5, with capacity for every history admitted by the resolved heap budget (at most one heap record per byte since max(n,1) ≥ 1), without an arbitrary smaller record cap; host setup/resource failure MUST terminate comparison with an explicit infrastructure failure, never silently relocate the heap, choose defaults, use host malloc, or report a successful dialect outcome.
+
+**Definedness classifiers.** The comparison binary MUST detect the materialised memory faults of §17.5 (out-of-live-allocation access, use after free and invalid/double free), division by zero and signed division overflow, and reached explicit fault/unreachable paths; instrumentation or a checked memory adapter may supply these checks outside the materialised module, and UBSan-only coverage MUST NOT be reported as satisfying the memory-fault obligation.
+
+The harness MUST separately classify source inputs using instrumented original-input builds or a checked reference interpreter as in NS §3.2, report flagged inputs as undefined/excluded, and record the classifier's actual detection coverage; no classifier claims source UB erased by optimisation is detectable in the comparison binary.
+
 ## 18. Reference semantics
 
 ### 18.1 State
@@ -11205,6 +11213,8 @@ every function and the base of every global. The device `layout` (ISA §9.1) rep
 
 *(non-normative)* With data low and text high, H covers the data, heap and regions; function
 addresses are values only and never occupy device memory.
+
+**Native layout ABI v1.** The driver MUST define exactly one external constant `@__bennett_rt_native_layout = constant { i64, i64, i64 } { i64 1, i64 heap_base, i64 heap_limit_max }, align 8` in comparison-only support, with fields at byte offsets 0, 8 and 16 in target little-endian order and values from this same resolved §19.5 layout; runtimes declares that object and validates the version/range before use, with no weak/default definition. The third field is a byte capacity, not an end address; it includes shadow-stack allocations under §9.2. This object has no relationship to blockaddress identity objects `__bennett_rt_blk.<f>`.
 
 ### 19.6 Build-time snapshots
 

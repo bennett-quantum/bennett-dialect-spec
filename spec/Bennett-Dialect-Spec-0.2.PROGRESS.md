@@ -1,3 +1,10 @@
+## Draft 0.2.12 — 0na — 2026-11-01
+
+new ABI + clarification: Comparison-only primitive support and v1 layout; full detection beyond UBSan remains brt-2qs / bennett-driver-i0v; 0na open.
+Disposition and clauses: `docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`.
+Headless gate **2868/2868**, zero failed/blocked; `scripts/.tmp/0212-0na.json`.
+Validator `cargo test`: **1/1**, doc-tests 0; passed. Consumer implementation limits remain in beads.
+
 ## Draft 0.2.12 — lbq — 2026-11-01
 
 clarified: Ordered console vectors, static musl context, exact exit/flush and tier history; brt-4w7; lbq stays open.

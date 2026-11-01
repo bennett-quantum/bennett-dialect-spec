@@ -72,5 +72,40 @@
     "id": "lbq/2",
     "sentence": "For a C `main` entry, the runtimes entry wrapper MUST treat normal return as `exit(status)`, running registered exit handlers and flushing stdio exactly once under \u00a714.7 before the launch stub catches the exit pseudo-exception; explicit `exit` follows that same path, and `_Exit` bypasses handlers/flush as \u00a714.7 specifies.",
     "witnesses": []
+  },
+  {
+    "bead": "0na",
+    "section": "17.7",
+    "id": "0na/1",
+    "sentence": "**Comparison-only support exception.** Only after the materialised device module has been fixed, the native comparison backend MAY define the three `__bennett_nz_` primitives of \u00a73.1 as native support, and the driver MUST emit `__bennett_rt_native_layout` as specified in \u00a719.5; these definitions MUST NOT enter producer inputs, production device bitcode, region identity or the materialised module used by the ISA map.",
+    "witnesses": []
+  },
+  {
+    "bead": "0na",
+    "section": "17.7",
+    "id": "0na/2",
+    "sentence": "The native primitive support MUST reproduce the resolved device addresses, zero fill, live allocation sizes, nonreclaiming allocation/free history and fault outcomes of \u00a7\u00a717.1/17.5, with capacity for every history admitted by the resolved heap budget (at most one heap record per byte since max(n,1) \u2265 1), without an arbitrary smaller record cap; host setup/resource failure MUST terminate comparison with an explicit infrastructure failure, never silently relocate the heap, choose defaults, use host malloc, or report a successful dialect outcome.",
+    "witnesses": []
+  },
+  {
+    "bead": "0na",
+    "section": "17.7",
+    "id": "0na/3",
+    "sentence": "**Definedness classifiers.** The comparison binary MUST detect the materialised memory faults of \u00a717.5 (out-of-live-allocation access, use after free and invalid/double free), division by zero and signed division overflow, and reached explicit fault/unreachable paths; instrumentation or a checked memory adapter may supply these checks outside the materialised module, and UBSan-only coverage MUST NOT be reported as satisfying the memory-fault obligation.",
+    "witnesses": []
+  },
+  {
+    "bead": "0na",
+    "section": "17.7",
+    "id": "0na/4",
+    "sentence": "The harness MUST separately classify source inputs using instrumented original-input builds or a checked reference interpreter as in NS \u00a73.2, report flagged inputs as undefined/excluded, and record the classifier's actual detection coverage; no classifier claims source UB erased by optimisation is detectable in the comparison binary.",
+    "witnesses": []
+  },
+  {
+    "bead": "0na",
+    "section": "19.5",
+    "id": "0na/1",
+    "sentence": "**Native layout ABI v1.** The driver MUST define exactly one external constant `@__bennett_rt_native_layout = constant { i64, i64, i64 } { i64 1, i64 heap_base, i64 heap_limit_max }, align 8` in comparison-only support, with fields at byte offsets 0, 8 and 16 in target little-endian order and values from this same resolved \u00a719.5 layout; runtimes declares that object and validates the version/range before use, with no weak/default definition. The third field is a byte capacity, not an end address; it includes shadow-stack allocations under \u00a79.2. This object has no relationship to blockaddress identity objects `__bennett_rt_blk.<f>`.",
+    "witnesses": []
   }
 ]

@@ -23,3 +23,7 @@ The console shim MUST return ENOTTY for `ioctl(TIOCGWINSZ)`, ESPIPE for seeking,
 **Process context.** Before entering `<sym>`, the driver/runtimes preparation MUST establish a static single-thread musl process context with the supplied argc/argv/envp bytes, a null-terminated argv and envp, `environ`, program name, initial fenv and the libc/stdio state needed by the linked program; comparison-only Linux `_start` is permitted, but Linux ELF crt/TLS/auxv entry is not required in device tiers.
 
 For a C `main` entry, the runtimes entry wrapper MUST treat normal return as `exit(status)`, running registered exit handlers and flushing stdio exactly once under §14.7 before the launch stub catches the exit pseudo-exception; explicit `exit` follows that same path, and `_Exit` bypasses handlers/flush as §14.7 specifies.
+
+## 0na — §§3.1, 17.7, 19.5
+
+The “nobody: primitives” ownership row applies to production bitcode before ISA lowering, not native comparison support implementing those primitives after materialisation. Such support must preserve device layout and history. Draft 0.2.12 §19.5 publishes the new v1 layout transport ABI; that spelling is not imposed retroactively on 0.2.10. The existing memory/fault outcomes and North Star definedness classifiers are not waived by UBSan-only support.
