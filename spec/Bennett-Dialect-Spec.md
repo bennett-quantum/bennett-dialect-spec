@@ -6898,8 +6898,7 @@ After N21 every vector floating-point operation is scalar: §13.1 applies lane b
 
 ### 13.3 Formats beyond binary32 and binary64
 
-All seven formats of §13.1 are covered by the same table and contract (NS §3.2: "coverage-report
-lines until the library covers them"; `bennett-arith` covers them, so they are `lowered`). musl's
+All seven formats of §13.1 are required by the same table and contract (NS §3.2). A producer MUST report a route as `lowered` only when its linked implementation satisfies that complete contract; a missing numerical implementation is an implementation blocker, never permission to reject, trap or silently narrow the format capability. musl's
 `fmt_fp` (`printf("%Lf")`, rung 3) uses `x86_fp80` on x86-64 and `fp128` on AArch64 and RISC-V64.
 
 ### 13.4 Transcendentals and libm intrinsics (N33)
@@ -6946,6 +6945,12 @@ soft-float code itself and the same function runs in both builds; calls of
 runtimes/arith versions. No correct-rounding claim is required; bit-exact
 determinism is (NS §3.2). The carrier routines are linked bitcode definitions,
 normalised by this same pipeline, not new ISA primitives or unresolved host calls.
+
+**Accuracy envelope.** For each finite mathematical result of a §13.4 own-format carrier transcendental, the implementation MUST return a B value within one local ulp of that exact result, over the entire finite input domain; local ulp is the spacing of B's adjacent finite values bracketing the exact result, taking an exactly representable result as the lower endpoint (the upper endpoint at the largest finite value), with the least positive subnormal spacing at zero or in the subnormal interval. For ppcf128 use §13.1's ordered canonical-pair values. Special values, domain errors, poles, signed zeros and overflow results follow the named operation's mathematical/IEEE semantics rather than this finite-result envelope. At overflow the result is the correctly rounded overflow outcome for the requested mode. This is an error bound, not a general correct-rounding claim.
+
+The bound MUST apply separately to both fields of sincos/sincospi; modf MUST split the input exactly with truncation toward zero and preserve required zero signs, and powi MUST retain its specified repeated-squaring sequence with each multiplication/division rounded under §13.1, rather than claiming the one-ulp bound for the whole sequence.
+
+For `_rm` carrier transcendentals, implementations MUST choose a result within the same envelope on the requested side of the exact result for directed modes, use nearest-side selection for the two nearest modes, and raise IEEE invalid for a domain error or signaling NaN, divbyzero for a pole, overflow when the correctly rounded mathematical result overflows B, underflow when that result is tiny after rounding and inexact, and inexact iff the returned finite value differs from the exact mathematical result; approximation work alone MUST NOT set a flag on an exactly representable mathematical result. For nearest-side selection, compare the distances to the two B neighbours bracketing the exact result, with ties to even or away as requested; this constrained case is correctly rounded. Unconstrained carrier operations retain the one-ulp allowance. Flags for modf/powi follow their exact split/sequenced arithmetic semantics. The native-format musl libm accuracy policy remains the recorded, versioned musl implementation; the quantitative carrier envelope applies to every own-format carrier route.
 
 ### 13.5 Constrained intrinsics, `strictfp` and the floating-point environment
 

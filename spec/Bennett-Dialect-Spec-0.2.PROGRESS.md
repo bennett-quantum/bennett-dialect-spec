@@ -1,3 +1,10 @@
+## Draft 0.2.12 — 1av — 2026-11-01
+
+new accuracy/flag requirement: Full-domain carrier envelope and constrained flags; honest lowered reporting; bennett-arith-wvh; 1av open.
+Disposition and clauses: `docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`.
+Headless gate **2880/2880**, zero failed/blocked; `scripts/.tmp/0212-1av.json`.
+Validator `cargo test`: **1/1**, doc-tests 0; passed. Consumer implementation limits remain in beads.
+
 ## Draft 0.2.12 — dfd — 2026-11-01
 
 clarification + pair/flag definition: Exact high+low conversions and correctly rounded protected operations; fallback insufficient; bennett-arith-4yg; dfd open.

@@ -31,3 +31,7 @@ The “nobody: primitives” ownership row applies to production bitcode before 
 ## dfd — §§13.1, 13.5
 
 The explicit exact-conversion and correct-rounding guarantees take priority over APFloat implementation fallbacks. PPCDoubleDouble denotes high+low, not the legacy consecutive-106-bit approximation. A low component may not be discarded when the exact sum is representable in the destination. Sparse-tail loss and intermediate unsigned-low saturation are not permitted by the named-format reference. Draft 0.2.12 §13.1 makes canonical-pair rounding and flags explicit; no claim that the current arith publication already meets these guarantees is made.
+
+## 1av — §§13.4–13.5
+
+“No correct-rounding claim” does not authorise an arbitrary deterministic non-numerical substitute for the named operation or waive the specified IEEE flags. The accepted text does not quantify its numerical error. The one-local-ulp carrier bound and precise constrained accuracy/flag policy in draft 0.2.12 are NEW requirements, not retroactive assertions that 0.2.10 contained a numeric bound or that measured sweeps prove a full-domain bound.
