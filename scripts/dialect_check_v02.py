@@ -148,11 +148,15 @@ class Interpreter:
         crates = (ISA_SOURCE, ISA_SOURCE.parent / 'conformance')
 
         def source_hashes():
-            return {str(p.relative_to(ISA_SOURCE.parent)): hashlib.sha256(p.read_bytes()).hexdigest()
-                    for crate in crates for p in sorted(crate.rglob('*'))
-                    if p.is_file() and
-                    not any(x in ('target', '.tmp', '.git', '.beads') for x in p.relative_to(crate).parts) and
-                    (p.suffix == '.rs' or p.name in ('Cargo.toml', 'Cargo.lock', 'README.md'))}
+            files = {}
+            for crate in crates:
+                for directory, dirs, names in os.walk(crate):
+                    dirs[:] = sorted(n for n in dirs if n not in ('target', '.tmp', '.git', '.beads'))
+                    for name in sorted(names):
+                        p = Path(directory) / name
+                        if p.suffix == '.rs' or name in ('Cargo.toml', 'Cargo.lock', 'README.md'):
+                            files[str(p.relative_to(ISA_SOURCE.parent))] = hashlib.sha256(p.read_bytes()).hexdigest()
+            return files
 
         before = source_hashes()
         fingerprint = hashlib.sha256(json.dumps({'commit':commit,'files':before}, sort_keys=True).encode()).hexdigest()
