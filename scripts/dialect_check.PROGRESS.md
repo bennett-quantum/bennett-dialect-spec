@@ -1,3 +1,92 @@
+## Interpreter snapshot dependency repair — 2026-11-01 12:01:33 UTC
+
+Snapshot bead: **b-dialect-spec-piz** (closed). Production commits: `3679150`, `f39634c`;
+existing revision-fixture update: `eee2c6a`. Draft 0.2.11 and ISA 0.8 grading target unchanged
+(`../bennett-isa-spec/spec/Bennett-ISA-Spec.md`); no spec or sibling-repo edits.
+
+Snapshot layout is now `scripts/.isa-ref/source-<fingerprint>/reference-interpreter/` plus
+sibling `conformance/`. Fingerprints include both crates' source manifests/files and ISA HEAD,
+including uncommitted edits on an already-ready Interpreter. The manifest and executable remain
+inside reference-interpreter; explicit `--target-dir` overrides the pre-push CARGO_TARGET_DIR.
+The cache resolves to an absolute physical path, so the clean-worktree symlink reuses the same
+snapshot. Completed old snapshots are retained; only incomplete/unbuilt snapshots are recopied
+under the existing build lock. Directory traversal prunes Cargo targets and other ignored trees.
+
+Red→green: `scripts/test_interpreter_snapshot.py` initially reproduced the exact offline Cargo
+missing `bennett-isa-conformance` error. It now passes offline dependency resolution, README/CLI
+lookup, edits to either crate without HEAD changes, immutable executable retention, cache reuse,
+symlink reuse and inherited CARGO_TARGET_DIR. The existing HEAD-move fixture needed a sibling
+conformance crate; after updating it, both targeted snapshot tests pass (2/2).
+Initial full Python discovery: 93 tests, 36 errors (35 missing-graph subtest errors plus that now-fixed
+fixture); targeted rerun passed, without rerunning unrelated tests. Unit log:
+`scripts/.tmp/snapshot-fix-units.log`.
+
+Required full headless root command:
+
+```sh
+env -u DISPLAY -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS -u BROWSER TMPDIR=/home/tobias/Projects/bennett-workspace/bennett-dialect-spec/scripts/.tmp python3 scripts/dialect_check_v02.py --json scripts/.tmp/snapshot-fix.json
+```
+
+**2798/2834 passed; 36 failed; 0 blocked; exit 1.** Receipt: `scripts/.tmp/snapshot-fix.json`;
+log: `scripts/.tmp/snapshot-fix.log`. All driver-* checks and both driver-family rows pass.
+Interpreter HEAD `f3894f798cd0798b817cea0709af12527b4c967f`; fingerprint
+`536f207764806f18b6b2fd33475e082a55ba6ba0f8c004ee16d98f8e020a6d50`.
+
+Completed `bash scripts/pre-push`: **exit 1; 2799/2834 passed; 35 failed** on detached
+`f39634c32ee3` (same production checker as final HEAD). Validator cargo tests passed; every
+executable family passed, including 6/6 step-check rows. Log:
+`scripts/.tmp/snapshot-fix-pre-push.log`. The temporary worktree was removed by the hook.
+The first gate/pre-push attempts were interrupted after exposing slow traversal of sibling Cargo
+targets (cached check ~12 seconds); after pruning those trees (~0.12 seconds), both required gates
+were restarted and completed. Later commits only update tests, handoff/progress and Beads.
+
+Unrelated failures retained, not suppressed:
+
+- **b-dialect-spec-088** (open): exact check `step-check/add2` [ISA §14.2],
+  `bennett-isa-ref step-check <run>/add2.bisa ref --exhaustive --budget 6,0,9,1`,
+  timed out after 180 seconds in the root run; passed in the concurrent clean-worktree run.
+- **b-dialect-spec-cbt** (open): every coverage row below raises `FileNotFoundError` for
+  `/home/tobias/Projects/bennett-workspace/bennett-conformance/clauses/ISA-0.9-draft.json`.
+  These same 35 rows fail in both gates; the grading target remains ISA 0.8.
+
+Exact missing-graph failures:
+
+- `coverage/0211/I01`
+- `coverage/0211/I03`
+- `coverage/0211/I04`
+- `coverage/0211/I05`
+- `coverage/0211/I06`
+- `coverage/0211/I07`
+- `coverage/0211/I08`
+- `coverage/0211/I09`
+- `coverage/0211/I10`
+- `coverage/0211/I11`
+- `coverage/0211/I12`
+- `coverage/0211/I13`
+- `coverage/0211/I14`
+- `coverage/0211/I15`
+- `coverage/0211/I16`
+- `coverage/0211/I17`
+- `coverage/0211/I18`
+- `coverage/0211/I21`
+- `coverage/0211/I22`
+- `coverage/0211/I23`
+- `coverage/0211/I24`
+- `coverage/0211/I26`
+- `coverage/0211/I27`
+- `coverage/0211/I28`
+- `coverage/0211/I30`
+- `coverage/0211/I31`
+- `coverage/0211/I33`
+- `coverage/0211/I34`
+- `coverage/0211/I35`
+- `coverage/0211/I36`
+- `coverage/0211/I37`
+- `coverage/0211/I39`
+- `coverage/0211/I-0t9`
+- `coverage/0211/I-0y2`
+- `coverage/0211/I-gwf`
+
 ## Round-8 final freeze — 0.2.10 — 2026-10-30
 
 **2767/2767 passed; 0 failed; 0 blocked/unavailable. Baseline 2732 → 2767.**
