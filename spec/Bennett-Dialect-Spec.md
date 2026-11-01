@@ -1,13 +1,16 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.11
+# Bennett LLVM Dialect — Specification, draft 0.2.12
 
-**Date:** 2026-10-31. **Status:** draft 0.2.11, from outline-0.3 rulings of 2026-10-31, **accepted by the council's sol and codex seats in round 10** (2026-10-31; 0 blocking; gate 2834/2834; muse advisory for the compatible track per the maintainer ruling of 2026-10-31).
-This draft supersedes accepted 0.2.10, retained in git at spec SHA-256 `d4f3c1a88391cc147f8c8fa4f80f82852e3ebe6f880610fc16cd5151f33d7206`.
+**Date:** 2026-11-01. **Status:** draft 0.2.12, from consumer-named gaps of 2026-11-01; awaiting council review.
+This draft supersedes 0.2.11, accepted by the council's sol and codex seats in round 10
+(2026-10-31; gate 2834/2834), retained in git at spec SHA-256
+`67157631837887fabb412b762d571157f71dbb79bb9ff13331ec692ce7ad82ba`.
+Accepted 0.2.10 and its SHA are retained by `errata-0.2.10.md`; its text is unchanged.
 The grading target remains Bennett ISA **0.8**. [deps: DLT-front-P2, DLT-1.3, DLT-23]
 
-**Versioning.** Dialect 0.2.11: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4, effects 0.2.4, norm 0.2.8, map 0.2.9, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8. [deps: DLT-front-P2, DLT-23]
-The **full version string** (`0.2.11`) is the compatibility unit (§23): drafts are not compatible with each other. [deps: DLT-front-P2, DLT-23]
+**Versioning.** Dialect 0.2.12: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4, effects 0.2.4, norm 0.2.8, map 0.2.9, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8. [deps: DLT-front-P2, DLT-23]
+The **full version string** (`0.2.12`) is the compatibility unit (§23): drafts are not compatible with each other. [deps: DLT-front-P2, DLT-23]
 The compatible track MUST retain existing marker signatures, canonical map and externally visible reference behaviour while clarifying inherited rules and supplying closure evidence. [deps: DLT-front-P2, DLT-3.2, DLT-16, DLT-23]
-Every new or changed normative sentence MUST end with a dependency declaration naming its DLT or ISA statement or clause dependencies. [deps: DLT-1.5, DLT-23]
+Declared dependency markers are retained for historical context; the council withdrew the requirement on 2026-10-31 (CLAUDE.md rule 12).
 ISA 0.9 adoption remains in the separate 0.3 track described by `outline-0.3.md`, D15–D19; this draft does not adopt those operations.
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -2521,6 +2524,10 @@ that call's result; then `resolve(F) = resolve(G)`, except that a thunk on a cyc
 resolves to itself (it is an ordinary defined function whose execution recurses until a budget or
 the host stops it; 0.1's `BD-E-REGION-THUNK` is deleted).
 
+**N0 and resolution order.** Before testing the forwarding-thunk predicate or freezing candidates, the plugin MUST apply the N0 passes of §12.2 to the virtual device bodies used by S2; §7.2 resolution then uses those bodies, and §7.3 hashes their materialised closures.
+
+The plugin MUST retain A(S) for every original source function or alias whose address reaches the region operand, dispatching that address to its post-N0 resolved candidate even when N0 removes the forwarding call; a declaration remaining after N0 is still F(8), but an intrinsic call removed by N0 MUST NOT turn its containing defined body into an external candidate.
+
 **Dispatch.** The region operand is classical data. The plugin compiles a body for every
 candidate. At run time the operand's value is compared, by the compare tree of §14.2 over the
 sorted keys, with A(S) of every **source** S (every function or alias that resolves into the
@@ -2591,7 +2598,7 @@ Only the rules the north star requires:
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). Standalone adj uses the deterministic
   latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
-  `lowered` entry with source `dialect-0.2.11:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.12:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item). [deps: DLT-7.5, DLT-19.9, DLT-25.2]
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -3937,7 +3944,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.11. [deps: DLT-9.2, DLT-23]
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.12. [deps: DLT-9.2, DLT-23]
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -11110,7 +11117,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.11 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.12 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -11230,14 +11237,14 @@ Mixed-major bitcode links within the tested envelope MUST use its newest reader 
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.11;isa-0.8`; the driver refuses a plugin whose string differs. [deps: DLT-19.9, DLT-23] One plugin build per LLVM
+`dialect-0.2.12;isa-0.8`; the driver refuses a plugin whose string differs. [deps: DLT-19.9, DLT-23] One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
 pipeline, normaliser_version: "0.2.8"}` and `bindings.dialect_mapping_version = "0.2.9"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.11:<rule id>` (e.g. `dialect-0.2.11:N33`); the
+report (ISA §13), whose `source` field is `dialect-0.2.12:<rule id>` (e.g. `dialect-0.2.12:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved, including each shape's selection_identity, final semantic identity,
 resolved components and frozen layout capacities under §9.2) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
@@ -11251,7 +11258,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.11"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.12"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`). [deps: DLT-19.9, DLT-23]
 
@@ -11657,10 +11664,10 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.11`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.12`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other. [deps: DLT-23, DLT-19.9]
-- The compatible clarifications and PT12 N9 update transfer revise the full dialect to `0.2.11`. [deps: DLT-5.2, DLT-12.2-P11, DLT-23]
+- The consumer-gap dispositions revise the full dialect to `0.2.12`. [deps: DLT-5.2, DLT-12.2-P11, DLT-23]
   The lifting map remains `0.2.9` (global-numbering correction); `norm`, `handles` and
   `regions` remain `0.2.8`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
   asm and corpus remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked

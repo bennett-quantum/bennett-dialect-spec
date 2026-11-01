@@ -1,3 +1,10 @@
+## Draft 0.2.12 — mkb — 2026-11-01
+
+clarified: N0 precedes thunk resolution; original source dispatch addresses retained; errata published; plugin follow-up bp-z9k.
+Disposition and clauses: `docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`.
+Headless gate **2840/2840**, zero failed/blocked; `scripts/.tmp/0212-mkb.json`.
+Validator `cargo test`: **1/1**, doc-tests 0; passed. Consumer implementation limits remain in beads.
+
 ## Draft 0.2.11 pre-flight freeze receipt — 2026-10-31
 
 **2834/2834 passed; 0 failed; 0 blocked/unavailable. Baseline 2767 → 2834.**

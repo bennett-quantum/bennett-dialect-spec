@@ -1,9 +1,11 @@
 # spec/
 
-`Bennett-Dialect-Spec.md` is the normative text: draft 0.2 (2026-10-29), written from the ratified
-outline `outline-0.2.md` (its maintainer rulings at the end), **not yet graded** by the
-three-model council. It replaces draft 0.1, which the narrowing audit
-(`../docs/audit/2026-10-29-dialect-0.1-narrowing-audit.md`) rejected; git keeps 0.1. It targets
+`Bennett-Dialect-Spec.md` is draft **0.2.12** (2026-11-01), from eight consumer-named gaps,
+awaiting council review. It supersedes accepted draft 0.2.11 (round 10, sol/codex);
+accepted 0.2.10 is retained in git, with binding interpretations in
+[`errata-0.2.10.md`](errata-0.2.10.md). The reviewer disposition table is in
+[`../docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`](../docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md).
+It targets
 ISA 0.8 (`../bennett-isa-spec/spec/`, settled) and is graded against it. `bennett_markers.h` is the
 normative C/C++ header of the marker ABI (section 3.3). `Bennett-Dialect-Spec-0.2.PROGRESS.md` is
 the writing job's log. Council records and the runner live in the `bennett` meta repo

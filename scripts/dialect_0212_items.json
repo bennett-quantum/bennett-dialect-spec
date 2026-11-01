@@ -1,0 +1,20 @@
+[
+  {
+    "bead": "mkb",
+    "section": "7.2",
+    "id": "mkb/1",
+    "sentence": "**N0 and resolution order.** Before testing the forwarding-thunk predicate or freezing candidates, the plugin MUST apply the N0 passes of \u00a712.2 to the virtual device bodies used by S2; \u00a77.2 resolution then uses those bodies, and \u00a77.3 hashes their materialised closures.",
+    "witnesses": [
+      "normalise/n-lower-widenable"
+    ]
+  },
+  {
+    "bead": "mkb",
+    "section": "7.2",
+    "id": "mkb/2",
+    "sentence": "The plugin MUST retain A(S) for every original source function or alias whose address reaches the region operand, dispatching that address to its post-N0 resolved candidate even when N0 removes the forwarding call; a declaration remaining after N0 is still F(8), but an intrinsic call removed by N0 MUST NOT turn its containing defined body into an external candidate.",
+    "witnesses": [
+      "normalise/n-lower-widenable"
+    ]
+  }
+]

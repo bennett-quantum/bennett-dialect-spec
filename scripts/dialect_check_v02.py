@@ -276,6 +276,19 @@ from dialect_flow import Flow
 
 
 class Analysis02(Flow, d.Analysis):
+    def resolve(self, name, seen=None):
+        # S2 observes N0's virtual bodies; keep source addresses/atoms intact.
+        if not hasattr(self, '_n0_resolution_module'):
+            from dialect_normalise import lower_llvm_intrinsics
+            self._n0_resolution_module = d.Module(expanded_types(
+                lower_llvm_intrinsics(self.m.text, str(getattr(self, 'major', None) or d.MAJORS[0]))))
+        original = self.m
+        try:
+            self.m = self._n0_resolution_module
+            return Flow.resolve(self, name, seen)
+        finally:
+            self.m = original
+
     def first_candidates(self):
         # §1.5: first region operand (both operands of an inplace pair).
         for f in self.funcs():
@@ -308,8 +321,8 @@ def recognise(text, **options):
     try:
         a.s1()
         for version in re.findall(r'!"bennett.dialect", !"([^"\n]+)"', text):
-            if version != "0.2.11":
-                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.11; actual " + version)
+            if version != "0.2.12":
+                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.12; actual " + version)
         a.analyse()
         a.region_rules()
         if options.get("rmode"):a.reversible |= a.closure(options["rmode"].lstrip("@"))
@@ -597,6 +610,8 @@ class Runner:
                     self.check(TAG_FAMILY[tag], ident, 'P-2', lambda t=tag:self.unsupported(t,'python3 scripts/dialect_check.py --family '+TAG_FAMILY[t], 'b-dialect-spec-qxd'))
         from dialect_0211_contract import check_all
         check_all(self)
+        from dialect_0212_contract import check_all as check_0212
+        check_0212(self)
         return self.rows
 
 
