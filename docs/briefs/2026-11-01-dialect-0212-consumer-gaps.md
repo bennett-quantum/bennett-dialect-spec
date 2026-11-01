@@ -6,3 +6,4 @@ Accepted 0.2.10 stays in git at 023f5a7; errata are a separate binding interpret
 | Bead | Reading adopted and why | Clauses touched | Kind | Consumer impact |
 |---|---|---|---|---|
 | mkb | N0 before resolve; S2 already models normalisation and N0 requires true | §§7.2, 12.2 N0 | clarified | Original source addresses retained; plugin bp-tr5 needs implementation evidence |
+| jjr | Aligned C wrapper over exact primitive; unmodified C needs ABI alignment | §§16.9, 17.1 | clarified | Current odd-size thin malloc is an implementation blocker; keep jjr open |

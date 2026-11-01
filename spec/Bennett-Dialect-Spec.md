@@ -9467,8 +9467,8 @@ budget=100,0,512,4 -> status=ok cases=256 input_and_memory_bits=8
 
 ### 16.9 Example: rung 2 (heap, phis, a loop, `free`)
 
-A linked list of n nodes built with `malloc` (the runtimes allocator over `lift.alloc`, shown with
-its code), summed and freed. n comes from a 2-wire `IN` register zero-extended to `i8`:
+A linked list of n nodes built with `malloc` (a specialised 16-byte-call witness of the runtimes allocator over `lift.alloc`, shown with
+its code; the general C wrapper is specified in §17.1), summed and freed. n comes from a 2-wire `IN` register zero-extended to `i8`:
 
 ```llvm lift=listsum region=@listsum desc=IN(2,zext);tgt=8
 define ptr @malloc(i64 %n) {
@@ -9983,6 +9983,14 @@ There is one classical memory, shared by H, CC, R and the entry state of every L
   code: executions in which they influence a result are *layout-dependent* (NS §3.2; §24 D12),
   validated against the reference interpreter.
 - **Single thread**: atomics and volatile are sequentialised (N9; NS §3.2; §24 D24).
+
+**C allocation alignment.** The `__bennett_nz_alloc(n)` primitive MUST retain ISA §7.1's exact byte bump by max(n,1), zero fill, requested-size allocation record and nonreclaiming history; neither backend may insert hidden alignment into that primitive.
+
+The C `malloc`/`calloc` wrappers MUST provide the target ABI's `max_align_t` alignment by requesting a rounded extent from that primitive: with a = ABI alignment of `max_align_t`, allocate a × ceil(max(n,1)/a) bytes, checking multiplication/rounding overflow as fault 2 before mutation; `free` passes the returned base, and both builds use the same wrapper and history.
+
+If another runtime allocation leaves the next primitive address unaligned, runtimes MUST first allocate the minimal positive padding to reach the next a-aligned address, as an explicit ordinary primitive allocation charged to the same heap/history; it MUST track the next byte address across every runtime primitive allocation, and neither backend may conceal that padding or round a primitive result. Overflow/padding-budget failure faults before the corresponding allocation mutation. A heap with no intervening unaligned request needs no padding allocation.
+
+The §16.9 thin wrapper is a specialised witness for its only allocation size, 16 bytes (already aligned on its target), not a replacement for C allocation alignment after arbitrary odd-sized requests. Padding belongs to the wrapper's live allocation and budget charge; it does not change the primitive. Aligned allocation with a stronger requested alignment remains a runtimes operation, not a new primitive.
 
 ### 17.2 Layout
 

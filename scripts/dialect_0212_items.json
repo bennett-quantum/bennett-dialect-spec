@@ -16,5 +16,26 @@
     "witnesses": [
       "normalise/n-lower-widenable"
     ]
+  },
+  {
+    "bead": "jjr",
+    "section": "17.1",
+    "id": "jjr/1",
+    "sentence": "**C allocation alignment.** The `__bennett_nz_alloc(n)` primitive MUST retain ISA \u00a77.1's exact byte bump by max(n,1), zero fill, requested-size allocation record and nonreclaiming history; neither backend may insert hidden alignment into that primitive.",
+    "witnesses": []
+  },
+  {
+    "bead": "jjr",
+    "section": "17.1",
+    "id": "jjr/2",
+    "sentence": "The C `malloc`/`calloc` wrappers MUST provide the target ABI's `max_align_t` alignment by requesting a rounded extent from that primitive: with a = ABI alignment of `max_align_t`, allocate a \u00d7 ceil(max(n,1)/a) bytes, checking multiplication/rounding overflow as fault 2 before mutation; `free` passes the returned base, and both builds use the same wrapper and history.",
+    "witnesses": []
+  },
+  {
+    "bead": "jjr",
+    "section": "17.1",
+    "id": "jjr/1",
+    "sentence": "If another runtime allocation leaves the next primitive address unaligned, runtimes MUST first allocate the minimal positive padding to reach the next a-aligned address, as an explicit ordinary primitive allocation charged to the same heap/history; it MUST track the next byte address across every runtime primitive allocation, and neither backend may conceal that padding or round a primitive result. Overflow/padding-budget failure faults before the corresponding allocation mutation. A heap with no intervening unaligned request needs no padding allocation.",
+    "witnesses": []
   }
 ]
