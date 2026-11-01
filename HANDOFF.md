@@ -1,28 +1,49 @@
 # Handoff: bennett-dialect-spec
 
-Updated: 2026-11-01 15:59:39 UTC (real `date -u`).
+Updated: 2026-11-01 17:15:49 UTC (real `date -u`).
 
-**Running:** none. Draft **0.2.12**, eight consumer-chosen passes complete, awaiting council;
-ISA grading target remains **0.8**. Final pass commit carries this handoff. Spec SHA-256:
-`71e929f4d9af45ac539f16dec1c6c9d7e08a9500fa99d320ac2afafdc4b48c0b`.
-Superseded accepted 0.2.11 at eaad067 has exact-byte SHA `05101a18e04098cfca5fdfb52edc9d9027723455adf2569da2fa49ef7a47c7c1`;
-its separate freeze SHA 67157631…82ba is also retained in the header. Accepted 0.2.10
-@023f5a7 is unchanged; eight binding interpretations/new-rule distinctions are in
-`spec/errata-0.2.10.md`. SPEC_VERSIONS.toml unchanged. Nothing pushed.
+**Running:** none. Draft **0.2.12** accepted by the **sol seat in round 11**
+(2026-11-01; 0 blocking; acceptance gate 2893/2893). All four S1 suggestions
+completed as specification/checker housekeeping. Final gate **2902/2902**;
+zero failed/blocked. ISA grading target remains **0.8**; SPEC_VERSIONS.toml
+unchanged. No push by this implementer.
 
-**Next:** orchestrator's one-reviewer council round. Review brief and all eight dispositions:
-`docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`. Required headless gates passed,
-in order mkb/jjr/lbq/0na/dfd/1av/z7u/21a: 2840/2840, 2846/2846, 2854/2854, 2868/2868, 2873/2873, 2880/2880, 2888/2888, 2893/2893;
-zero failed/blocked rows. Receipts `scripts/.tmp/0212-<bead>.json`; validator Cargo tests
-1/1 after every pass; new checker units 4/4. New checks distinguish wording/ABI evidence
-from missing runtime numerical conformance. All 497 accepted tagged blocks retained.
+Spec SHA-256: `cfcce70e84ead8a05924c0921f13fc9cb477fdd71f5448c7f6f357ea91349e83`.
+Accepted 0.2.11 @eaad067 and 0.2.10 @023f5a7 remain historical pins; this
+housekeeping does not change the nonretroactive distinctions in errata-0.2.10.md.
 
-**Waiting:** mkb closed as a contract clarification; bp-z9k tracks plugin implementation.
-Seven dialect beads remain open as implementation blockers: jjr, lbq, 0na, dfd, 1av, z7u, 21a.
-New follow-ups: runtimes brt-agy (alignment), brt-4w7 (process context), brt-2qs (native detection);
-arith bennett-arith-4yg (PPC), bennett-arith-wvh (libm), bennett-arith-38c.1 (instances),
-bennett-arith-chn.1 (signaling); plugin bp-o0h (arbitrary formats), bp-q6e (comparisons);
-driver bennett-driver-i0v (native comparison), bennett-driver-q4d (instances).
-All twelve carry dialect-0.2.12/topic labels. Only exported .beads/issues.jsonl was committed
-in siblings; no sibling code edits. Existing oxs evidence work and 0.3/ISA0.9 capability
-track remain separate; no automatic closure or full runtime/DF claim follows from these gates.
+**Completed:** concrete runtime-owned fenv layout; independent numerical host
+oracle (70 observations per LLVM 18/23 build, including exact PPC pair sum,
+qNaN/sNaN positions, constant predicates, sticky flags, unchanged input bits and
+sin(+0)); native allocation fixture plus independent ISA execution/reversal and
+actual driver layout-emitter checks; exact C8 replacement in §18.7.
+Nearest-away sin(+0) uses the exact-zero identity (no tie); these samples do not
+establish production carrier flags, PPC rounding or full-domain libm accuracy.
+Allocation probes cover requests 3/13/16, bump 4128, three records, all zero bytes,
+requested live sizes, padding/extent/overflow failures and reversal; a diagnostic
+zero-size request confirms the final bump. No new allocation primitive.
+
+**Verification:** full headless gates after items 1–5: 2893, 2894, 2897, 2900,
+2902, all passed. Final receipt `scripts/.tmp/0212-hk.json`; item 2–5 copies
+`scripts/.tmp/0212-hk-N.json`. Validator cargo test 1/1 after every item (0 doc-tests).
+Snapshot integration regression failed before repair, then passed; semantic
+quiet/signaling and missing-padding mutations were rejected. All 513 tagged
+blocks at cc04ecb remain byte-identical. `git diff --check` clean.
+
+**Checker repair:** the first gate exposed an omitted interpreter build input,
+`spec/ref-0.9.json`. Immutable source capture now copies/fingerprints it and
+rebuilds when it changes; this is build support, not ISA-0.9 adoption.
+New dialect bead **b-dialect-spec-pc2** is closed after the green repair gate.
+
+**Waiting:** seven consumer implementation blockers **jjr, lbq, 0na, dfd, 1av,
+z7u, 21a** remain open. Full-domain accuracy and exact-flag obligations remain
+open regardless of the samples. New runtime child **brt-zct.1** tracks the exact
+fenv definition/layout under the existing DR epic, labelled dialect-0.2.12 and
+fenv-layout; arith already declares the object. Earlier twelve consumer follow-ups
+remain as recorded in the consumer-gap brief. No sibling source was edited;
+only the runtime bead export was committed there, as **ec52032**.
+
+**Commits:** item 1 **8e28645**, item 2 **c8647d6**, item 3 **f1b6ad3**,
+item 4 **32b56fc**; item 5 carries this handoff. Records are confined to the
+PROGRESS top block and this handoff. Next work is consumer implementation and
+its independent production conformance evidence, not automatic bead closure.

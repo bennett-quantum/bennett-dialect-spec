@@ -237,5 +237,12 @@
     "witnesses": [
       "coverage/0212/round11/DR-DD-boundaries"
     ]
+  },
+  {
+    "bead": "round11",
+    "section": "18.7",
+    "id": "round11/reference-fault",
+    "sentence": "The comparison binary detects the materialised faults required by \u00a717.7; the reference interpreter supplies the authoritative cause. Source-definedness classification is a separate build and is reported separately.",
+    "witnesses": []
   }
 ]

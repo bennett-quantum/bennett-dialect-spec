@@ -11,6 +11,9 @@ Item 3: independent host DF oracle executes 70 observations per LLVM 18/23 build
 Quiet-to-signaling mutation was rejected; restored probe green. Headless gate 2897/2897, zero failed/blocked; validator cargo test 1/1.
 Item 4: DR/DD native fixture and independent ISA execution check a=16/base=4096, requests 3/13/16 at 4096/4099/4112, bump 4128, three records, all zero-filled bytes, exact live sizes, padding/extent/overflow failure-before-mutation and reversal. An extra zero-size diagnostic allocation proves the final bump and zero live size. Actual driver emitter checked at capacity 32 for one constant, align 8 and little-endian fields at 0/8/16 under LLVM 18/23. No new primitive or production-runtime closure claim. Padding-suppression mutation rejected.
 Headless gate 2900/2900, zero failed/blocked; validator cargo test 1/1.
+Item 5: §18.7 reference-fault row uses the exact C8 replacement; separate source-definedness classification/coverage retained.
+Headless gate 2902/2902, zero failed/blocked; validator cargo test 1/1.
+Final sequence: 2893 / 2894 / 2897 / 2900 / 2902, all green. Final receipt scripts/.tmp/0212-hk.json; item 2–5 copies scripts/.tmp/0212-hk-N.json. All 513 cc04ecb tagged blocks remain byte-identical. Seven implementation blockers remain open; no push.
 
 ## Draft 0.2.12 — 21a — 2026-11-01
 

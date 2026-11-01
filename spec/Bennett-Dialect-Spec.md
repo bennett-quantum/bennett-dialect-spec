@@ -10401,7 +10401,7 @@ declared domain the comparison with the native comparison build (§17.7) has one
 | Outcome | When | Comparison |
 |---|---|---|
 | native-comparable success | the reference completes without fault and no layout-dependent value influences the result | the artefact's results equal native |
-| reference fault | the reference faults (code ≠ 0) | the artefact reports the same code; native supplies no cause (it may trap, silently read adjacent memory or hang) |
+| reference fault | the reference faults (code ≠ 0) | the artefact reports the same code. The comparison binary detects the materialised faults required by §17.7; the reference interpreter supplies the authoritative cause. Source-definedness classification is a separate build and is reported separately. |
 | layout-dependent | the reference interpreter's address provenance shows a host-stack address, or a `blockaddress` value (§14.9), influencing the result | validated against the reference interpreter instead of native, counted separately |
 | classifier-flagged undefined | an instrumented build (UBSan, ASan, MSan) flags the input (NS §3.2) | excluded from comparison, counted separately |
 
