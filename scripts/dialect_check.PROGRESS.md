@@ -1,3 +1,38 @@
+## Published graph and execution profile follow-ups — 2026-11-01 12:24:39 UTC
+
+Production commits: `0492c62` (b-dialect-spec-cbt), `a0b7c47` (b-dialect-spec-088).
+ISA 0.8 grading and all execution bounds/assertions remain unchanged; no spec or sibling edits.
+The clarification ledger loads published `ISA-0.9.json`. Reading the current
+`ISA-0.9.statements.json` and matching every ISA ledger dependency against the graph
+confirmed that all references are sections/clauses; none pin statement IDs/text.
+Exact dependency membership remains required; graph regeneration/additions do not invalidate it.
+All 35 ruled-sentence subtests pass.
+
+Timed reproduction on the same add2 object and exhaustive `6,0,9,1` budget:
+debug **175.38 s**, release **24.89 s**, both **65,536 cases / status ok**.
+The debug snapshot fingerprint `536f207764806f18b6b2fd33475e082a55ba6ba0f8c004ee16d98f8e020a6d50`
+includes ISA commit `7193103` (ancestor of `f3894f7`); its `src/instances.rs`
+hash matches current source. The prior 180 s timeout is debug-build performance
+sensitivity, not missing O(1) checkpoints or a reduced exhaustive workload.
+Release build took 70.31 s. Snapshots now build with `cargo build --release`;
+profile participates in fingerprint/receipt, preserving old debug snapshots.
+The execution timeout stays 180 s. Timing receipt: `scripts/.tmp/followups-timing.json`.
+Both snapshot integration and HEAD-move regressions pass (2/2), including release
+profile, offline two-crate resolution, source edits, cache/symlink reuse and retention.
+
+Required headless command completed: **2834/2834 passed, 0 failed/blocked, exit 0**.
+Receipt: `scripts/.tmp/followups.json`; log: `scripts/.tmp/followups.log`.
+ISA advanced during the run; final snapshot commit `99efbe4481af0fdece4c3f55a1c96ac649c0feed`,
+release fingerprint `d7510010784e82c38044b54afd7dcdf756d78a257c142245a3156e93ca255614`.
+Clean-worktree `bash scripts/pre-push` run once on committed production HEAD
+`a0b7c47f8d5e`: **exit 0; 2834/2834 passed, 0 failed/blocked**; validator Cargo tests passed.
+Log: `scripts/.tmp/followups-pre-push.log`. Temporary sibling worktree removed by hook.
+ISA HEAD/source advanced during pre-push, triggering additional immutable release builds;
+final receipt: commit `997d70000eefba6e56ce0e4b1559a02757d15006`, fingerprint
+`8e9586c673f328cb7f4080eac8fdc40bc992090ba631f350efd590cb1f151857`.
+Both follow-up beads **b-dialect-spec-cbt** and **b-dialect-spec-088** are closed;
+`.beads/issues.jsonl` exported before commit. Nothing pushed.
+
 ## Interpreter snapshot dependency repair — 2026-11-01 12:01:33 UTC
 
 Snapshot bead: **b-dialect-spec-piz** (closed). Production commits: `3679150`, `f39634c`;

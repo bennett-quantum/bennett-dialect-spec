@@ -1,18 +1,22 @@
 # Handoff: bennett-dialect-spec
-## Snapshot repair — 2026-11-01 12:01:33 UTC
+## Checker follow-ups complete — 2026-11-01 12:24:39 UTC
 
-Self-contained sibling reference-interpreter/conformance snapshots implemented in `3679150`,
-with target-directory traversal fix `f39634c` and HEAD-move test fixture update `eee2c6a`.
-Both targeted snapshot regressions pass. All driver-* checks now pass. ISA 0.8 grading unchanged;
-no spec or sibling source edits. Snapshot bead b-dialect-spec-piz closed.
+Both gates are green: required headless root gate **2834/2834, exit 0**;
+`bash scripts/pre-push` run once in its clean sibling worktree on `a0b7c47f8d5e`
+**2834/2834, exit 0**; validator Cargo tests passed. Hook removed its worktree.
+Receipts/logs: `scripts/.tmp/followups.json`, `followups.log`, `followups-pre-push.log`.
 
-Full headless root gate: **2798/2834 passed, exit 1** (`scripts/.tmp/snapshot-fix.json`).
-Completed clean-worktree pre-push on `f39634c32ee3`: **2799/2834 passed, exit 1**;
-validator Cargo tests passed. Root-only `step-check/add2` exceeded 180 seconds (b-dialect-spec-088,
-open); pre-push passed it. Both gates fail 35 `coverage/0211/*` rows because the external
-`bennett-conformance/clauses/ISA-0.9-draft.json` is missing (b-dialect-spec-cbt, open).
-Exact failing checks, commands, red→green and logs are in the top block of
-`scripts/dialect_check.PROGRESS.md`. No failures skipped or bounds changed. Nothing pushed.
+`0492c62` uses published `ISA-0.9.json` for exact clarification dependency membership.
+Audited current `ISA-0.9.statements.json`: every ledger ISA dependency is a section/clause,
+with no statement ID/text pins. Graph regeneration can add/change statements without a
+whole-graph hash/count assertion; missing declared dependencies still fail.
+`a0b7c47` builds immutable execution snapshots in release and includes profile in the
+fingerprint/receipt. Debug add2 reproduced at **175.38 s**; release **24.89 s**, both
+**65,536 exhaustive cases**, unchanged `6,0,9,1` budget and 180 s execution timeout.
+The original snapshot includes O(1) checkpoints from ISA `7193103`; source hashes verified.
+Both targeted snapshot regressions pass. No spec/sibling edits; ISA 0.8 grading unchanged.
+Beads **b-dialect-spec-cbt** and **b-dialect-spec-088** closed; JSONL exported. Nothing pushed.
+Full evidence and snapshot identities: top block of `scripts/dialect_check.PROGRESS.md`.
 
 State (2026-10-31 ~12:50Z): draft 0.2.11 (compatible track, ISA 0.8) accepted by the sol and codex seats
 (round 10; gate 2834/2834; spec SHA 67157631…82ba); muse advisory for this track. 0.2.10 remains the last
