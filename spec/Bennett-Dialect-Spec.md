@@ -6984,6 +6984,8 @@ For `fpexcept.ignore`, the normaliser MUST use `i1 @__bennett_sf_cmp_B(C_B, C_B,
 
 All seven formats MUST retain own-format arithmetic and transcendental semantics, with vector operations scalarised first and identical deterministic carrier implementations in the materialised native and lifted builds. [deps: DLT-13.1, DLT-13.2, DLT-13.3, DLT-13.4, DLT-13.5, DLT-12.1-P1, ISA-4.2]
 
+Suite DF checks the independent §§13.1/13.4/13.5 boundary vectors in `scripts/0212_numerical.c`; full-domain accuracy and exact-flag implementation obligations remain open.
+
 ### 13.6 Examples
 
 The unordered bit is predicate bit 3: ueq = 8|1 = 9, uno = 8, une = 8|2|4 = 14.

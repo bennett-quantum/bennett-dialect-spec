@@ -7,6 +7,8 @@ Item 1: headless gate 2893/2893, zero failed/blocked; validator cargo test 1/1.
 Checker repair pc2: immutable ISA source capture now fingerprints/copies its included ref-0.9 catalog; grading remains ISA 0.8. Snapshot regression failed before repair, then passed.
 Item 2: published exact runtime-owned fenv layout; arith declaration already exists. Runtimes follow-up brt-zct.1 (dialect-0.2.12,fenv-layout) stays open.
 Headless gate 2894/2894, zero failed/blocked; validator cargo test 1/1.
+Item 3: independent host DF oracle executes 70 observations per LLVM 18/23 build: exact PPC (1,2^-60) sum to f80 0x3fff8000000000000008 without inexact/input mutation; qNaN/sNaN in either operand, false/true predicates, initial flags 0/16, strict quiet/signaling and both ignore forms, unchanged bits; sin(+0) exact positive zero/no flags for five modes (nearest-away agrees because zero has no tie). Full-domain and production exact-flag obligations remain open.
+Quiet-to-signaling mutation was rejected; restored probe green. Headless gate 2897/2897, zero failed/blocked; validator cargo test 1/1.
 
 ## Draft 0.2.12 — 21a — 2026-11-01
 

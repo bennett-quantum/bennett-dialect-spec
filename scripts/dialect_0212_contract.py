@@ -19,6 +19,9 @@ def check_all(runner):
                  InstantiationRequest('test_schema_canonicalisation_and_no_width_subset').test_schema_canonicalisation_and_no_width_subset)
     runner.check('coverage', '0212/21a/comparison-abi', '§13.5 signaling/quiet ABI',
                  CarrierABI('test_constrained_comparison_operands').test_constrained_comparison_operands)
+    from dialect_0212_vectors import numerical
+    runner.check('coverage', '0212/round11/DF-boundaries', '§§13.1/13.4/13.5 suite DF',
+                 lambda: numerical(runner))
     for item in json.loads(Path(__file__).with_name('dialect_0212_items.json').read_text()):
         def check(item=item):
             equal(item['id'], 'normative wording retained', True, item['sentence'] in runner.spec)
