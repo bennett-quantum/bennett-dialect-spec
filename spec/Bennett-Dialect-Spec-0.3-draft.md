@@ -238,7 +238,7 @@ other than the markers of §3.2 are:
 |---|---|---|
 | `__bennett_nz_` | production: nobody; comparison-only native support exception (§17.7); **primitives**, lowered by the map (§16.4) and the CC/R lowering (§17.4) | the normaliser (§12) and runtimes bitcode |
 | `__bennett_sf_` | `bennett-arith` bitcode (§13) | the normaliser and runtimes bitcode |
-| `__bennett_rt_` | `bennett-runtimes` bitcode (§11, §14, §17, §20); the driver's layout objects `__bennett_rt_blk.<f>` (§14.9) and comparison-only `__bennett_rt_native_layout` (§19.5) | the normaliser, the driver's synthesised code (§19) and runtimes bitcode |
+| `__bennett_rt_` | `bennett-runtimes` bitcode (§11, §14, §17, §20); the driver's layout objects `__bennett_rt_blk.<f>` (§14.9) and comparison-only `__bennett_rt_native_layout` (§19.5); the plugin's private `__bennett_rt_qtab` (§6.5, §19.5) | the normaliser, the plugin's CC/R lowering, the driver's synthesised code (§19) and runtimes bitcode |
 | `__bennett_dev_` | `bennett-runtimes` bitcode: device-model entry points and device state (§11.3) | the plugin's L lowering of effect markers and runtimes bitcode |
 
 The primitives are exactly:
@@ -1770,11 +1770,20 @@ realises each allocation site s (a `qalloc` or `qborrow` call) in one of three w
   N(s) bounds simultaneous physical slots, not the number of historical identities. A direct handle that is converted to an integer
   (`ptrtoint`, a store) gets a tag in the same way.
 - **Qreg table.** When N(s) = ∞ the site MUST use the qreg table. Memory-reaching handles with no finite reference instance bound MUST use a persistent lossless tag-to-ledger-id mapping and qreg.from_id at use, preserving pointer-width tags, identity, liveness, ownership and checked widths. [deps: DLT-6.1-P1, DLT-6.4-P1, DLT-6.5-P10, ISA-3.3-P7, ISA-3.3-P13, ISA-3.3-P14, ISA-3.3-P19, ISA-10]
-  The **qreg table** is a plugin-added zero-image global `__bennett_rt_qtab` of `Q_tab` records, each an `i64` id and an `i64` state (0 unassigned, 1 live, 2 retired), indexed by tag, with a next-tag counter; its base lies above `heap_base + heap_limit_max`, so it moves no program address (§19.5). Tag values are 1, 2, … and are never reused, which satisfies §6.1. Device classical code reads and writes it with ordinary `load`/`store`, so R history reverses it (ISA §7.4). The operations are:
-  - `qalloc`: check `T-SIZE`; if the counter has reached `Q_tab`, code 2 before any effect; `q = qreg.new cls n`; `id = qreg.id q`; record (id, live) at a fresh tag. The handle value is the tag.
-  - use of a marker operand with tag v: if v is 0 or not below the counter, or its state is not live, `T-DEAD` before any effect; `q = qreg.from_id id`, then for an indexed gate check i below `qreg.width q` (`T-INDEX`) and `s = qreg.slice q i 1` with the run-time `i` (ISA E12), or transfer q to the fixed-width slot with the ISA's width check. A `from_id` that fails because another run that is not CLOSED owns the register is a CC trap / R fault with code 4 (ISA §3.3, §10), never a silent retry.
+  The **qreg table** is a plugin-added global `__bennett_rt_qtab` of `B_tab` bytes, sized by
+  `--bennett-qreg-table-bytes` (D29), with the placement and complete zero data image of §19.5.
+  Its header occupies `C_tab = align_up(ceil(pw/8),8)` bytes and holds a little-endian pw-bit
+  **issued-tag count** c, initially 0 (header padding is zero). It has
+  `Q_tab = floor((B_tab - C_tab)/16)` records; the option MUST cover the header.
+  Record v, for tags 1 through `Q_tab`, starts at byte `C_tab + 16·(v−1)` and contains
+  an `i64` id followed by an `i64` state (0 unassigned, 1 live, 2 retired), little-endian;
+  unused tail bytes are zero. The next fresh tag is c+1. Tag values are 1, 2, … and are
+  never reused, which satisfies §6.1. Device classical code reads and writes the table with
+  ordinary `load`/`store`, so R history reverses it (ISA §7.4). The operations are:
+  - `qalloc`: check `T-SIZE`; if c has reached `Q_tab`, code 2 before any effect; `q = qreg.new cls n`; `id = qreg.id q`; record (id, live) at tag c+1 and increment c. The handle value is the tag.
+  - use of a marker operand with tag v: if v is 0 or greater than c, or its state is not live, `T-DEAD` before any effect; `q = qreg.from_id id`, then for an indexed gate check i below `qreg.width q` (`T-INDEX`) and `s = qreg.slice q i 1` with the run-time `i` (ISA E12), or transfer q to the fixed-width slot with the ISA's width check. A `from_id` that fails because another run that is not CLOSED owns the register is a CC trap / R fault with code 4 (ISA §3.3, §10), never a silent retry.
   - `qfree` of tag v: as a use, then `qreg.free q` (`T-CLEAN` on a verifying executor, ISA §3.3) and state retired.
-  - a register that enters through a `QREG` parameter or a call result and reaches memory gets a tag by **interning**: the id's existing live tag if the table has one, else a fresh tag. One register has at most one live tag, so §6.3 equality of tags is identity. The reference lookup is a linear scan of the table; any structure with the same results is permitted.
+  - a register that enters through a `QREG` parameter or a call result and reaches memory gets a tag by **interning**: the id's existing live tag if the table has one, else, after the same capacity check, record (id, live) at tag c+1 and increment c. One register has at most one live tag, so §6.3 equality of tags is identity. The reference lookup is a linear scan of the table; any structure with the same results is permitted.
   The helper code is not a counted materialised instruction (§17.6) and its accesses are outside the native comparison (§17.7), which holds no quantum state. An oracle or lifted variant never reads the table: handles reach regions only through CC or R region calls (§8.4).
 
 **Reference instance bound** of a site s in function F with a static register file:
@@ -4373,7 +4382,8 @@ content (TDL-3) and is never rejected for containing classical code.
 **TDL-4 Coherent arena.**
 
 - The objects in any may-Co set of MC are placed in the **arena**: a static address range
-  [A_coh, A_coh + 2^A) of the layout, disjoint from CC globals and heap (ISA §7.1, §7.2; G-13
+  [A_coh, A_coh + 2^A) of the layout, placed by the single range-order and non-overlap rule
+  of §19.5 (ISA §7.1, §7.2; G-13
   would lift the restriction). Globals in the set are relocated into the arena by the layout
   (§19.5) in both builds, so their addresses stay native-equal; heap objects of may-Co allocation
   sites are allocated by the runtimes' **coherent allocator** in the arena range in both builds.
@@ -8108,11 +8118,11 @@ non-arena globals that the L closure names in `lift.addr` and, transitively, non
 point to (in link order, numbered G1, G2, …), with the link's `ptr_width`, `null_size`,
 `heap_base`, `heap_limit_max`, `H`, `A_tab` and `S_cells`, and `interface_regions` = { "ref": the
 shape's regions }. An arena-relocated global has no G<n> symbol or data image:
-its address is @coh plus its arena offset. `coh` is placed at A_coh (§19.5), disjoint
-from globals and heap. Bases of all other regions follow `<mems>` order: each base is the smallest multiple of
-the region's size that is ≥ the end of the previous range (the heap's end `heap_base +
-heap_limit_max` for the first when there is no arena; otherwise the arena's end). H is the smallest value with every range inside [0, 2^H); A_tab
-is the smallest value with 2^A_tab ≥ P + `heap_limit_max`, P the link's number of globals plus
+its address is @coh plus its arena offset. All bases, including `coh`, other shape regions
+and the private qreg table, are resolved once by §19.5 and retained when restricting the
+layout; no reference object repacks them. H is the smallest value with every range of the
+complete device link layout inside [0, 2^H), including `__bennett_rt_qtab` when present; A_tab
+is the smallest value with 2^A_tab ≥ P + `heap_limit_max`, P the link's number of non-arena globals (including the shadow and private qreg table when present) plus
 the largest number of interface regions of any oracle, so that allocation-table overflow never
 precedes heap exhaustion (both fault with code 2, ISA §4.2, and a reference object with fewer
 pre-entries than the device object faults at the same allocation); S_cells is the smallest value
@@ -11201,32 +11211,135 @@ native (an efficiency and placement item, §25.3; outline E11).
 ### 19.5 Layout: the comparison link
 
 The driver links the materialised module natively (§17.7) with a linker script that fixes the
-addresses: non-PIE; identical-code folding and constant merging off; the null region [0,
-`null_size`) with `null_size` = 4096; the data sections (`.rodata`, `.data`, `.bss`, in that order)
-from `data_base` = 4096; the text from `text_base` = 0x400000, or, when the device ranges below
-(data, heap, arena, interface regions, computed first) end above 0x400000, from the first multiple
-of 0x200000 at or after their end, so that the native comparison binary maps its code disjointly
-from them; the defaults are options (`--bennett-layout-data-base`, `--bennett-layout-text-base`,
-§24). The link map gives A(F) for
-every function and the base of every global. The device `layout` (ISA §9.1) replicates it:
+addresses: non-PIE; identical-code folding and constant merging off. The link map gives A(F)
+for every function and the base of every program global. The following is the **single
+range-order and non-overlap rule** for §6.5, TDL-4 and §16.3. `align_up(x,a)` is the least
+multiple of positive a at or above x; all arithmetic below is mathematical, without wrapping.
+All intervals are half-open.
 
-- `globals`: every global of the link at its link address with its image;
-- `heap_base`: the first multiple of 4096 at or after the end of the data; `heap_limit_max`: the
-  largest `heap` of the budget table (which covers the shadow stack, §9.2);
-- the arena (TDL-4) at the first multiple of its size 2^A at or after the heap's end, with 2^A the
-  smallest power of two covering the may-Co globals and the coherent allocator's heap (its size
-  from `--bennett-arena-heap`, default the largest `heap` of the table); the arena's shadow
-  `__bennett_rt_shadow` is a global of the data sections;
-- interface regions per oracle above the arena (§16.3); H, A_tab and S_cells by §16.3;
-- the production host image is linked with the same addresses for every function and global
-  whose address may cross the boundary (§4.4).
+1. Reserve the null region [0, `null_size`), default `null_size` = 4096. Lay out ordinary
+   `.rodata`, `.data`, `.bss`, in that order, from `data_base` = 4096, with each object's
+   target alignment. These include the arena's `__bennett_rt_shadow` when needed and exclude
+   `__bennett_rt_qtab`. May-Co globals are relocated into the arena in both builds (TDL-4);
+   they have no second classical global or image (§16.3). Let `data_end` be the end of
+   ordinary data (or `data_base` if empty).
+2. Set `heap_base = align_up(data_end,4096)` and `heap_limit_max` to the largest frozen
+   `heap` capacity of the budget table (§9.2), including shadow-stack allocations. Reserve
+   [heap_base, `heap_end`), where `heap_end = heap_base + heap_limit_max`.
+3. If an arena exists, let its size 2^A be the smallest power of two covering the may-Co
+   globals, their alignment padding and the coherent allocator's heap
+   (`--bennett-arena-heap`, default the table's largest `heap`). Set
+   `A_coh = align_up(heap_end,2^A)` and `coh_end = A_coh + 2^A`. Otherwise set
+   `coh_end = heap_end`. An oracle's `coh` interface is exactly this arena range; it is
+   one range, not an additional allocation overlapping the arena.
+4. For **each** oracle shape in the complete link, start a cursor at `coh_end`. Place its
+   non-`coh` interface regions in `<mems>` order: for a region of size s = 2^A, set its
+   base to `align_up(cursor,s)`, then advance the cursor to base+s. Let `regions_end` be
+   the maximum of `coh_end` and all these final cursors, including shapes not yet emitted.
+   Different oracles MAY reuse the same interface addresses: their regions are never
+   simultaneous in one oracle layout (ISA §7.2).
+5. If §6.5 needs a qreg table, reserve all the ranges from steps 1–4 first, then choose
+   `qtab_base`: the **least** 4096-aligned b at or above `heap_end` for which [b,b+B_tab)
+   is within [0,2^pw) and intersects neither the arena nor any interface range of any
+   oracle shape. Equivalently, start at `align_up(heap_end,4096)` and, whenever the
+   candidate intersects a reserved range, advance to the aligned end of that range and
+   repeat. This uses otherwise unallocated alignment gaps when they fit; beyond all
+   reserved ranges it gives `align_up(regions_end,4096)`. Set `qtab_end = qtab_base + B_tab`. Add
+   `__bennett_rt_qtab` to `layout.globals` at that base with size `B_tab` and its image
+   below. Otherwise no table range or symbol exists. The table is device-private storage:
+   it is excluded from ordinary data placement and the native comparison image.
 
-*(non-normative)* With data low and text high, H covers the data, heap and regions; function
-addresses are values only and never occupy device memory.
+For each oracle, the null region, ordinary classical globals (including shadow storage),
+heap, arena/`coh`, other interface regions and private table MUST be pairwise disjoint;
+empty ranges occupy no bytes. Every range MUST lie within [0,2^pw), with each end at most
+2^pw, and obey the alignments above. These invariants apply to the complete device link
+and after ISA linking (§9.3), before any reference-object restriction (§16.3). In particular,
+the table is reserved against **every** oracle's regions, not just those in the first emitted
+reference object. Steps 1–4 keep the numeric order data, heap, arena, then each oracle's
+other regions; step 5 places only private storage in a free gap or after them. H, A_tab and
+S_cells are then frozen by §16.3; the table adds one pinned global pre-entry and does not
+consume any program heap budget. Failure to place the private table is a build-time layout
+diagnostic only when no aligned gap of `B_tab` bytes remains at or above the heap end,
+naming the sizes/options involved; a table/arena or table/interface combination that fits
+these rules MUST be admitted without an additional
+run-time fault, smaller default limits, or a restriction on program kind.
+
+Text starts at `text_base` = 0x400000, or, when `regions_end` exceeds it, at
+`align_up(regions_end,0x200000)`. Thus native code maps disjointly from ordinary data, heap,
+arena and interfaces. The private table does not participate in native text placement:
+function addresses are values only in device memory, so their numerical coincidence with
+private device storage is harmless. The production host image uses these same addresses
+for every function and global whose address may cross the boundary (§4.4). Adding a table
+therefore changes no program global, heap, arena, interface or function address, nor the
+native layout ABI below. The data/text defaults are options
+(`--bennett-layout-data-base`, `--bennett-layout-text-base`, §24).
 
 **Native layout ABI v1.** The driver MUST define exactly one external constant `@__bennett_rt_native_layout = constant { i64, i64, i64 } { i64 1, i64 heap_base, i64 heap_limit_max }, align 8` in comparison-only support, with fields at byte offsets 0, 8 and 16 in target little-endian order and values from this same resolved §19.5 layout; runtimes declares that object and validates the version/range before use, with no weak/default definition. The third field is a byte capacity, not an end address; it includes shadow-stack allocations under §9.2. This object has no relationship to blockaddress identity objects `__bennett_rt_blk.<f>`.
 
-**Qreg table placement.** A program with a qreg-table site (§6.5) has the global `__bennett_rt_qtab` at the first multiple of 4096 at or after `heap_base + heap_limit_max`, in `layout.globals`, with an empty data image (ISA E4). Every other global and the heap keep the addresses they have without it, so the comparison-link addresses of §4.4 and the native layout ABI above are unchanged. If it does not fit below 2^pw the build fails with the layout diagnostic, naming the option that sizes it.
+**Qreg table data image.** For the table placed by the rule above, the object MUST define a
+data symbol named `__bennett_rt_qtab` with signature
+`{"abi":"0.9","kind":"data","size":B_tab,"tier":"-"}` (substitute the resolved integer)
+and `layout.globals.__bennett_rt_qtab = {"base":qtab_base,"image":"__bennett_rt_qtab","size":B_tab}`.
+Its data line is `__bennett_rt_qtab SP HEX LF`, with HEX exactly `B_tab` zero bytes, encoded
+as `2·B_tab` lowercase `0` digits. Producers MAY stream this complete image, but MUST emit
+every byte; ISA 0.9 has no implicit zero-fill/BSS or sparse data encoding. The data-symbol
+size, decoded image length and layout-global size MUST be equal (ISA §9.1–§9.2). E4/ISA
+§16.1 permits empty HEX only for a zero-byte data line and cannot encode this positive-size
+table. Compute interface/closure/object hashes from the complete canonical image and final
+layout under ISA §9.2; no hashes of an empty placeholder may survive. The image initialises
+the issued-tag count and every state to 0 (§6.5), so the first fresh tag is 1 even if its ISA
+id is 0. This initialisation occurs at program load, not at each device entry; subsequent
+entries retain the table and R reversal restores its earlier bytes.
+
+**Required layout/image vectors (LQ-1–LQ-5).** These are normative conformance inputs and
+expected layouts for DD, DM and DB (§21.3); the vectors do not claim execution of a
+compiler-generated table. Use pw=64, `null_size`=4096, target alignment 8 for the ordinary
+eight-byte `@saved` at [4096,4104), `heap_limit_max`=0 and frozen stack capacity 32.
+`@saved` retains a clean qalloc handle across entry return, so §6.5 requires the table.
+Unless stated otherwise set `B_tab`=4096; then `C_tab`=8, `Q_tab`=255, records occupy
+4080 bytes and the remaining 8 tail bytes are zero.
+
+| Vector | Ordinary data and coherent regions | Resolved private table | H / A_tab / S_cells |
+|---|---|---|---|
+| LQ-1: saved handle + `MEM_IN(size=1)` | data_end=4104, heap_base=heap_end=8192; no arena; `m0:region[0,8] in` at [8192,8193); regions_end=8193 | qtab_base=12288, range [12288,16384) | 14 / 2 / 5 |
+| LQ-2: saved handle + arena | shadow [4104,8200), data_end=8200, heap_base=heap_end=12288; one may-Co byte at arena offset 0 and coherent-heap capacity 4095 give arena/`coh:region[12,8] in` [12288,16384); no other regions; regions_end=16384 | qtab_base=16384, range [16384,20480) | 15 / 2 / 5 |
+| LQ-3: all shapes counted | ordinary data/heap as LQ-1; one oracle has LQ-1's `m0`; another has `m0:region[13,8] in` at [8192,16384); regions_end=16384 regardless of emission order | qtab_base=16384, range [16384,20480) | 15 / 2 / 5 |
+
+In LQ-1 there are two classical globals (`saved`, table) and one interface pre-entry, so
+P=3 and A_tab=2. LQ-2 has three globals (`saved`, shadow, table) plus `coh`, so P=4 and
+A_tab=2; the relocated may-Co byte is not another classical global. LQ-3 has P=3 because
+the two oracles' interface entries are counted by their maximum, not their sum. Native
+text_base remains 4194304 in all three. The former heap-end placement collided with `m0`
+at [8192,8193) in LQ-1 and with `coh` at [12288,16384) in LQ-2; the new ranges admit both.
+The LQ-3 maximum prevents a later shape from colliding with the table.
+
+LQ-1 also MUST retain the unchanged D29 default `B_tab`=2^40=1099511627776: its table is
+[12288,1099511640064), H=41, `Q_tab`=68719476735 and HEX length=2199023255552.
+All other addresses, heap/stack capacities and A_tab remain as above. Computing this
+layout and length needs no materialised terabyte fixture; it does not waive the complete
+image requirement for an emitted object. At pw=32 the unchanged default is 2^29 bytes;
+the same low ranges and table base give qtab_end=536883200 and H=30, within 2^32.
+
+LQ-4 isolates the image requirement using LQ-1's disjoint 4096-byte table. Emit a data
+signature and global of size 4096, and exactly 8192 zero hex digits after the mandatory
+separator. ISA `hash` followed by `check` with the computed interface hashes MUST admit
+the complete object; initial loads of the count, first record id/state and last table byte
+MUST all yield zero. Changing only HEX to empty while retaining both declared sizes MUST
+fail admission for a data-size mismatch. The former empty-image requirement made even
+this disjoint object inadmissible. Full object checks MUST also reject LQ-1/LQ-2 with the
+table moved back to the old heap-end base, holding their complete images fixed; omitting
+the table from a restricted reference object is not a substitute for these checks.
+
+LQ-5 checks that placement does not reject a fitting table near the address-space limit.
+Use pw=32 and LQ-1's ordinary data and empty heap. One oracle's four `in` regions, in order,
+have A=30,30,29,28 and W=8, hence ranges [1073741824,2147483648),
+[2147483648,3221225472), [3221225472,3758096384), [3758096384,4026531840).
+The unchanged default table size 2^29 fits at [8192,536879104) in the first alignment gap;
+H=32, A_tab=3 (two globals plus four regions), S_cells=5, and native text_base=4026531840.
+Appending that table at regions_end would end at 4563402752, outside 2^32, despite this
+available gap. That must not cause a layout error or a smaller default. Check the default
+arithmetically, and admit a full-image B_tab=4096 control with table [8192,12288) and the
+same interface addresses, H/A_tab/S_cells and native text base.
 
 ### 19.6 Build-time snapshots
 
@@ -11274,7 +11387,7 @@ Mixed-major bitcode links within the tested envelope MUST use its newest reader 
 | `--bennett-platform=<profile>` | §20 | none |
 | `--bennett-vscale=<V>`, `--bennett-cpu=<model>` | §12.5, §15.2 | §24 |
 | `--bennett-qreg-instances=<n>` | the optional static file of §6.5; never a limit on a program | 64 |
-| `--bennett-qreg-table-bytes=<n>` | the size of `__bennett_rt_qtab` (§6.5, §19.5) | §24 D29 |
+| `--bennett-qreg-table-bytes=<n>` | `B_tab`, the declared byte size and complete zero-image length of `__bennett_rt_qtab` (§6.5, §19.5); includes header, records and tail padding | §24 D29 |
 | `--bennett-shape-widths=<list>` | the emission order of shapes AV leaves ⊤ (§8.4) | §24 D34 |
 | `-bennett-inplace-exhaustive-bits=<n>` | §8.7 | 24 |
 | `-bennett-warn-qstore` | §6.7 | off |
@@ -11627,20 +11740,29 @@ predecessors and stay as legality cases.
 | Suite | Class | Content |
 |---|---|---|
 | DA | Plugin, Validator | recognition, reserved names, attributes, Julia check, unwinding of markers: the §3 examples; L2 over the corpus |
-| DB | Plugin, Validator | the device analysis and handles: the §5 and §6 examples; L3 over the corpus |
+| DB | Plugin, Validator | the device analysis and handles: the §5 and §6 examples; qreg-table initial state and persistent handle requirement in §19.5 LQ-1–LQ-5; L3 over the corpus |
 | DC | Plugin, Validator | candidate sets, identity, kinds, well-formedness: the §7 examples; L4, L6 over the corpus |
 | DO | Plugin | descriptors, shapes, entry state, wide outputs, in-place: the §8 examples |
 | DN | Plugin, Validator | normalisation pairs, native differentials and validator verdicts: the §12–§15 examples; two independent validators agree on the corpus after materialisation |
-| DM | Plugin | the lifting map: the §16 objects, hashes, runs and step checks, executed on the ISA reference interpreter |
+| DM | Plugin | the lifting map: the §16 objects, hashes, runs and step checks, executed on the ISA reference interpreter; complete-layout and data-symbol admission of §19.5 LQ-1–LQ-5 |
 | DS | Plugin + executor | marker semantics: the §18.8 programs, events and states; differential runs against the reference semantics (§18.7) |
 | DT | Plugin + executor | TDL partitions, events and states (§10, §18.8) |
 | DE | Plugin + executor | effects per tier (§11): R console with reversal, CC host effects, L device models |
 | DV | Plugin | varargs, EH, sjlj and fibers (§14) on the three target ABIs |
 | DR, DF | Runtime | the contract rows of `bennett-runtimes` (§11, §14, §17.3, §20) and `bennett-arith` (§13): test vectors |
-| DD | Driver | the driver modes (§19.2–§19.7), closed-unit equivalence, mixed majors, layouts |
+| DD | Driver | the driver modes (§19.2–§19.7), closed-unit equivalence, mixed majors, layouts including §19.5 LQ-1–LQ-5 |
 | DP | Platform | the platform profile (§20) |
 | DX | everything | the rung-mini programs end to end (§21.4) |
 | DL | Toolchain | the legality matrix of §21.1 |
+
+For LQ-1–LQ-5, DD/DM MUST check the complete device layout (including the table), exact
+alignment/order, all oracle shapes, unchanged program/function addresses and reference
+budgets, and both admitted controls and the overlap/empty-image negative controls. DB
+MUST check the all-zero initial count/records and tag-1 first allocation of §6.5, retaining
+the mapping across closed entry calls; R forward/reverse MUST restore the table bytes.
+The default-size layout and image-length assertions are required without allocating a
+terabyte test fixture. These object-admission vectors supplement `k1-table` (§25.4);
+they do not stand in for execution of the register operations or compiler output.
 
 ### 21.4 The pre-flight checker and rung minis
 
@@ -11731,7 +11853,7 @@ reject, refuse, fault or no effect for something the north star promises.
 |---|---|---|---|
 | D12 | host-stack addresses passed into device code (NS §3.2 "where possible") | executions they influence are layout-dependent (§18.7) and validated against the reference interpreter | every program runs; only the comparison oracle changes |
 | D13 | a region key stable across LLVM majors (§7.3) | the key depends on the major, which the certificate records | identity within a link is by content |
-| D15 | the comparison-link bases (§19.5) | `null_size` 4096, data at 4096, text at 0x400000 or above the device ranges, options to change them | native-equal addresses |
+| D15 | the comparison-link bases (§19.5) | `null_size` 4096, data at 4096, text at 0x400000 or above ordinary data/heap/arena/interface ranges by §19.5, excluding the private qtab; options to change them | native-equal addresses |
 | D20 | single passes outside the envelope (§21.1) | unsupported unless listed (they are LLVM bugs, spike findings §2) | every envelope pipeline |
 | D22 | output file names and diagnostic text | plugin-defined; the codes of §22 are normative | – |
 | D23 | ThinLTO with the plugin | full LTO: one merged module | every program merges into one module (audit D23, M) |
@@ -11739,7 +11861,7 @@ reject, refuse, fault or no effect for something the north star promises.
 | D26 | the binary layout of descriptors and budget records beyond the C view | the LLVM struct layout under the module's datalayout (§8.1, §9.1) | every target |
 | D27 | budget defaults (§9.2) | 1048576 steps, 1048576 heap bytes, 65536 stack cells, depth 256, `sstack` 65536 | every budget is overridable |
 | D28 | the in-place exhaustive width (§8.7) | 24 bits; sampled evidence and the `T-CLEAN` net above | every pair is verified, as proof or evidence |
-| D29 | the size of `__bennett_rt_qtab` (§6.5) | 2^(pw−3) bytes capped at 2^40, placed above the heap; exhaustion is code 2, as for the heap | every register the table's budget covers; the option raises it |
+| D29 | the size of `__bennett_rt_qtab` (§6.5) | `B_tab` = 2^(pw−3) bytes capped at 2^40; placement and complete declared-size zero image by §19.5; exhaustion is code 2, as for the heap | every register the table's budget covers; the option raises it |
 | D34 | object emission for a width or extent AV leaves ⊤ (§8.4) | the plugin emits the shapes the driver's `--bennett-shape-widths=<list>` names first; it is a compile-order hint and the conformance contract remains the full domain, whose remaining shapes it MUST emit or report unfinished at build time, never a run-time `T-IFACE` for a valid shape | every valid shape |
 | D30 | further device models (ISA §17 item 3) | the four of ISA §7.3; another device's effect is `FAULT_EFFECT_UNMODELLED` until the ISA adds it | the four modelled devices in every tier |
 | D31 | target ABI rows for `va_list` (§14.3), asm (§15) and target intrinsics beyond x86-64, AArch64 and RISC-V64 | added with the target | the three targets of the rungs |
@@ -11756,7 +11878,7 @@ is never reported, and a module that had that verdict on ISA 0.8 has verdict `ac
 
 | Former | Former code | NS capability | ISA 0.9 row | Lowering | Witnesses |
 |---|---|---|---|---|---|
-| BLK-1 = ISA-4 | `BD-B-ISA4` | NS §3.1 handle tables; §4.1, §4.2 dynamic allocation; Bennett.jl vectors of qubits | K1, E11, E12 | `qreg[*]` widths (§3.4); qreg table with `qreg.id`/`qreg.from_id`/`qreg.width` (§6.5); coherent widths stay padded to a classical bound (TDL-10) | `k1-width`, `k1-table`, `k1-stale`, `handle-*` lowering reports |
+| BLK-1 = ISA-4 | `BD-B-ISA4` | NS §3.1 handle tables; §4.1, §4.2 dynamic allocation; Bennett.jl vectors of qubits | K1, E11, E12 | `qreg[*]` widths (§3.4); qreg table with `qreg.id`/`qreg.from_id`/`qreg.width` (§6.5), layout and data image by §19.5; coherent widths stay padded to a classical bound (TDL-10) | `k1-width`, `k1-table`, `k1-stale`, `handle-*` lowering reports; §19.5 LQ-1–LQ-5 admission vectors |
 | BLK-2 = ISA-1 | `BD-B-ISA1` | NS §4.2 "run-time budgets come from the host or from measurement results" | K3 | `budget.mint` before region entry (§9.5) | `k3-mint`, `budget-device-computed` |
 | BLK-3 = ISA-3 | retired in 0.2 | NS §4.2 in-place updates with parameters | K4 (optional) | CC expansion kept; native `qinplace` under a covering inverse-pair entry (§8.7) | `k4-native` |
 | BLK-4 = ISA-12 | `BD-B-ISA12` | NS §4.2 quantum allocation inside reversible-tier code | K2, K7 | R `qreg.*` frames (§7.5(b), §8.5) | `k2-ledger`, `region-reversible-qalloc-*` |
@@ -11822,7 +11944,7 @@ A run-time width with the `T-SIZE` check (§3.4), each wire flipped twice throug
 registers=65 run: status=COMPLETED fault=none records=0 registers_used=65
 ```
 
-65 simultaneously live registers, one more than the former fallback file, named through a table of ids in device memory (§6.5), each reloaded, flipped twice through `qreg.from_id` and freed.
+65 simultaneously live registers, one more than the former fallback file, named through a table of ids in device memory (§6.5), each reloaded, flipped twice through `qreg.from_id` and freed. This register-operation fixture does not witness the private global's placement, complete data image or persistent tag header; those additionally require §19.5 LQ-1–LQ-5 and the DB/DD/DM checks of §21.3.
 
 ```text witness09=k1-stale row=K1
 stale run: status=FAILED fault=4 records=1
