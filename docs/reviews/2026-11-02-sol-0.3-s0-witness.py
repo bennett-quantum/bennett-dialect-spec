@@ -16,6 +16,49 @@ import tempfile
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_REF = REPO / ".tmp/dialect03/isa-ref/4900508957bfd4aa/reference-interpreter/target/release/bennett-isa-ref"
 
+SOURCE = """target datalayout = "e-p:64:64-i64:64-n8:16:32:64-S128"
+target triple = "x86_64-unknown-linux-gnu"
+@held = internal global ptr null, align 8
+@budget = internal constant { i64, i64, i64, i64, ptr }
+  { i64 64, i64 0, i64 32, i64 8, ptr null }, align 8
+@desc = internal global { { i32, i32, i32, i32, ptr, ptr }, [1 x { i32, i32, ptr, i64, i64 }] }
+  { { i32, i32, i32, i32, ptr, ptr } { i32 2, i32 1, i32 0, i32 0, ptr null, ptr null },
+    [1 x { i32, i32, ptr, i64, i64 }] [{ i32, i32, ptr, i64, i64 }
+      { i32 3, i32 0, ptr null, i64 0, i64 1 }] }, align 8
+declare ptr @__bennett_qalloc(i64, i64)
+declare void @__bennett_qfree(ptr)
+declare void @__bennett_oracle(ptr, ptr, ptr)
+define void @stash() {
+  %h = call ptr @__bennett_qalloc(i64 0, i64 1)
+  store ptr %h, ptr @held, align 8
+  ret void
+}
+define internal i8 @query(ptr %db) {
+  %v = load i8, ptr %db, align 1
+  ret i8 %v
+}
+define void @read_db() {
+  %db = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %t = call ptr @__bennett_qalloc(i64 0, i64 8)
+  %f = call ptr @__bennett_qalloc(i64 0, i64 4)
+  %tp = getelementptr i8, ptr @desc, i64 16
+  %fp = getelementptr i8, ptr @desc, i64 24
+  %qp = getelementptr i8, ptr @desc, i64 40
+  store ptr %t, ptr %tp, align 8
+  store ptr %f, ptr %fp, align 8
+  store ptr %db, ptr %qp, align 8
+  call void @__bennett_oracle(ptr @query, ptr @budget, ptr @desc)
+  call void @__bennett_oracle(ptr @query, ptr @budget, ptr @desc)
+  call void @__bennett_qfree(ptr %f)
+  call void @__bennett_qfree(ptr %t)
+  call void @__bennett_qfree(ptr %db)
+  %h = load ptr, ptr @held, align 8
+  call void @__bennett_qfree(ptr %h)
+  store ptr null, ptr @held, align 8
+  ret void
+}
+"""
+
 
 def object_text(qtab_base, empty_image=False):
     signatures = [
@@ -61,6 +104,14 @@ def main():
         env.pop(key, None)
     with tempfile.TemporaryDirectory(prefix=".sol-s0-", dir=Path(__file__).parent) as tmp:
         env["TMPDIR"] = tmp
+        source = Path(tmp) / "source.ll"
+        source.write_text(SOURCE)
+        llvm_checks = {}
+        for major in (18, 23):
+            result = subprocess.run([f"opt-{major}", "-passes=verify", "-disable-output", str(source)],
+                                    text=True, capture_output=True, env=env, timeout=30)
+            llvm_checks[str(major)] = result.returncode
+            assert result.returncode == 0, result.stderr
         results = {}
         for name, base, empty_image in (("empty_image", 12288, True),
                                        ("overlap", 8192, False),
@@ -88,6 +139,7 @@ def main():
                              "stdout": result.stdout.strip(), "stderr": result.stderr.strip()}
         print(json.dumps({"executor": str(ref),
                           "executor_sha256": hashlib.sha256(ref.read_bytes()).hexdigest(),
+                          "llvm_source_verification": llvm_checks,
                           "qtab": [8192, 12288], "m0": [8192, 8193],
                           "checks": results}, indent=2))
         assert results["disjoint"]["exit"] == 0, "control object must be admitted"
