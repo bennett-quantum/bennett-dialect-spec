@@ -20,8 +20,8 @@ class Publication(unittest.TestCase):
         ir = ('define void @f() {\n ret void\n}\n'
               '!llvm.module.flags = !{!0}\n'
               '!0 = !{i32 1, !"bennett.dialect", !"VERSION"}\n')
-        self.assertEqual(v.recognise(ir.replace('VERSION', '0.2.13'))[0], 'accept')
-        for version in ('0.2.12', '0.2.11', '0.2.10', '0.3'):
+        self.assertEqual(v.recognise(ir.replace('VERSION', '0.2.14'))[0], 'accept')
+        for version in ('0.2.13', '0.2.12', '0.2.11', '0.2.10', '0.3'):
             with self.subTest(version=version):
                 self.assertEqual(v.recognise(ir.replace('VERSION', version))[0],
                                  'reject:BD-E-VERSION')

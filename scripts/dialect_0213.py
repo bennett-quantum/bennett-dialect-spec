@@ -21,7 +21,7 @@ def check_contract(text):
     if not version:
         raise d.Fail('0213: missing full dialect version')
     version = version[1]
-    equal('0213', 'supported publication track', True, version in ('0.2.13', '0.3'))
+    equal('0213', 'supported publication track', True, version in ('0.2.13', '0.2.14', '0.3'))
     equal('0213', 'compatibility unit', True,
           f'**full version string** (`{version}`)' in text)
     items = json.loads((HERE / 'dialect_0213_items.json').read_text())
@@ -33,7 +33,7 @@ def check_contract(text):
         equal(item['id'], 'accepted wording in §'+item['section'], True,
               item['sentence'] in section)
     equal('0213', 'separate map identity', True,
-          ('map 0.2.9' if version == '0.2.13' else 'map 0.3') in text)
+          ('map 0.2.9' if version.startswith('0.2.') else 'map 0.3') in text)
     return {'full_version': version, 'items': len(items),
             'claim': 'publication and accepted wording integrity'}
 

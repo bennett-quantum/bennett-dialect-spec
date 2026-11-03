@@ -1,19 +1,21 @@
 # spec/
 
-`Bennett-Dialect-Spec.md` is published **0.2.13** (2026-11-03), under maintainer D3:
-council-accepted 2cg (§17.1 allocator bookkeeping, round 2) and 4yg.1 (§13.1 PPC
-tie parity, derive3 round 1), including their Muse batch-2 S1 clarifications.
-It supersedes 0.2.12 in place, following the existing 0.2 patch publication layout;
-0.2.12 remains reproducible at `c775e6d458006fde143f2bf8ec62f07b034fb431`
-(spec SHA-256 `cfcce70e84ead8a05924c0921f13fc9cb477fdd71f5448c7f6f357ea91349e83`).
-Its binding 5u3 interpretations in [`errata-0.2.12.md`](errata-0.2.12.md)
-continue to apply; accepted 0.2.10 and its [`errata-0.2.10.md`](errata-0.2.10.md)
-are retained in history. Matching allocator/PPC text is in the 0.3 draft.
-The lifting maps remain separately versioned (0.2.9 and 0.3): unchanged ISA
-objects retain their hashes; altered linked helper bodies require fresh identities.
-The root `SPEC_VERSIONS.toml` still records 0.2.10, as it did for 0.2.12;
-reconciling that legacy pin is tracked by `b-dialect-spec-a3z`. This publication's
-full compatibility version is the string in its header and §23.
+`Bennett-Dialect-Spec.md` is published **0.2.14** (2026-11-03), under advisor R18 (by extension
+of maintainer D3): council-accepted brt-vbi (§§12.8, 19.1, 19.9 runtime integer instance delivery,
+derive3 round 1, with its sol/astra suggestions and Muse batch-3 S1/S2) and one editorial
+clarification of §11.2 console close semantics (advisor R23, `b-dialect-spec-9rd`, also carried in
+[`errata-0.2.10.md`](errata-0.2.10.md) lbq). It supersedes 0.2.13 in place, following the existing
+0.2 patch publication layout; 0.2.13 (2cg §17.1, 4yg.1 §13.1, maintainer D3) remains reproducible
+at `95a4b8d06933018a07fef3516296a25fd582fcde` (spec SHA-256
+`803c2e5589fb26ddba322206a08e8759a38c23bd7eded5c31ed0ad99ba4bda15`), and 0.2.12 at
+`c775e6d458006fde143f2bf8ec62f07b034fb431` (spec SHA-256
+`cfcce70e84ead8a05924c0921f13fc9cb477fdd71f5448c7f6f357ea91349e83`).
+The binding 5u3 interpretations in [`errata-0.2.12.md`](errata-0.2.12.md) continue to apply;
+accepted 0.2.10 and its errata are retained in history. Matching text is in the 0.3 draft.
+The lifting maps remain separately versioned (0.2.9 and 0.3): unchanged ISA objects retain their
+hashes; generated or altered linked helper bodies require fresh identities. The root
+`SPEC_VERSIONS.toml` records the published full version (0.2.14), which
+`scripts/test_dialect_check.py` asserts equals the header and §23.
 It targets
 ISA 0.8 (`../bennett-isa-spec/spec/`, settled) and is graded against it. `bennett_markers.h` is the
 normative C/C++ header of the marker ABI (section 3.3). `Bennett-Dialect-Spec-0.2.PROGRESS.md` is

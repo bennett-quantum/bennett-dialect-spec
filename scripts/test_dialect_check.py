@@ -756,15 +756,15 @@ entry:
             with self.subTest(format=ty):
                 ir=f'define {ty} @f({ty} %x) {{\n %n = fneg {ty} %x\n ret {ty} %n\n}}\n'
                 self.assertEqual(v.validate(ir),'accept')
-        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.13"}\n'
+        good='define void @f() {\n ret void\n}\n!llvm.module.flags = !{!0}\n!0 = !{i32 1, !"bennett.dialect", !"0.2.14"}\n'
         self.assertEqual(v.recognise(good)[0],'accept')
-        for stale in ('0.2.12','0.2.11','0.2.10','0.2.9','0.2.8','0.2.7','0.2.6','0.2.5','0.2.4','0.2.3','0.2.1'):
-            self.assertEqual(v.recognise(good.replace('0.2.13',stale))[0],'reject:BD-E-VERSION')
+        for stale in ('0.2.13','0.2.12','0.2.11','0.2.10','0.2.9','0.2.8','0.2.7','0.2.6','0.2.5','0.2.4','0.2.3','0.2.1'):
+            self.assertEqual(v.recognise(good.replace('0.2.14',stale))[0],'reject:BD-E-VERSION')
         import tomllib
         import re
         published=re.search(r'\*\*full version string\*\* \(`([0-9.]+)`\)',self.spec).group(1)
         self.assertEqual(tomllib.loads((d.ROOT/'SPEC_VERSIONS.toml').read_text())['dialect'],published)
-        self.assertIn('**full version string** (`0.2.13`)',self.spec)
+        self.assertIn('**full version string** (`0.2.14`)',self.spec)
 
     def test_v4_v12_residues_and_clean(self):
         for rule in ('v4','v12'):

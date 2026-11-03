@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-03. **Status:** draft 0.3, not yet graded; the orchestrator convenes the council at an acceptance
 candidate. It derives from draft 0.2.12 (accepted by the sol seat in round 11) and carries the
-matching 0.2.13 allocator/PPC amendments published in `Bennett-Dialect-Spec.md`. The grading target is Bennett ISA **0.9** (`Bennett-ISA-Spec-0.9.md`, accepted by all three
+matching 0.2.13 allocator/PPC amendments and the 0.2.14 runtime integer instance delivery and console close clarification published in `Bennett-Dialect-Spec.md`. The grading target is Bennett ISA **0.9** (`Bennett-ISA-Spec-0.9.md`, accepted by all three
 seats, K1–K81). The dossier is `docs/notes/2026-11-01-dialect-0.3-dossier.md`.
 
 **Versioning.** Dialect 0.3: markers 0.2, handles 0.3, regions 0.3, oracle-abi 0.3, tdl 0.3, effects 0.3, norm 0.2.8, map 0.3, asm 0.2, platform 0.3, driver 0.3, corpus 0.2; targets ISA 0.9. [deps: DLT-front-P2, DLT-23]
@@ -4659,7 +4659,7 @@ driver declares the models in `devices.models` (ISA §9.1) and supplies `block_i
 
 **Console syscall framing.** For virtual stdout/stderr, runtimes MUST implement `writev` by validating the vector count and total length before the first effect, then emitting one `console.write` per nonempty vector in source order (zero-length writes emit no record), returning the total byte count; the descriptor ABI limits are 0..1024 vectors and total at most target SSIZE_MAX, with invalid counts/overflow returning EINVAL and a null nonempty vector table returning EFAULT.
 
-The console shim MUST return ENOTTY for `ioctl(TIOCGWINSZ)`, ESPIPE for seeking, and success for closing a virtual stdout/stderr descriptor, with no extra device effect or terminal metadata; this close releases no host resource and does not disable the virtual byte sink.
+The console shim MUST return ENOTTY for `ioctl(TIOCGWINSZ)`, ESPIPE for seeking, and success for closing a virtual stdout/stderr descriptor, with no extra device effect or terminal metadata; this close releases no host resource and does not disable the virtual byte sink. Editorial clarification (advisor R23 2026-11-03, b-dialect-spec-9rd), resolving an ambiguity toward native semantics: closing a virtual stdout/stderr descriptor has native descriptor semantics, so a later `write`, `writev` or `lseek` on that descriptor returns -1 with EBADF; "the virtual byte sink" names the console device, which stays available to other descriptors bound to it, and "releases no host resource" means no host-side close.
 
 Device models beyond the four arrive with an ISA version (ISA §17 item 3, a mechanics
 deferral, §24): until then an effect on another device is `FAULT_EFFECT_UNMODELLED`.
@@ -6310,6 +6310,108 @@ declare void @__bennett_rt_i192_ctpop(ptr, ptr)
 
 ```text native=n-wide-intrinsics
 add([18446744073709551615,0,0],[1,0,0])=[0,1,0,0]; add([18446744073709551615,18446744073709551615,18446744073709551615],[1,0,0])=[0,0,0,1]; ctpop([18446744073709551615,1,0])=[65,0,0]; code=0
+```
+
+**Runtime integer instance delivery v1.** The runtimes distribution MUST supply an offline executable interface:
+
+```
+bennett-runtimes-instantiate --request REQUEST --bitcode OUTPUT_BC
+                           --manifest OUTPUT_JSON
+```
+
+The driver may configure the executable path. Exit zero means both
+outputs are complete; nonzero means no output is usable. Generation
+must not require network access, a host runtime service or private
+consumer knowledge. The distribution MUST identify its version.
+
+REQUEST is UTF-8 JSON with exactly `schema`, `llvm_major`, `target_triple`,
+`data_layout` and `entries`. `schema` is `"bennett-runtimes-instantiations-1"`;
+`llvm_major` is the link's integer LLVM major; `target_triple` and
+`data_layout` are the link's effective LLVM strings. Each `entries` element
+has exactly `op` (string) and `width` (integer, not boolean).
+
+The op set is `mul`, `udiv`, `sdiv`, `urem`, `srem`, `shl`, `lshr`, `ashr` from §12.7;
+and `bswap`, `bitreverse`, `ctpop`, `ctlz`, `cttz`, `fshl`, `fshr`, `sshl_sat`,
+`ushl_sat`, `smul_fix`, `umul_fix`, `smul_fix_sat`, `umul_fix_sat`, `sdiv_fix`,
+`udiv_fix`, `sdiv_fix_sat`, `udiv_fix_sat`, `pdep`, `pext`, `clmul`,
+`smul_with_overflow` and `umul_with_overflow` from §12.8. Dots in an
+intrinsic name become underscores. `width` is the original integer
+operand width W, not a limb width or result aggregate size. The
+operation and width must be admitted by the link's LLVM major and the
+corresponding published row; §12.7 requests require W>128, and the
+overflow-helper requests require W>64. Unknown fields/operations,
+nonintegral/out-of-range widths and target/major/layout mismatches are
+errors. Every valid request remains an implementation obligation.
+
+Duplicates denote one instance. Canonical request bytes are UTF-8 JCS,
+without a trailing LF, with unique entries sorted by op's unsigned
+UTF-8 bytes then ascending numeric width. `request_sha256` is the
+lowercase hexadecimal SHA-256 of those bytes. A supplied width list
+or prebuilt cache MUST NOT become a capability limit.
+
+OUTPUT_BC is ordinary matching-major bitcode whose triple and
+DataLayout equal the request. For each requested (op,W), provide the
+exact public definition, type, scalar flags, result convention and
+fault behavior of §§12.7–12.8. In particular, wide mul is
+`void @__bennett_rt_i<W>_mul(ptr dst,ptr a,ptr b)`, and wide ctpop is
+`void @__bennett_rt_i<W>_ctpop(ptr dst,ptr a)`. The existing shadow-stack
+slot layout, partial top limb and push/store/call/load/pop order are
+unchanged. All reachable implementation bodies must be supplied or
+resolved through the published matching-major base runtime/arith
+distributions and their published instance protocols. No unresolved
+instance placeholder, trap stub or hidden host implementation counts
+as delivery.
+
+(op,W) with W>128 for §12.7 ops and §12.8 runtime rows denotes `void @__bennett_rt_i<W>_<op>(ptr dst, ptr a[, ptr b, ptr c][, scalar flags in intrinsic order])`; (op,W) with W<=128 for the §12.8 table rows denotes `iW @__bennett_rt_<op>_i<W>(<the intrinsic's operands>)`; `smul_with_overflow`/`umul_with_overflow` with 64<W<=128 denotes `{iW, i1} @__bennett_rt_smul_with_overflow_i<W>(iW, iW)` resp. umul. The manifest type check uses exactly these types.
+
+OUTPUT_JSON is JCS with exactly `schema`, `request_sha256`,
+`bitcode_sha256` and `exports`. `schema` is `"bennett-runtimes-instances-1"`;
+`bitcode_sha256` hashes the exact OUTPUT_BC bytes. `exports` lists every
+externally visible function definition in that module, sorted by unsigned UTF-8
+symbol bytes, each with exactly `symbol` and `function_type`; generated non-function definitions MUST have internal or private linkage. `function_type` is the type as printed in the definition's declare/define line by the requested major's llvm-dis, without the @name, linkage or attributes. Every requested public symbol must occur
+exactly once and have its published type. Generation with identical
+canonical request and producer version must reproduce both output
+byte strings regardless of output paths. The driver verifies hashes,
+triple, layout, definitions and types before using the output.
+
+Collection is a link-preparation fixed point. Starting from the selected
+device entries and their conservatively reachable bitcode closure,
+include calls already naming these helpers and all helpers that the
+published normalisation rules will introduce, including vector
+scalarisation, N27 and the N22 applications after N27/N32. Collect
+arith instances by §13.1 as well. Resolve runtime/arith requests and
+their dependencies until no new (provider,instance) is required and
+every required body is linked. An already linked conforming definition satisfies its instance; request only unsatisfied instances, and recompute that set after linking each response. Include all possible device call
+targets; do not select just one runtime input path. Declarations alone
+do not satisfy the fixed point. A provider cycle must resolve to actual
+linked definitions; repeated unresolved requests are a loud failure.
+
+This discovery is a non-emitting analysis using the published rules;
+it does not rerun or change §12.1's normative rule order. Link the
+complete collected bodies before final materialisation, identically
+in the lifted and native comparison inputs. If later optimisation or
+materialisation reveals a new required helper, restart preparation
+with the enlarged request and rebuild both outputs; never patch only
+one build or silently leave it unresolved. Failure to generate a
+valid instance is an implementation blocker, not an unsupported-width
+verdict, narrower substitute or permitted fault of the device program.
+
+**Runtime instance witnesses.** The tagged `runtime-instance-request` fixture is a wire-format example, not an implemented generator result: entries mul/257, ctpop/257 and mul/257 for LLVM major 18, triple `x86_64-unknown-linux-musl` and DataLayout `e-p:64:64` canonicalise to the exact bytes below, with expected SHA-256 `74e7a75be203bc350a18a84980258fa09a3e9936837e8aa67fb01532064cdd81`. Duplicate or reordered entries MUST reproduce this canonical request and digest. For a=2^256+3 and b=2, the five-limb input slot has widths [64,64,64,64,1]; the tagged `runtime-instance-i257` result fixture requires product limbs [6,0,0,0,0], ctpop(product) limbs [2,0,0,0,0], and ctpop(a) limbs [3,0,0,0,0]. These are expected values for the requested helpers, checked by an identity-bound native fixture; they are not helper implementations and do not discharge the runtimes' delivery obligation.
+
+```text state=runtime-instance-request at=0
+{"data_layout":"e-p:64:64","entries":[{"op":"ctpop","width":257},{"op":"mul","width":257}],"llvm_major":18,"schema":"bennett-runtimes-instantiations-1","target_triple":"x86_64-unknown-linux-musl"}
+```
+
+```text state=runtime-instance-i257 at=0
+{
+  "source_sha256": "6f3383869a903ac96e45f20dabf61b90708d91a5da84a86b0ac55ead8ab1199b",
+  "request_sha256": "74e7a75be203bc350a18a84980258fa09a3e9936837e8aa67fb01532064cdd81",
+  "a": [3, 0, 0, 0, 1],
+  "b": [2, 0, 0, 0, 0],
+  "product": [6, 0, 0, 0, 0],
+  "ctpop_product": [2, 0, 0, 0, 0],
+  "ctpop_a": [3, 0, 0, 0, 0]
+}
 ```
 
 ### 12.9 Examples
@@ -11271,6 +11373,13 @@ in a pre-link phase. **Bitcode sources** (NS §3.3): Rust `std` from the bitcode
 (`.llvmbc`) where present and readable by §19.8, else `-Zbuild-std`; the Julia runtime by the
 runtimes' shim bitcode; every remaining call without bitcode is a `trapped` coverage line (§4.5).
 
+Before final materialisation the driver MUST complete the runtime
+integer instance-delivery fixed point of §12.8 and the arith requests
+of §13.1, using the same resolved closure in both builds. Whole-program
+device mode uses its entire device closure; selective-module mode
+collects the union required by its marked device roots. Neither mode
+requires host-only code to become a device region.
+
 ### 19.2 Mode `--bennett-tier=reversible --bennett-entry=<sym>`
 
 The whole program is the device program in tier R (NS §4.2: "entered through
@@ -11508,7 +11617,7 @@ report (ISA §13), whose `source` field is `dialect-0.3:<rule id>` (e.g. `dialec
 lowering reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved, including each shape's selection_identity, final semantic identity,
 resolved components and frozen layout capacities under §9.2) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
-hash, the layout options and the `cpuid` leaf table (§15.2). Its SHA-256 is recorded as the build metadata of the certificate's
+hash, the layout options and the `cpuid` leaf table (§15.2). Record each instance producer's version, canonical request hash, bitcode hash and manifest hash; use an empty instance list when no generated module is linked. Its SHA-256 is recorded as the build metadata of the certificate's
 `producer.version` (`<driver version>+build.<hex>`) because ISA 0.9 has no dedicated field for it
 (§25.2). [deps: DLT-19.9, DLT-25.2] The certificate MUST bind the full invocation and explicit expected relation under ISA 0.9, retain build-record and resolved-table identities and deferred-measurement information in the existing documented metadata channel where no dedicated field exists, and label a fixed-region subdomain as evidence with its covered fraction. [deps: DLT-19.9, DLT-25.2, DLT-18.7, ISA-12.1-P7, ISA-12.2-P1, ISA-12.3-P2, ISA-12.3-P3] Labels are the checker's (ISA K74): a producer label is a checked request.
 
@@ -11941,6 +12050,8 @@ warning never changes a verdict.
   recomputed (ISA §9.2). 0.2.x objects remain valid 0.2.x artefacts of ISA 0.8. The map version
   is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
 - Council-accepted 2cg and 4yg.1 (2026-11-02; pass2-2cg round 2, derive3-bennett-arith-4yg.1 round 1 and Muse batch 2) add ordinary charged allocator bookkeeping with mixed-fat-object applicability (§17.1), and decision `PPC-ZERO-LOW-PARITY` (§13.1): compare both lows including zero, use high parity only for two zero lows, then smaller absolute exact sum for equal parity. No ISA primitive, catalog, signature, layout or §16 lifting-map revision follows from these changes. The full dialect compatibility version and affected consumer/build-record pins change; `dialect_mapping_version` changes only when the separately declared map changes. Unchanged §16 examples retain their interface/object bytes and hashes; changed linked runtime/arith bodies require fresh materialisation manifests, closure identities, schedules and resource/certificate evidence. In a mixed fat object these obligations cover selected marked device closures and their matching native comparison, while native host entry and host-only libc remain outside device certificate inventories.
+- Council-accepted brt-vbi (derive3-brt-vbi-2026-11-02 round 1, sol and astra seats; Muse batch 3 round 1 with its brt-vbi-S1/S2; no blocking items) adds decision `RUNTIME-INSTANCES-1` (§§12.8, 19.1): the offline request/manifest protocol and complete device-closure fixed point, an additive versioned delivery protocol. No ISA K entry, primitive, catalog, signature, layout, `ref@0.9` recipe or §16 lifting-map revision follows. Request and output hashes are different identities; neither is an ISA `object_hash` or the arith/ref catalog hash. Provider-version changes invalidate the generation cache even when the request is identical. Generated bitcode changes materialised closures, costs, stack use and the resulting object/schedule/certificate bindings; drivers, plugins, runtimes, numerical providers and conformance owners coordinate publication and repin, and the §19.9 build record identifies each instance producer and its hashes. Component version labels are not changed; the full version string carries the new delivery obligation. In a mixed fat object, collection covers marked modules and their linked device closures; multiple roots may share generated bodies while each device root retains its own certificate/context association, and the ordinary native host binary, host entry/argv/envp and host-only libc stay outside that inventory. The executable name is a published interface, not a claim that a current runtimes distribution supplies it; brt-vbi/brt-zct implementation work stays open. The symbol and type of `smul_with_overflow`/`umul_with_overflow` requests with W>128 are not fixed by the accepted table; `b-dialect-spec-ac7` tracks that question.
+- Editorial clarification, advisor R23 2026-11-03 (b-dialect-spec-9rd), resolving an ambiguity toward native semantics without a council round: closing a virtual stdout/stderr descriptor (§11.2) has native descriptor semantics, so a later write/writev/lseek on it returns -1/EBADF; "the virtual byte sink" names the console device, which stays available to other descriptors bound to it; "releases no host resource" means no host-side close. The same sentence is carried in the `errata-0.2.10.md` lbq interpretation.
 - Every semantic change bumps the version; the reference objects and hashes of §16 depend on the
   ISA version string, the map and the layout, and change with any of them (0.1's hashes changed
   with the wrapper form of §16.2).
@@ -12197,6 +12308,7 @@ compute expected artefacts only (P-3).
 | `residual-nsw`, `residual-clean` | §12.4 V1 | validate | Python |
 | `ppc-zero-low-parity` | §13.1 candidate-pair parity, incoming conversion/FMA midpoints | state | exact rational expectations; LLVM 18/23 native integer selector fixture; not production arithmetic conformance |
 | `allocator-bookkeeping` | §17.1 ordinary metadata, retained primitive failure prefixes | state | identity-bound native fixture; Rust ISA metadata/history reversal and replay; not production runtime conformance |
+| `runtime-instance-request`, `runtime-instance-i257` | §12.8 runtime integer instance delivery: canonical request bytes and digest, i257 partial-top-limb expected values | state | exact canonicalisation of reordered/duplicate entries; coreutils sha256sum; LLVM 18/23 native `_BitInt(257)` fixture; not a helper implementation |
 | `n-libm-{x86,arm,riscv}-*`, `libm-invalid-casts` | N33 own-format carriers, §13.4 | parse, normalise, state | LLVM 18/23 per-triple verifier; host carrier numerical execution |
 | `n-fmuladd` (+ `native=`), `n-fp80`, `n-libm` | N16, N32, N33, §13 | parse, normalise, native | LLVM; Python; clang + seeds |
 | `indirect-table`, `indirect-host-pointer` | §14.2 | parse, recognise | LLVM; Python |

@@ -678,6 +678,8 @@ class Runner:
         check_0212(self)
         from dialect_0213 import check_all as check_0213
         check_0213(self)
+        from dialect_0214 import check_all as check_0214
+        check_0214(self)
         return self.rows
 
 
@@ -810,6 +812,8 @@ def action_object(isa,path,name,widths,rows):
 def state_check(runner,block):
     from dialect_0213 import STATES as PATCH0213, check_state as check_0213
     if block['attrs']['state'] in PATCH0213:return check_0213(runner,block)
+    from dialect_0214 import STATES as PATCH0214, check_state as check_0214
+    if block['attrs']['state'] in PATCH0214:return check_0214(runner,block)
     if block['attrs']['state']=='compatible-allocator-graph':
         from dialect_0211 import check_graph
         return check_graph(runner,block)

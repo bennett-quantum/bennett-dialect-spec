@@ -1,0 +1,82 @@
+[
+  {
+    "id": "N/interface",
+    "section": "12.8",
+    "sentence": "**Runtime integer instance delivery v1.** The runtimes distribution MUST supply an offline executable interface:"
+  },
+  {
+    "id": "N/interface-contract",
+    "section": "12.8",
+    "sentence": "The driver may configure the executable path. Exit zero means both\noutputs are complete; nonzero means no output is usable. Generation\nmust not require network access, a host runtime service or private\nconsumer knowledge. The distribution MUST identify its version."
+  },
+  {
+    "id": "N/request",
+    "section": "12.8",
+    "sentence": "REQUEST is UTF-8 JSON with exactly `schema`, `llvm_major`, `target_triple`,\n`data_layout` and `entries`. `schema` is `\"bennett-runtimes-instantiations-1\"`;\n`llvm_major` is the link's integer LLVM major; `target_triple` and\n`data_layout` are the link's effective LLVM strings. Each `entries` element\nhas exactly `op` (string) and `width` (integer, not boolean)."
+  },
+  {
+    "id": "N/op-set",
+    "section": "12.8",
+    "sentence": "The op set is `mul`, `udiv`, `sdiv`, `urem`, `srem`, `shl`, `lshr`, `ashr` from §12.7;\nand `bswap`, `bitreverse`, `ctpop`, `ctlz`, `cttz`, `fshl`, `fshr`, `sshl_sat`,\n`ushl_sat`, `smul_fix`, `umul_fix`, `smul_fix_sat`, `umul_fix_sat`, `sdiv_fix`,\n`udiv_fix`, `sdiv_fix_sat`, `udiv_fix_sat`, `pdep`, `pext`, `clmul`,\n`smul_with_overflow` and `umul_with_overflow` from §12.8. Dots in an\nintrinsic name become underscores. `width` is the original integer\noperand width W, not a limb width or result aggregate size. The\noperation and width must be admitted by the link's LLVM major and the\ncorresponding published row; §12.7 requests require W>128, and the\noverflow-helper requests require W>64. Unknown fields/operations,\nnonintegral/out-of-range widths and target/major/layout mismatches are\nerrors. Every valid request remains an implementation obligation."
+  },
+  {
+    "id": "N/canonical",
+    "section": "12.8",
+    "sentence": "Duplicates denote one instance. Canonical request bytes are UTF-8 JCS,\nwithout a trailing LF, with unique entries sorted by op's unsigned\nUTF-8 bytes then ascending numeric width. `request_sha256` is the\nlowercase hexadecimal SHA-256 of those bytes. A supplied width list\nor prebuilt cache MUST NOT become a capability limit."
+  },
+  {
+    "id": "N/output-bc",
+    "section": "12.8",
+    "sentence": "OUTPUT_BC is ordinary matching-major bitcode whose triple and\nDataLayout equal the request. For each requested (op,W), provide the\nexact public definition, type, scalar flags, result convention and\nfault behavior of §§12.7–12.8. In particular, wide mul is\n`void @__bennett_rt_i<W>_mul(ptr dst,ptr a,ptr b)`, and wide ctpop is\n`void @__bennett_rt_i<W>_ctpop(ptr dst,ptr a)`. The existing shadow-stack\nslot layout, partial top limb and push/store/call/load/pop order are\nunchanged. All reachable implementation bodies must be supplied or\nresolved through the published matching-major base runtime/arith\ndistributions and their published instance protocols. No unresolved\ninstance placeholder, trap stub or hidden host implementation counts\nas delivery."
+  },
+  {
+    "id": "MUSE-S1/table",
+    "section": "12.8",
+    "sentence": "(op,W) with W>128 for §12.7 ops and §12.8 runtime rows denotes `void @__bennett_rt_i<W>_<op>(ptr dst, ptr a[, ptr b, ptr c][, scalar flags in intrinsic order])`; (op,W) with W<=128 for the §12.8 table rows denotes `iW @__bennett_rt_<op>_i<W>(<the intrinsic's operands>)`; `smul_with_overflow`/`umul_with_overflow` with 64<W<=128 denotes `{iW, i1} @__bennett_rt_smul_with_overflow_i<W>(iW, iW)` resp. umul. The manifest type check uses exactly these types."
+  },
+  {
+    "id": "N+SOL-1+MUSE-S2/output-json",
+    "section": "12.8",
+    "sentence": "OUTPUT_JSON is JCS with exactly `schema`, `request_sha256`,\n`bitcode_sha256` and `exports`. `schema` is `\"bennett-runtimes-instances-1\"`;\n`bitcode_sha256` hashes the exact OUTPUT_BC bytes. `exports` lists every\nexternally visible function definition in that module, sorted by unsigned UTF-8\nsymbol bytes, each with exactly `symbol` and `function_type`; generated non-function definitions MUST have internal or private linkage. `function_type` is the type as printed in the definition's declare/define line by the requested major's llvm-dis, without the @name, linkage or attributes. Every requested public symbol must occur\nexactly once and have its published type. Generation with identical\ncanonical request and producer version must reproduce both output\nbyte strings regardless of output paths. The driver verifies hashes,\ntriple, layout, definitions and types before using the output."
+  },
+  {
+    "id": "N+SOL-3/collection",
+    "section": "12.8",
+    "sentence": "Collection is a link-preparation fixed point. Starting from the selected\ndevice entries and their conservatively reachable bitcode closure,\ninclude calls already naming these helpers and all helpers that the\npublished normalisation rules will introduce, including vector\nscalarisation, N27 and the N22 applications after N27/N32. Collect\narith instances by §13.1 as well. Resolve runtime/arith requests and\ntheir dependencies until no new (provider,instance) is required and\nevery required body is linked. An already linked conforming definition satisfies its instance; request only unsatisfied instances, and recompute that set after linking each response. Include all possible device call\ntargets; do not select just one runtime input path. Declarations alone\ndo not satisfy the fixed point. A provider cycle must resolve to actual\nlinked definitions; repeated unresolved requests are a loud failure."
+  },
+  {
+    "id": "N/discovery",
+    "section": "12.8",
+    "sentence": "This discovery is a non-emitting analysis using the published rules;\nit does not rerun or change §12.1's normative rule order. Link the\ncomplete collected bodies before final materialisation, identically\nin the lifted and native comparison inputs. If later optimisation or\nmaterialisation reveals a new required helper, restart preparation\nwith the enlarged request and rebuild both outputs; never patch only\none build or silently leave it unresolved. Failure to generate a\nvalid instance is an implementation blocker, not an unsupported-width\nverdict, narrower substitute or permitted fault of the device program."
+  },
+  {
+    "id": "ASTRA-C6/witnesses",
+    "section": "12.8",
+    "sentence": "**Runtime instance witnesses.** The tagged `runtime-instance-request` fixture is a wire-format example, not an implemented generator result: entries mul/257, ctpop/257 and mul/257 for LLVM major 18, triple `x86_64-unknown-linux-musl` and DataLayout `e-p:64:64` canonicalise to the exact bytes below, with expected SHA-256 `74e7a75be203bc350a18a84980258fa09a3e9936837e8aa67fb01532064cdd81`. Duplicate or reordered entries MUST reproduce this canonical request and digest. For a=2^256+3 and b=2, the five-limb input slot has widths [64,64,64,64,1]; the tagged `runtime-instance-i257` result fixture requires product limbs [6,0,0,0,0], ctpop(product) limbs [2,0,0,0,0], and ctpop(a) limbs [3,0,0,0,0]."
+  },
+  {
+    "id": "N/driver-fixed-point",
+    "section": "19.1",
+    "sentence": "Before final materialisation the driver MUST complete the runtime\ninteger instance-delivery fixed point of §12.8 and the arith requests\nof §13.1, using the same resolved closure in both builds. Whole-program\ndevice mode uses its entire device closure; selective-module mode\ncollects the union required by its marked device roots. Neither mode\nrequires host-only code to become a device region."
+  },
+  {
+    "id": "SOL-2/build-record",
+    "section": "19.9",
+    "sentence": "Record each instance producer's version, canonical request hash, bitcode hash and manifest hash; use an empty instance list when no generated module is linked."
+  },
+  {
+    "id": "R23/console-close",
+    "section": "11.2",
+    "sentence": "Editorial clarification (advisor R23 2026-11-03, b-dialect-spec-9rd), resolving an ambiguity toward native semantics: closing a virtual stdout/stderr descriptor has native descriptor semantics, so a later `write`, `writev` or `lseek` on that descriptor returns -1 with EBADF; \"the virtual byte sink\" names the console device, which stays available to other descriptors bound to it, and \"releases no host resource\" means no host-side close."
+  },
+  {
+    "id": "RUNTIME-INSTANCES-1/history",
+    "section": "23",
+    "sentence": "adds decision `RUNTIME-INSTANCES-1` (§§12.8, 19.1): the offline request/manifest protocol and complete device-closure fixed point, an additive versioned delivery protocol."
+  },
+  {
+    "id": "R23/history",
+    "section": "23",
+    "sentence": "- Editorial clarification, advisor R23 2026-11-03 (b-dialect-spec-9rd), resolving an ambiguity toward native semantics without a council round"
+  }
+]
