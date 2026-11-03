@@ -1,11 +1,19 @@
 # spec/
 
-`Bennett-Dialect-Spec.md` is draft **0.2.12** (2026-11-01), from eight consumer-named gaps,
-awaiting council review. It supersedes accepted draft 0.2.11 (round 10, sol/codex);
-accepted 0.2.10 is retained in git, with binding interpretations in
-[`errata-0.2.10.md`](errata-0.2.10.md). Binding interpretations of 0.2.12 itself (text and SHA
-unchanged) are in [`errata-0.2.12.md`](errata-0.2.12.md). The reviewer disposition table is in
-[`../docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md`](../docs/briefs/2026-11-01-dialect-0212-consumer-gaps.md).
+`Bennett-Dialect-Spec.md` is published **0.2.13** (2026-11-03), under maintainer D3:
+council-accepted 2cg (§17.1 allocator bookkeeping, round 2) and 4yg.1 (§13.1 PPC
+tie parity, derive3 round 1), including their Muse batch-2 S1 clarifications.
+It supersedes 0.2.12 in place, following the existing 0.2 patch publication layout;
+0.2.12 remains reproducible at `c775e6d458006fde143f2bf8ec62f07b034fb431`
+(spec SHA-256 `cfcce70e84ead8a05924c0921f13fc9cb477fdd71f5448c7f6f357ea91349e83`).
+Its binding 5u3 interpretations in [`errata-0.2.12.md`](errata-0.2.12.md)
+continue to apply; accepted 0.2.10 and its [`errata-0.2.10.md`](errata-0.2.10.md)
+are retained in history. Matching allocator/PPC text is in the 0.3 draft.
+The lifting maps remain separately versioned (0.2.9 and 0.3): unchanged ISA
+objects retain their hashes; altered linked helper bodies require fresh identities.
+The root `SPEC_VERSIONS.toml` still records 0.2.10, as it did for 0.2.12;
+reconciling that legacy pin is tracked by `b-dialect-spec-a3z`. This publication's
+full compatibility version is the string in its header and §23.
 It targets
 ISA 0.8 (`../bennett-isa-spec/spec/`, settled) and is graded against it. `bennett_markers.h` is the
 normative C/C++ header of the marker ABI (section 3.3). `Bennett-Dialect-Spec-0.2.PROGRESS.md` is

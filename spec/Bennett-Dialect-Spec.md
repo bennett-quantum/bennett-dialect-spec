@@ -1,7 +1,7 @@
-# Bennett LLVM Dialect — Specification, draft 0.2.12
+# Bennett LLVM Dialect — Specification, draft 0.2.13
 
-**Date:** 2026-11-01. **Status:** draft 0.2.12 accepted by the sol seat in round 11 (2026-11-01; 0 blocking; gate 2893/2893).
-This draft supersedes 0.2.11, accepted by the council's sol and codex seats in round 10
+**Date:** 2026-11-03. **Status:** published 0.2.13 under maintainer D3 (2026-11-03), incorporating council-accepted 2cg and 4yg.1 (2026-11-02; no blocking items). Supersedes 0.2.12; its binding 5u3 interpretations in `errata-0.2.12.md` continue to apply.
+The preceding 0.2.12 superseded 0.2.11, accepted by the council's sol and codex seats in round 10
 (2026-10-31; gate 2834/2834), retained at git `eaad067` with accepted-text SHA-256
 `05101a18e04098cfca5fdfb52edc9d9027723455adf2569da2fa49ef7a47c7c1`.
 Its pre-acceptance freeze receipt records spec SHA-256
@@ -9,9 +9,9 @@ Its pre-acceptance freeze receipt records spec SHA-256
 Accepted 0.2.10 and its SHA are retained by `errata-0.2.10.md`; its text is unchanged.
 The grading target remains Bennett ISA **0.8**. [deps: DLT-front-P2, DLT-1.3, DLT-23]
 
-**Versioning.** Dialect 0.2.12: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4, effects 0.2.4, norm 0.2.8, map 0.2.9, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8. [deps: DLT-front-P2, DLT-23]
-The **full version string** (`0.2.12`) is the compatibility unit (§23): drafts are not compatible with each other. [deps: DLT-front-P2, DLT-23]
-The compatible track MUST retain existing marker signatures, canonical map and externally visible reference behaviour while clarifying inherited rules and supplying closure evidence. [deps: DLT-front-P2, DLT-3.2, DLT-16, DLT-23]
+**Versioning.** Dialect 0.2.13: markers 0.2, handles 0.2.8, regions 0.2.8, oracle-abi 0.2.4, tdl 0.2.4, effects 0.2.4, norm 0.2.8, map 0.2.9, asm 0.2, platform 0.2.1, driver 0.2.1, corpus 0.2; targets ISA 0.8. [deps: DLT-front-P2, DLT-23]
+The **full version string** (`0.2.13`) is the compatibility unit (§23): drafts are not compatible with each other. [deps: DLT-front-P2, DLT-23]
+This publication retains existing marker signatures and the canonical lifting map. Its explicit semantic revisions are the PPC tie decision (§13.1) and body-dependent allocator bookkeeping (§17.1); other reference behaviour is retained. [deps: DLT-front-P2, DLT-3.2, DLT-16, DLT-23]
 Declared dependency markers are retained for historical context; the council withdrew the requirement on 2026-10-31 (CLAUDE.md rule 12).
 ISA 0.9 adoption remains in the separate 0.3 track described by `outline-0.3.md`, D15–D19; this draft does not adopt those operations.
 
@@ -2600,7 +2600,7 @@ Only the rules the north star requires:
   unchanged; an open window alone never justifies quncopy. These channel outputs are
   separate from clean workspace (TDL-7). Standalone adj uses the deterministic
   latest-before-reversed-consumer placement of §18.2, including source-wire lifetime extension. The coverage report has a
-  `lowered` entry with source `dialect-0.2.12:7.5a` for every such call, and the certificate lists
+  `lowered` entry with source `dialect-0.2.13:7.5a` for every such call, and the certificate lists
   the id `deferred_measurement` in the region's `definedness_assumptions` (ISA §12.3; §25.2
   records the wording item). [deps: DLT-7.5, DLT-19.9, DLT-25.2]
 - **(b) Reversible regions.** The closure of a reversible region MAY contain gate and region
@@ -3946,7 +3946,7 @@ A field equal to `BENNETT_BUDGET_TABLE` (all ones) takes its value from the budg
 
 ### 9.2 The budget table
 
-The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.12. [deps: DLT-9.2, DLT-23]
+The budget-table JSON schema version remains 0.2; it is separate from full dialect 0.2.13. [deps: DLT-9.2, DLT-23]
 
 The **budget table** is a driver input (`--bennett-budgets=<file>`), one JSON document in RFC
 8785 canonical form:
@@ -6892,11 +6892,13 @@ the contract is correct rounding, so `fma` needs its own implementation.
 
 **PPCDoubleDouble priority and rounding.** The reference to the LLVM major's APFloat `PPCDoubleDouble` names its two-binary64 value representation and operation conventions, not permission to violate this section's explicit numerical guarantees: implementations MUST preserve the exact real value high + low for conversions and the correctly-rounded requirements for `sqrt`, `fma` and rounding-to-integral operations, and MUST NOT substitute the legacy consecutive-106-bit fallback when it changes such a result.
 
-For these guarantees, a finite canonical double-double is a nonoverlapping pair (h,l) of binary64 values with h = roundTiesToEven(h+l) and l the exact residual (positive zero when the residual is zero), zero represented as (signed zero,+0); the result MUST be the canonical pair whose exact sum is nearest the exact mathematical result (or its directed neighbour for §13.5), with ties to the even low-component significand, using the high significand when the low component is zero, and NaN/inf represented in the high component with low +0. Overflow is determined by rounding with an unbounded high exponent first and then applying binary64's high-component exponent limit with IEEE overflow outcomes for the active mode (the finite maximum or infinity as appropriate); underflow uses tininess after rounding of the exact pair sum, with subnormal threshold 2^-1022.
+For these guarantees, a finite canonical double-double is a nonoverlapping pair (h,l) of binary64 values with h = roundTiesToEven(h+l) and l the exact residual (positive zero when the residual is zero), zero represented as (signed zero,+0); the result MUST be the canonical pair whose exact sum is nearest the exact mathematical result (or its directed neighbour for §13.5), with nearest ties resolved as follows. Let L and U be the adjacent canonical finite values bracketing the exact result, with L < U. If either low component is nonzero, compare the parities of BOTH low-component integer significands, treating a zero significand as even. Otherwise compare the high-component integer significands. The integer significand is the binary64 significand including the implicit leading bit for a normal value and without it for a subnormal; its sign does not affect parity. Choose the candidate of even parity when exactly one is even; if the parities coincide, choose the candidate whose exact sum has smaller absolute value. Existing exact-zero sign and overflow rules apply separately. This tie rule applies wherever this section requires nearest-even canonical-pair rounding, including incoming IEEE conversions, FMA and nearest-even carrier transcendentals of §13.4. Directed and nearest-away modes retain their specified rules. NaNs and infinities are represented in the high component with low +0. Overflow is determined by rounding with an unbounded high exponent first and then applying binary64's high-component exponent limit with IEEE overflow outcomes for the active mode (the finite maximum or infinity as appropriate); underflow uses tininess after rounding of the exact pair sum, with subnormal threshold 2^-1022.
 
 Cross-format conversion MUST use the exact sum of both components, be exact whenever that sum is representable in the destination, and otherwise round once to the destination format under the requested mode; it MUST NOT drop a representable low component, saturate an in-range positive total because its low component is negative, or introduce intermediate-conversion flags. For example, high = 1 and low = 2^-60 convert to x86_fp80 as exactly 1 + 2^-60, not 1. The `fpext` exactness statement describes true numerical widening; a cross-format pair whose value sets are not nested still uses this conversion rule, regardless of equal storage width.
 
 Constrained operations covered by these guarantees MUST derive invalid/divbyzero/overflow/underflow/inexact from the mathematical operation and final rounding, not the status of an inaccurate APFloat fallback or an intermediate high/low operation; for sqrt/fma/conversion, inexact means the final pair's exact sum differs from the exact finite result, and underflow requires both tininess after rounding and inexactness. Rounding-to-integral follows the named IEEE operation: rint/lrint/llrint signal inexact on a nonintegral finite operand, nearbyint suppresses inexact, and floor/ceil/trunc/round/roundeven/lround/llround do not raise inexact merely for discarding a fractional part. Other PPC operations retain their named major-specific APFloat semantics subject to the explicit canonical-NaN rules above.
+
+Both following witnesses use nearest-even mode (R=0). For u=2^-1074 and h=1+2^-52, fma((h,u),(1/2,+0),(h/2,+0)) returns (h,+0). Conversion of binary128 bits 0x3c030000000000001200000000000000 to PPC returns (binary64 bits 0x0030000000000001,+0). Each constrained operation, with initial flags zero and exceptions observed, raises exactly inexact (16); observed exceptions OR 16 into existing sticky flags. Unconstrained operations return the same bits without modifying the floating-point environment. Negated exact inputs return the corresponding negative high with low +0, again raising exactly 16 when observed. The equal-parity fallback is total: L=-U with L<U cannot be an adjacent canonical pair, since the canonical zero pair lies strictly between any negative and positive canonical sums. Suite DF's tagged `ppc-zero-low-parity` vector checks these midpoint/selector policies and two-zero-low subnormal neighbours; full-domain arithmetic conformance remains a producer obligation.
 
 ### 13.2 Vector floating point
 
@@ -6987,6 +6989,30 @@ All seven formats MUST retain own-format arithmetic and transcendental semantics
 Suite DF checks the independent §§13.1/13.4/13.5 boundary vectors in `scripts/0212_numerical.c`; full-domain accuracy and exact-flag implementation obligations remain open.
 
 ### 13.6 Examples
+
+The following DF vector binds an independent integer selector fixture; exact rational midpoint and adjacency checks precede native execution. It is not production arithmetic conformance. The equal-parity branch cases are synthetic selector tests, not assertions of adjacent canonical candidates.
+
+```text state=ppc-zero-low-parity at=0
+{
+  "source_sha256": "c7bef159ddba2e3ff9229c0dac7f2bfb3cac23cf9aace01bfaad327f07809833",
+  "nearest_even": [
+    [
+      "3ff0000000000001",
+      "0000000000000000",
+      16
+    ],
+    [
+      "0030000000000001",
+      "0000000000000000",
+      16
+    ]
+  ],
+  "two_zero_low_high_bits": [
+    0,
+    2
+  ]
+}
+```
 
 The unordered bit is predicate bit 3: ueq = 8|1 = 9, uno = 8, une = 8|2|4 = 14.
 
@@ -10033,6 +10059,54 @@ The §16.9 thin wrapper is a specialised witness for its only allocation size, 1
 
 Suites DR/DD check the §§17.1/19.5 allocation/layout boundary vector in `scripts/0212_allocation.c` and `scripts/dialect_0212_vectors.py`; this is a conformance vector, not a new primitive.
 
+The allocation vector fixes the trace of its stated thin wrapper, not a universal trace for every implementation of malloc/calloc/realloc. Runtime bodies may retain requested size, liveness and alignment state in ordinary materialised memory, including dynamically allocated metadata and explicit zero-size address probes. Every such operation, its stores, padding and allocation history is present identically in device and native materialisation and charged to the actual heap/step/table budgets. The C payload request retains the rounded extent and returned-base rule above; padding immediately before that payload is minimal from the actual current primitive bump. No hidden header, private ISA-table query, native-only map or fixed metadata cap is implied or permitted by this allowance. Reusing live metadata storage as ordinary data does not reclaim primitive payload addresses or allocation-table/history entries.
+
+realloc preserves min(old requested size,new size) bytes of a live C allocation, using retained ordinary metadata or another published mechanism. Old requested size means the original C byte count, including the checked calloc product, excluding ABI rounding, padding and metadata: malloc(1) followed by realloc(p,48) preserves one byte, not the rounded 16-byte extent. Invalid/dead/interior pointers retain the materialised memory/fault contract. Overflow preflights required by the C allocation alignment and padding rules above precede the corresponding allocation mutation; a later primitive failure retains the successfully executed ordinary prefix unless explicitly reversed. Both comparison builds execute the same body, including its failure prefix. Tests of a production runtime bind that body's identity and exact resulting trace; they do not impose the thin fixture's record count on a different body. Prefix retention describes forward execution before cleanup or reversal and does not waive oracle workspace restoration or the version-specific R-fault provisions of §§17.5–17.6.
+
+In a mixed fat object, this bookkeeping allowance governs the allocator closure selected for a marked device entry and that closure's native comparison build. The surrounding native host binary, native entry, argv/envp and host-only libc remain outside that device object, subject to the existing placement/promotion rules of §§4.2–4.4 and 19.4. Allocation traces, budgets and runtime-body identities bind that selected closure. Shared caller allocation state, including ordinary allocator metadata bytes and primitive allocation history, is transferred and charged under §8.5; boundary addresses and layout follow §§19.4–19.5. Neither a whole-program device entry nor a new allocation query is required by this clarification. Section 8.5 specifies oracle entry-state snapshot/replay, not a general host-memory-by-reference launch ABI; container/root/certificate association, host/device entry bindings, budget/handle lifetime negotiation, tape/run association, address/layout mapping, range/liveness, aliasing, ownership/synchronisation, writeback and reversal remain explicit mixed-launch contract obligations (bennett-4ht).
+
+A zero-size primitive probe consumes one heap byte and one allocation-table entry, records requested size zero and supplies no accessible payload bytes. The separate tagged `allocator-bookkeeping` witness uses ordinary 32-byte metadata, empty lists, alignment 16, heap base 4096 and an initial raw alloc(3). Its requests are [3,0,12,16,32]; heap=64 returns 4112 with final bump 4160, five records and code 0. Heap=32 does not return from the wrapper: it faults with code 2 at bump 4128 after four successful records. These allocation-only totals assume sufficient other resources and no additional prologue allocations; replay and shadow-stack backing are charged separately when present. Primitive-only histories alloc(16);alloc(32) and alloc(32);alloc(16) have the same first pointer p and final bump p+48 but different old sizes; the cursor alone cannot supply realloc's old requested size. The identity-bound finite bookkeeping fixture checks actual metadata stores, failure prefixes, reversal and replay; production runtimes must supply the same checks against their own pinned bodies.
+
+```text state=allocator-bookkeeping at=0
+{
+  "source_sha256": "7a33cd57dd1f2164f2f94dc07aec8d7f5d63c4d6fbbdbcd6d19b2a467ece69a3",
+  "records": [
+    [
+      4096,
+      3
+    ],
+    [
+      4099,
+      0
+    ],
+    [
+      4100,
+      12
+    ],
+    [
+      4112,
+      16
+    ],
+    [
+      4128,
+      32
+    ]
+  ],
+  "heap64": [
+    4112,
+    4160,
+    5,
+    0
+  ],
+  "heap32": [
+    0,
+    4128,
+    4,
+    2
+  ]
+}
+```
+
 ### 17.2 Layout
 
 The device `layout` (ISA §9.1) replicates the comparison link (§19.5). CC and R code use ISA §7.1
@@ -11174,7 +11248,7 @@ pipeline of §21.1 the user selects), then runs the plugin on the whole program 
 `opt`:
 
 ```
-opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.12 …
+opt -load-pass-plugin=libbennett-plugin-<M>.so -passes='lto<O3>,bennett' -bennett-dialect=0.2.13 …
 ```
 
 The plugin runs on one merged module (full LTO; §24 D23). It registers one module pass, `bennett`,
@@ -11300,14 +11374,14 @@ Mixed-major bitcode links within the tested envelope MUST use its newest reader 
 | `-bennett-out=<dir>` | the outputs below | required |
 
 **Identity.** `llvmGetPassPluginInfo` returns plugin name `bennett` and version string
-`dialect-0.2.12;isa-0.8`; the driver refuses a plugin whose string differs. [deps: DLT-19.9, DLT-23] One plugin build per LLVM
+`dialect-0.2.13;isa-0.8`; the driver refuses a plugin whose string differs. [deps: DLT-19.9, DLT-23] One plugin build per LLVM
 major (NS §3.2).
 
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
 pipeline, normaliser_version: "0.2.8"}` and `bindings.dialect_mapping_version = "0.2.9"`; the coverage
-report (ISA §13), whose `source` field is `dialect-0.2.12:<rule id>` (e.g. `dialect-0.2.12:N33`); the
+report (ISA §13), whose `source` field is `dialect-0.2.13:<rule id>` (e.g. `dialect-0.2.13:N33`); the
 blocker reports (§25.1); and the **build record**, one JCS object with the build flags, the
 budget table (resolved, including each shape's selection_identity, final semantic identity,
 resolved components and frozen layout capacities under §9.2) and its SHA-256, the runtimes, arith and asm-table hashes, the snapshot
@@ -11321,7 +11395,7 @@ such as the trace runtime do, and are never linked into production). A link in w
 did not run therefore leaves undefined references and fails at link time; the driver MUST NOT
 ignore unresolved symbols or supply weak marker definitions.
 
-**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.12"}` (behaviour Error, so an
+**Module flag.** A producer MAY add `!{i32 1, !"bennett.dialect", !"0.2.13"}` (behaviour Error, so an
 LTO link of modules of two dialect versions fails); the plugin MUST reject a module whose flag
 differs from its version (`BD-E-VERSION`). [deps: DLT-19.9, DLT-23]
 
@@ -11727,15 +11801,16 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
-- The **full version string** of this document (`0.2.12`) is the unit of compatibility: a plugin
+- The **full version string** of this document (`0.2.13`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other. [deps: DLT-23, DLT-19.9]
-- The consumer-gap dispositions revise the full dialect to `0.2.12`. [deps: DLT-5.2, DLT-12.2-P11, DLT-23]
+- The council-accepted allocator clarification (2cg, §17.1) and PPC tie repair (4yg.1, §13.1) revise the full dialect to `0.2.13`, published now under maintainer D3 (2026-11-03). Previous publication 0.2.12 remains reproducible in its recorded commits and `errata-0.2.12.md`. [deps: DLT-5.2, DLT-12.2-P11, DLT-23]
   The lifting map remains `0.2.9` (global-numbering correction); `norm`, `handles` and
   `regions` remain `0.2.8`; unchanged oracle-abi, tdl and effects remain `0.2.4`, marker/header,
   asm and corpus remain `0.2`, platform and driver remain `0.2.1`. Every reference object is checked
   again; unchanged ISA-0.8 interface signatures retain their hashes. The map version
   is recorded in certificate metadata, not inserted into ISA-owned interface signatures.
+- Council-accepted 2cg and 4yg.1 (2026-11-02; pass2-2cg round 2, derive3-bennett-arith-4yg.1 round 1 and Muse batch 2) add ordinary charged allocator bookkeeping with mixed-fat-object applicability (§17.1), and decision `PPC-ZERO-LOW-PARITY` (§13.1): compare both lows including zero, use high parity only for two zero lows, then smaller absolute exact sum for equal parity. No ISA primitive, catalog, signature, layout or §16 lifting-map revision follows from these changes. The full dialect compatibility version and affected consumer/build-record pins change; `dialect_mapping_version` changes only when the separately declared map changes. Unchanged §16 examples retain their interface/object bytes and hashes; changed linked runtime/arith bodies require fresh materialisation manifests, closure identities, schedules and resource/certificate evidence. In a mixed fat object these obligations cover selected marked device closures and their matching native comparison, while native host entry and host-only libc remain outside device certificate inventories.
 - Every semantic change bumps the version; the reference objects and hashes of §16 depend on the
   ISA version string, the map and the layout, and change with any of them (0.1's hashes changed
   with the wrapper form of §16.2).
@@ -11940,6 +12015,8 @@ compute expected artefacts only (P-3).
 | `pt2-wrap`, `pt5-range`, `pt5-range-load` | PT2, PT5, N3, N4 | parse, recognise, state | LLVM O0/instcombine; clang 18/23 materialised execution |
 | `n-vector`, `n-wideint`, `n-shadow-stack`, `n-memintrinsics`, `n-intrinsics`, `n-atomic` with `native=` | N9, N21, N22, N24, N26, N27 | parse, normalise, native | LLVM; Python; clang + seeds |
 | `residual-nsw`, `residual-clean` | §12.4 V1 | validate | Python |
+| `ppc-zero-low-parity` | §13.1 candidate-pair parity, incoming conversion/FMA midpoints | state | exact rational expectations; LLVM 18/23 native integer selector fixture; not production arithmetic conformance |
+| `allocator-bookkeeping` | §17.1 ordinary metadata, retained primitive failure prefixes | state | identity-bound native fixture; Rust ISA metadata/history reversal and replay; not production runtime conformance |
 | `n-libm-{x86,arm,riscv}-*`, `libm-invalid-casts` | N33 own-format carriers, §13.4 | parse, normalise, state | LLVM 18/23 per-triple verifier; host carrier numerical execution |
 | `n-fmuladd` (+ `native=`), `n-fp80`, `n-libm` | N16, N32, N33, §13 | parse, normalise, native | LLVM; Python; clang + seeds |
 | `indirect-table`, `indirect-host-pointer` | §14.2 | parse, recognise | LLVM; Python |

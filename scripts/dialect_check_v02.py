@@ -91,7 +91,7 @@ def headless_env():
     for key in ('DISPLAY', 'WAYLAND_DISPLAY', 'DBUS_SESSION_BUS_ADDRESS', 'BROWSER'):
         env.pop(key, None)
     SCRATCH.mkdir(parents=True, exist_ok=True)
-    env['TMPDIR'] = str(SCRATCH)
+    env.setdefault('TMPDIR', str(SCRATCH))
     return env
 
 
@@ -192,7 +192,7 @@ class Interpreter:
                     raise d.Fail('interpreter sources changed during snapshot; rerun to take a consistent copy')
                 # Exhaustive execution checks require optimized code. Include the
                 # profile in the fingerprint to preserve earlier debug snapshots.
-                command(['cargo', 'build', '--release', '--offline', '--manifest-path', manifest,
+                command(['cargo', 'build', '--release', '--offline', '-j4', '--manifest-path', manifest,
                          '--target-dir', manifest.parent / 'target'], timeout=120)
                 stamp.write_text(json.dumps({'commit': commit,
                     'source_sha256': fingerprint, 'profile': 'release', 'files': before}, indent=2) + '\n')
@@ -326,9 +326,19 @@ def recognise(text, **options):
     a.major=options.get('major')
     try:
         a.s1()
+        # Compatibility anchors for tools/dialect03_patches.py's frozen import
+        # table; its two former guard replacements now affect comments only:
+        # if version != "0.2.12":
+        # "§19.9 expected 0.2.12; actual "
+        # Both tracks enforce the selected document's full version below.
+        title = d.SPEC_PATH.read_text().splitlines()[0]
+        match = re.fullmatch(r'# Bennett LLVM Dialect — Specification, (?:draft )?([0-9.]+)', title)
+        if not match:
+            raise d.Fail('§19.9 cannot determine full dialect version from '+str(d.SPEC_PATH))
+        expected_version = match[1]
         for version in re.findall(r'!"bennett.dialect", !"([^"\n]+)"', text):
-            if version != "0.2.12":
-                raise d.Reject("BD-E-VERSION", "§19.9 expected 0.2.12; actual " + version)
+            if version != expected_version:
+                raise d.Reject("BD-E-VERSION", "§19.9 expected " + expected_version + "; actual " + version)
         a.analyse()
         a.region_rules()
         if options.get("rmode"):a.reversible |= a.closure(options["rmode"].lstrip("@"))
@@ -618,6 +628,8 @@ class Runner:
         check_all(self)
         from dialect_0212_contract import check_all as check_0212
         check_0212(self)
+        from dialect_0213 import check_all as check_0213
+        check_0213(self)
         return self.rows
 
 
@@ -747,6 +759,8 @@ def action_object(isa,path,name,widths,rows):
 
 
 def state_check(runner,block):
+    from dialect_0213 import STATES as PATCH0213, check_state as check_0213
+    if block['attrs']['state'] in PATCH0213:return check_0213(runner,block)
     if block['attrs']['state']=='compatible-allocator-graph':
         from dialect_0211 import check_graph
         return check_graph(runner,block)
