@@ -1,7 +1,10 @@
 """Publication regressions for the council-accepted allocator and PPC repairs."""
 import unittest
 import tempfile
+import hashlib
+import os
 from pathlib import Path
+from unittest.mock import patch
 
 import dialect_check as d
 import dialect_check_v02 as v
@@ -57,6 +60,31 @@ class Publication(unittest.TestCase):
                 with self.subTest(witness=ident):
                     result = v.state_check(runner, runner.block('state', ident))
                     self.assertIn('not production', result['claim'])
+
+
+class ReferencePin(unittest.TestCase):
+    def test_pin_requires_both_path_and_digest(self):
+        with patch.dict(os.environ, {'BENNETT_ISA_REF': '/missing'}, clear=True):
+            with self.assertRaisesRegex(d.Fail, 'both'):
+                v.interpreter()
+
+    def test_pin_checks_digest_and_detects_replacement(self):
+        with tempfile.TemporaryDirectory(prefix='0213-pin-') as tmp:
+            path = Path(tmp)/'reference'
+            path.write_bytes(b'first reference binary')
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            with patch.dict(os.environ, {'BENNETT_ISA_REF': str(path),
+                                         'BENNETT_ISA_REF_SHA256': '0'*64}, clear=True):
+                with self.assertRaisesRegex(d.Fail, 'SHA-256'):
+                    v.interpreter().build()
+            with patch.dict(os.environ, {'BENNETT_ISA_REF': str(path),
+                                         'BENNETT_ISA_REF_SHA256': digest}, clear=True):
+                pinned = v.interpreter()
+                pinned.build()
+                self.assertEqual(pinned.fingerprint, digest)
+                path.write_bytes(b'replaced reference binary')
+                with self.assertRaisesRegex(d.Fail, 'changed'):
+                    pinned.build()
 
 
 if __name__ == '__main__':

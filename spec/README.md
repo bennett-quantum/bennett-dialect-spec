@@ -40,6 +40,11 @@ Rules for changing it:
 - Run `python3 scripts/dialect_check_v02.py` before anyone grades this draft; it must exit 0. (For 0.2 the
   checker is being extended against the Rust interpreter in a separate job; until then the 0.2
   examples were executed by the writing job as its progress file records.)
+  When reference sources are being edited concurrently, select an immutable committed reference
+  build with `BENNETT_ISA_REF=<reference-interpreter/target/release/bennett-isa-ref>` and
+  `BENNETT_ISA_REF_SHA256=<sha256>`. Both settings are required together; a digest mismatch or
+  replacement during a run fails. The JSON results record the executor path and digest. All
+  examples still execute against that independent reference interpreter.
 - Add every new example or stated result as a tagged block, so the checker executes it; an
   untagged `llvm` or `isa` block is an error. A `semantics=` example must be byte-equal to its
   `corpus/legality/cases/spec-*.ll` file; run `python3 corpus/legality/harness/run.py baseline

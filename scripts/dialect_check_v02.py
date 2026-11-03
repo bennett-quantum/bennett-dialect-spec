@@ -2,6 +2,11 @@
 
 No execution result is supplied by the Python interpreter retained from 0.1.
 Each result includes its example, contract rule, expected value and observation.
+
+For a reproducible run while the sibling reference sources are changing, set
+BENNETT_ISA_REF to an immutable reference-interpreter/target/release/bennett-isa-ref
+and BENNETT_ISA_REF_SHA256 to its SHA-256. Both are required together. The pin is
+checked before execution and recorded in the results; no check is omitted.
 """
 import argparse
 import collections
@@ -215,6 +220,47 @@ class Interpreter:
             raise d.Fail(f'{verb}: expected one JSON result; actual={output!r}') from e
 
 
+class PinnedExecutable(Interpreter):
+    """An explicitly selected immutable executor, independent of sibling edits."""
+    def __init__(self, executable, digest):
+        super().__init__()
+        if not re.fullmatch('[0-9a-f]{64}', digest):
+            raise d.Fail('BENNETT_ISA_REF_SHA256 must be a lowercase SHA-256')
+        self.exe = Path(executable).resolve()
+        self.fingerprint = digest
+        self.file_identity = None
+
+    def build(self):
+        stat = self.exe.stat()
+        identity = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        if self.ready:
+            if identity != self.file_identity:
+                raise d.Fail('pinned reference binary changed during verification: '+str(self.exe))
+            return
+        digest = hashlib.sha256(self.exe.read_bytes()).hexdigest()
+        equal('reference-executor', 'SHA-256', self.fingerprint, digest)
+        after = self.exe.stat()
+        if identity != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise d.Fail('pinned reference binary changed while hashing: '+str(self.exe))
+        self.file_identity = identity
+        self.ready = True
+
+    def provenance(self):
+        self.build()
+        return {'executable': str(self.exe), 'sha256': self.fingerprint,
+                'claim': 'explicit immutable independent reference executor'}
+
+
+def interpreter():
+    executable = os.environ.get('BENNETT_ISA_REF')
+    digest = os.environ.get('BENNETT_ISA_REF_SHA256')
+    if executable is not None or digest is not None:
+        if not executable or not digest:
+            raise d.Fail('both BENNETT_ISA_REF and BENNETT_ISA_REF_SHA256 are required')
+        return PinnedExecutable(executable, digest)
+    return Interpreter()
+
+
 def expanded_types(text):
     types = dict(re.findall(r'^(%[-\w.$]+) = type (.+)$', text, re.M))
     for _ in range(len(types) + 1):
@@ -425,7 +471,7 @@ class Runner:
         self.scenario_evidence = set()
         self.tc = d.toolchains()
         self.frontends = frontend_bins()
-        self.isa = Interpreter()
+        self.isa = interpreter()
         self.by_tag = collections.defaultdict(dict)
         for b in blocks:
             for tag in TAGS:
@@ -550,6 +596,8 @@ class Runner:
         raise Unavailable(capability, command_text, bead)
 
     def run(self):
+        if isinstance(self.isa, PinnedExecutable):
+            self.check('coverage', 'reference-executor', 'P-3', self.isa.provenance)
         self.check('header', 'markers-c/markers-ir', '§3', self.header)
         self.check('seeds','native-seed-vectors','§21.4',lambda:seed_check(self))
         from dialect_meta import xrefs,coverage,check_asm
@@ -634,7 +682,8 @@ class Runner:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Dialect 0.2 pre-flight (all failures are fatal).')
+    parser = argparse.ArgumentParser(description='Dialect 0.2 pre-flight (all failures are fatal).',
+                                     epilog='Immutable executor: set both BENNETT_ISA_REF and BENNETT_ISA_REF_SHA256.')
     parser.add_argument('spec', nargs='?', type=Path, default=d.SPEC)
     parser.add_argument('--family', action='append', help='family to execute; repeat or comma-separate')
     parser.add_argument('--list', action='store_true', help='list all examples and their checked status')
@@ -671,7 +720,7 @@ def main(argv=None):
 def verify_inplace02(a):
     """§8.7 exhaustive inverse verification by the Rust executor, never run_ref."""
     if not a.inplace_pairs:return
-    isa=Interpreter()
+    isa=interpreter()
     for f,ins,c,fields in a.inplace_pairs:
         for g,gi in itertools.product(a.cands[id(ins),0],a.cands[id(ins),1]):
             fn=a.m.funcs[g];width=fn.params[0][0][1]
