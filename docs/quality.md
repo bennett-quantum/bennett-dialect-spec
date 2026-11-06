@@ -19,6 +19,21 @@ timeout 900 python3 scripts/dialect_check_v02.py --json .tmp/quality-dialect/bef
 timeout 1200 python3 scripts/dialect_check_v02.py --json .tmp/quality-dialect/after-split.json
 ```
 
+After the failure-classification and state-dispatch fixes, two fresh full v02 runs each passed
+2943/2943 checks, with no failed or blocked rows. Their wall times were 524.59 s and 575.00 s.
+The reports were byte-identical, SHA-256
+`2744368bae4ec8b6ab3de33b8e07bce82592af5403affbfd789bb9c0ba5ea7e0`:
+
+```sh
+timeout 1200 python3 scripts/dialect_check_v02.py --json .tmp/quality-dialect/v02-before-r2.json
+timeout 1200 python3 scripts/dialect_check_v02.py --json .tmp/quality-dialect/v02-after-r2.json
+cmp .tmp/quality-dialect/v02-before-r2.json .tmp/quality-dialect/v02-after-r2.json
+sha256sum .tmp/quality-dialect/v02-before-r2.json .tmp/quality-dialect/v02-after-r2.json
+```
+
+This pair captures the completed evidence-code cleanup as its baseline. The earlier concept-split
+pair predates that cleanup, so the two pairs intentionally have different report digests.
+
 These are **472 semantic rows + 2471 bookkeeping rows**. The latter are the xrefs, parse,
 coverage-ledger and inventory families. Semantic rows include spec-labelled verdicts; they are not
 472 independent semantic oracles. Some ledger rows retain nested execution evidence without
