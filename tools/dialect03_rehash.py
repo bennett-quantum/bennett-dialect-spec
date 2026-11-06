@@ -43,11 +43,15 @@ def verify_anchors(text, anchors):
         symbols = [s for s in table.values() if s['name'] == name]
         if len(symbols) != 1 or symbols[0]['interface_hash'] != expected:
             raise ValueError(f'input changed anchor {ident}/{name}; expected {expected}')
+        found = False
         for match in FENCES.finditer(text):
             if re.search(r'\bhash=' + re.escape(ident) + r'(?:\s|$)', match[1]):
+                found = True
                 pairs = dict(line.split() for line in match[2].strip().splitlines())
                 if pairs.get(name) != expected:
                     raise ValueError(f'expected-hash fence changed anchor {ident}/{name}')
+        if not found:
+            raise ValueError(f'anchor {ident}/{name} missing expected-hash fence')
 
 
 def run(exe, verb, path):
