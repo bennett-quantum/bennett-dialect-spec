@@ -1013,10 +1013,11 @@ entry:
             (dep/'src'/'lib.rs').write_text('pub fn witness() {}\n')
             (src/'README.md').write_text('Snapshot fixture\n')
             v.command(['git','-C',repo,'init','--quiet'])
+            git_command = v.command
             def commit(revision):
                 (src/'src'/'main.rs').write_text('fn main() { println!("{{\\"revision\\":'+str(revision)+'}}"); }'.replace('\\"','\\\"'))
-                v.command(['git','-C',repo,'add','.'])
-                v.command(['git','-C',repo,'-c','user.name=Checker test','-c','user.email=checker@example.invalid','commit','--quiet','-m',str(revision)])
+                git_command(['git','-C',repo,'add','.'])
+                git_command(['git','-C',repo,'-c','user.name=Checker test','-c','user.email=checker@example.invalid','commit','--quiet','-m',str(revision)])
             commit(1)
             from interpreter_test_support import record_build
             with patch.object(v,'ISA_SOURCE',src),patch.object(v,'ISA_DIR',Path(tmp)/'snapshot'), patch.object(v, 'command', side_effect=record_build):
