@@ -1,3 +1,4 @@
+from dialect_profile import profile
 """Dialect 0.2 checks. Grammar/toolchain utilities are shared with dialect_check.
 
 No execution result is supplied by the Python interpreter retained from 0.1.
@@ -373,11 +374,6 @@ def recognise(text, **options):
     a.major=options.get('major')
     try:
         a.s1()
-        # Compatibility anchors for tools/dialect03_patches.py's frozen import
-        # table; its two former guard replacements now affect comments only:
-        # if version != "0.2.12":
-        # "§19.9 expected 0.2.12; actual "
-        # Both tracks enforce the selected document's full version below.
         title = d.SPEC_PATH.read_text().splitlines()[0]
         match = re.fullmatch(r'# Bennett LLVM Dialect — Specification, (?:draft )?([0-9.]+)', title)
         if not match:
@@ -396,7 +392,7 @@ def recognise(text, **options):
         a.instance_rules()
         verify_inplace02(a)
         r_entry_rules(a,options.get("rmode"))
-        return ('blocked:' + a.blockers[0][0] if a.blockers else 'accept'), a
+        return profile().classify('blocked:' + a.blockers[0][0] if a.blockers else 'accept', a)
     except d.Reject as e:
         return 'reject:' + e.code, e
 
@@ -744,12 +740,12 @@ def verify_inplace02(a):
                     body=re.sub(r'^oracle @ref .*$',f'lproc @L{idx} (p0:reg[{width}]) (r:reg[{width}]) () () ()',body,flags=re.M)
                     body=body.replace('lift.retval ','lift.ret ')
                     bodies.append(body)
-                    signatures.append({'abi':'0.8','kind':'lproc','tier':'q','params':[width],'result':width})
-                sig={'abi':'0.8','kind':'oracle','tier':'q','in':[width],'tgt':width,'fault':4,'args':[],'mem':[]}
+                    signatures.append(profile().signature({'abi':profile().isa,'kind':'lproc','tier':'q','params':[width],'result':width}))
+                sig={'abi':profile().isa,'kind':'oracle','tier':'q','in':[width],'tgt':width,'fault':4,'args':[],'mem':[]}
                 symbols={'0':{'name':'ref','kind':'oracle','signature':sig,'interface_hash':'0'*64}}
                 for idx,s in enumerate(signatures,1):symbols[str(idx)]={'name':'L'+str(idx),'kind':'lproc','signature':s,'interface_hash':'0'*64}
                 body=f'oracle @ref (x:wire[{width}] in) (tgt:wire[{width}]) (fault:wire[4]) () ()\nregs {{ y:reg[{width}], z:reg[{width}] }}\n^entry():\ny = lift.call @L1 (x)\nz = lift.call @L2 (y)\nlift.retval z\n'+'\n'.join(bodies)
-                obj='bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64\n\nsection symbols\n'+json.dumps(symbols,sort_keys=True,separators=(',',':'))+'\n\nsection functions\n'+body+'\n\nsection layout\n'+json.dumps({'A_tab':0,'H':12,'S_cells':16,'globals':{},'heap_base':4096,'heap_limit_max':0,'interface_regions':{'ref':{}},'null_size':4096,'ptr_width':64},sort_keys=True,separators=(',',':'))+'\n'
+                obj=(profile().object_header + ' ptr_width=64\n\nsection symbols\n')+json.dumps(symbols,sort_keys=True,separators=(',',':'))+'\n\nsection functions\n'+body+'\n\nsection layout\n'+json.dumps({'A_tab':0,'H':12,'S_cells':16,'globals':{},'heap_base':4096,'heap_limit_max':0,'interface_regions':{'ref':{}},'null_size':4096,'ptr_width':64},sort_keys=True,separators=(',',':'))+'\n'
                 with tempfile.TemporaryDirectory(dir=SCRATCH,prefix='inplace-') as tmp:
                     path=Path(tmp)/'pair.bisa';path.write_text(obj)
                     hashes=isa.call('hash',path)
@@ -800,10 +796,10 @@ def events_check(runner,block):
 
 
 def action_object(isa,path,name,widths,rows):
-    sig={'abi':'0.8','args':[],'bounds':[],'in':[],'kind':'action','mem':[],'mut':widths,'tier':'q'}
+    sig={'abi':profile().isa,'args':[],'bounds':[],'in':[],'kind':'action','mem':[],'mut':widths,'tier':'q'}
     symbols={'0':{'interface_hash':'0'*64,'kind':'action','name':name,'signature':sig}}
     header='action @'+name+' ('+', '.join(f'q{k}:wire[{w}] mut' for k,w in enumerate(widths))+') () () () ()'
-    prefix='bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64\n\nsection symbols\n'
+    prefix=(profile().object_header + ' ptr_width=64\n\nsection symbols\n')
     tail='\n\nsection functions\n'+header+'\n^entry():\n'+'\n'.join(rows)+'\n'
     path.write_text(prefix+json.dumps(symbols,sort_keys=True,separators=(',',':'))+tail)
     hs=isa.call('hash',path);symbols['0']['interface_hash']=hs['symbols'][name]['interface_hash']

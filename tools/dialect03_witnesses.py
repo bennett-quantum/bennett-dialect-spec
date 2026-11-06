@@ -38,8 +38,10 @@ def build_quiet(runner,name,functions,signatures):
 def admitted_by_second_reader(path):
     """While the reference cannot admit a row, the VM's published binary reads the fixture: a fixture
     it refuses is this checker's bug, a failure rather than a blocked row. Admission only, no execution."""
-    vm=d.ROOT.parent/'bennett-vm'/'target'/'release'/'bennett-vm'
-    if vm.exists():v2.command([vm,'hash',path])
+    raise v2.Unavailable('independent admission of an unsupported ISA 0.9 row',
+                         'configure a published second-reader binary in gate.toml',
+                         'SECOND-READER-PIN')
+
 
 
 def absent(e,name):

@@ -1,3 +1,4 @@
+from dialect_profile import profile
 """Round-2 contract microvectors. C/LLVM and Rust supply observed outcomes."""
 import json
 import dialect_check as d
@@ -46,7 +47,7 @@ int main(void){'''
         equal(name,'caller state preserved',True,v['caller_unchanged'])
     elif name=='arena-logical-bounds':
         # Materialise the default OR of live-and-contained metadata predicates.
-        sig={'abi':'0.8','args':['i64','i64'],'fault':4,'in':[],'kind':'oracle','mem':[{'A':1,'W':8,'role':'in'}],'tgt':16,'tier':'q'}
+        sig={'abi':profile().isa,'args':['i64','i64'],'fault':4,'in':[],'kind':'oracle','mem':[{'A':1,'W':8,'role':'in'}],'tgt':16,'tier':'q'}
         layout={'A_tab':1,'H':13,'S_cells':8,'globals':{},'heap_base':4096,'heap_limit_max':0,'interface_regions':{'ref':{'coh':{'base':4096}}},'null_size':4096,'ptr_width':64}
         for width in (1,2):
             regs=['base:reg[64]','p:reg[64]','end:reg[64]','wrap:reg[1]','valid:reg[1]','bad:reg[1]','one:reg[1]','raw:reg['+str(width*8)+']','r:reg[16]']
@@ -111,7 +112,7 @@ int main(void){unsigned char x=1;int a=valid(0,1,0,1,0);int b=valid(2,1,0,1,1);i
         # consumes a fresh copy, never the original declared output.
         from dialect_cc import emit, signature
         for code in (0,v['fault']):
-            asig={'abi':'0.8','args':[],'bounds':[],'in':[],'kind':'action','mem':[],'mut':[4,4],'tier':'q'}
+            asig={'abi':profile().isa,'args':[],'bounds':[],'in':[],'kind':'action','mem':[],'mut':[4,4],'tier':'q'}
             clear=dict(asig,mut=[4])
             prep='action @prepare (f:wire[4] mut, m:wire[4] mut) () () () ()\n^entry():\n'+('x f[0]\n' if code else '')+'qxor f m'
             main='fn cc @main () (r:i4) () () ()\n^entry():\nf = qreg.new any 4\nm = qreg.new any 4\naction_call @prepare (f, m) () () ()\nr = measure m\nz = const.i4 0\np = icmp.ne r z\nbr p ^correct() ^done()\n^correct():\naction_call @clear (f) () () ()\nbr ^done()\n^done():\nqreg.free f\nret r'

@@ -1,3 +1,4 @@
+from dialect_profile import profile
 import dialect_check as d
 """Independent boundary oracles; samples do not certify consumer implementations."""
 import json
@@ -48,7 +49,7 @@ def allocation(runner):
         rows += ['zero = lift.zext.i64 bad','shift = lift.const.i64 48','zero = lift.shl zero shift',
                  f'result = lift.or p{count-1} zero','lift.retval result']
         body='oracle @ref () (tgt:wire[64]) (fault:wire[4]) () ()\nregs { '+', '.join(regs)+' }\n^entry():\n'+'\n'.join(rows)
-        sig={'abi':'0.8','args':[],'fault':4,'in':[],'kind':'oracle','mem':[],'tgt':64,'tier':'q'}
+        sig={'abi':profile().isa,'args':[],'fault':4,'in':[],'kind':'oracle','mem':[],'tgt':64,'tier':'q'}
         layout={'A_tab':32,'H':13,'S_cells':8,'globals':{},'heap_base':4096,'heap_limit_max':33,'interface_regions':{'ref':{}},'null_size':4096,'ptr_width':64}
         obj=object_text(runner.isa,runner.tmp/f'0212-alloc-{count}.bisa',[body],{'ref':sig},layout)
         for heap,code,payload in ((33 if count==4 else 32,0,address),(sum(max(n,1) for n in (3,13,16,0)[:count])-1,2,0)):

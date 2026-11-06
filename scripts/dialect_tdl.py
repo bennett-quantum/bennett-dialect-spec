@@ -1,3 +1,4 @@
+from dialect_profile import profile
 """CC-level event execution, using independent ISA action calls per event.
 
 Keeping calls separate is required by ISA 0.8 coarse memory windows. Python
@@ -16,7 +17,7 @@ def dump(x):return json.dumps(x,sort_keys=True,separators=(',',':'))
 
 def object_text(isa,path,functions,signatures,layout=None):
     symbols={str(i):{'interface_hash':'0'*64,'kind':s['kind'],'name':n,'signature':s} for i,(n,s) in enumerate(signatures.items())}
-    prefix='bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64\n\nsection symbols\n'
+    prefix=(profile().object_header + ' ptr_width=64\n\nsection symbols\n')
     tail='\n\nsection functions\n'+'\n'.join(functions)+'\n'
     if layout:tail+='\nsection layout\n'+dump(layout)+'\n'
     path.write_text(prefix+dump(symbols)+tail)
@@ -50,7 +51,7 @@ class Session:
         def reorder(bits,order):return ''.join(bits[offsets[n][0]:sum(offsets[n])] for n in order)
         state={reorder(bits,order):amp for bits,amp in self.state.items()}
         memsig=[{'A':1,'W':8,'role':'in' if oracle else 'mut'}] if mem else []
-        sig={'abi':'0.8','args':['token'] if token else [],'bounds':[],'in':[],'kind':'action','mem':memsig,'mut':[self.widths[n] for n in ordinary],'tier':'q'}
+        sig={'abi':profile().isa,'args':['token'] if token else [],'bounds':[],'in':[],'kind':'action','mem':memsig,'mut':[self.widths[n] for n in ordinary],'tier':'q'}
         header='action @event ('+', '.join(f'{n}:wire[{self.widths[n]}] mut' for n in ordinary)+') () ('+('coh:region[1,8] '+memsig[0]['role'] if mem else '')+') ('+('tk:token' if token else '')+') ()'
         functions=[header+'\n^entry():\n'+'\n'.join(rows)];signatures={'event':sig};layout=None
         if oracle:
@@ -89,7 +90,7 @@ class Session:
 def oracle(kind):
     """Runtime slice bodies, independent of the stated state vectors."""
     mem=kind in ('copy','condition');width=1 if kind=='condition' else 8
-    osig={'abi':'0.8','args':[],'fault':4,'in':[],'kind':'oracle','mem':[{'A':1,'W':8,'role':'in'}] if mem else [],'tgt':width,'tier':'q'}
+    osig={'abi':profile().isa,'args':[],'fault':4,'in':[],'kind':'oracle','mem':[{'A':1,'W':8,'role':'in'}] if mem else [],'tgt':width,'tier':'q'}
     header=f'oracle @slice () (tgt:wire[{width}]) (fault:wire[4]) ('+('coh:region[1,8] in' if mem else '')+') ()'
     if kind=='copy':rows=['p = lift.addr @coh','lift.boundscheck p 1','v = lift.load.i8 p','one = lift.const.i8 1','r = lift.add v one','lift.retval r'];regs='p:reg[64], v:reg[8], one:reg[8], r:reg[8]'
     elif kind=='condition':rows=['p = lift.addr @coh','lift.boundscheck p 1','v = lift.load.i8 p','five = lift.const.i8 5','r = lift.icmp.eq v five','lift.retval r'];regs='p:reg[64], v:reg[8], five:reg[8], r:reg[1]'
@@ -231,7 +232,7 @@ def check_boundary(runner,block):
         for fn in ('addk','subk'):
             operations.append(next(i.op for i in module.funcs[fn].instrs() if i.op in ('add','sub')))
         def pair_oracle(op):
-            sig={'abi':'0.8','args':[],'fault':4,'in':[8,8],'kind':'oracle','mem':[],'tgt':8,'tier':'q'}
+            sig={'abi':profile().isa,'args':[],'fault':4,'in':[8,8],'kind':'oracle','mem':[],'tgt':8,'tier':'q'}
             function=f'oracle @slice (x:wire[8] in, y:wire[8] in) (tgt:wire[8]) (fault:wire[4]) () ()\nregs {{ r:reg[8] }}\n^entry():\nr = lift.{op} x y\nlift.retval r'
             return function,sig,None
         for superposed in (False,True):
@@ -275,7 +276,7 @@ def check_wrapper(runner,block):
             function=a.m.funcs[target]
             invalid=any(c['callee']=='@__bennett_measure' for i in function.instrs() if i.op=='call' for c in [d.parse_call(i)])
             if not invalid:raise d.Fail('expected invalid measuring action candidate '+target)
-            signature={'abi':'0.8','args':[],'fault':4,'in':[],'kind':'oracle','mem':[],'tgt':1,'tier':'q'}
+            signature={'abi':profile().isa,'args':[],'fault':4,'in':[],'kind':'oracle','mem':[],'tgt':1,'tier':'q'}
             path=runner.tmp/(name+'-'+target+'.bisa')
             object_text(runner.isa,path,['oracle @ref () (tgt:wire[1]) (fault:wire[4]) () ()\n^entry():\nfault 4'],{'ref':signature})
             got=runner.isa.call('run-oracle',path,'ref','--input','')
@@ -308,7 +309,7 @@ def check_wrapper(runner,block):
         # Every variant computes every projection before selecting its retval.
         # Consequently every budget boundary is identical across variants.
         for selected,w in enumerate(widths):
-            namej='W'+str(selected);signatures[namej]={'abi':'0.8','args':[],'fault':4,'in':[],'kind':'oracle','mem':[],'tgt':w,'tier':'q'}
+            namej='W'+str(selected);signatures[namej]={'abi':profile().isa,'args':[],'fault':4,'in':[],'kind':'oracle','mem':[],'tgt':w,'tier':'q'}
             rows=[]
             for j,pw in enumerate(widths):rows.append(f'p{j} = lift.const.i{pw} '+str(int.from_bytes(bytes([value])*(pw//8),'little')))
             functions.append(f'oracle @{namej} () (tgt:wire[{w}]) (fault:wire[4]) () ()\nregs {{ '+', '.join(f'p{j}:reg[{pw}]' for j,pw in enumerate(widths))+' }\n^entry():\n'+'\n'.join(rows)+f'\nlift.retval p{selected}')

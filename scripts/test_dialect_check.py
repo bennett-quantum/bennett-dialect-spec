@@ -621,6 +621,7 @@ entry:
         self.assertEqual(v.recognise(d.with_decls(ir.replace('%r = call i32 @setjmp(ptr @jb)','%r = add i32 0, 0')))[0],'accept')
 
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round3_stack_liveness(self):
         from dialect_round3 import check_state
         import json
@@ -694,6 +695,7 @@ entry:
         f=a.m.funcs['F'];site=next(i for i in f.instrs() if '@__bennett_qalloc' in i.text)
         self.assertTrue(setjmp_reentry(f,site))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round2_action_lifetimes(self):
         from dialect_round2 import check_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -711,6 +713,7 @@ entry:
                     else:wrong[field]+=1
                     with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round2_memory_contracts(self):
         from dialect_round2 import check_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:

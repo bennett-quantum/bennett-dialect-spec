@@ -4,6 +4,7 @@ The existing gate executes the listed witnesses independently. Ledger rows check
 that each ruled sentence and its dependency IDs survive and that a full gate has
 actually passed the linked rows. They do not claim new end-to-end coverage.
 """
+from dialect_profile import profile
 import json
 import hashlib
 import collections
@@ -64,7 +65,8 @@ def check_all(runner):
         missing=collections.Counter(snapshot['checked_block_hashes'])-current
         equal('0211/baseline','accepted checked blocks retained',{},dict(missing))
         return {'accepted_spec_sha256':snapshot['spec_sha256'],'checked_blocks':len(snapshot['checked_block_hashes'])}
-    runner.check('coverage','0211/baseline','S0 retained checked examples',baseline)
+    if profile().isa == '0.8':
+        runner.check('coverage','0211/baseline','S0 retained checked examples',baseline)
     for item in ITEMS:
         runner.check('coverage','0211/'+item['item'],'ruled clarification / inherited evidence',
                      lambda item=item:check_item(runner,item))

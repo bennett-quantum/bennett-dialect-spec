@@ -1,4 +1,5 @@
 """Mechanical spec metadata checks: budget schema, cross-references, rule coverage, asm."""
+from dialect_profile import profile
 import fnmatch
 import json
 from pathlib import Path
@@ -64,7 +65,7 @@ def stage_budget(table,symbol,build,region_key='',records=()):
     return final,record
 
 def xrefs(text):
-    own=d.headings(d.SPEC_PATH);isa=d.headings(d.ISA_SPEC);ns=d.headings(d.NORTH_STAR)
+    own=d.headings(d.SPEC_PATH);isa=d.headings(d.sibling('bennett-isa-spec') / 'spec' / ('Bennett-ISA-Spec-0.9.md' if profile().isa == '0.9' else 'Bennett-ISA-Spec.md'));ns=d.headings(d.NORTH_STAR)
     questions=d.NORTH_STAR.read_text().split('## 9.',1)[1].split('## 10.',1)[0]
     ns.update('9.'+n for n in re.findall(r'^(\d+)\. ',questions,re.M))
     previous_doc=None;end=-1;results=[]

@@ -1,3 +1,4 @@
+from dialect_profile import profile
 """Round-3 contract witnesses: observations from native code and Rust ISA execution."""
 import json
 import math
@@ -27,9 +28,9 @@ def stack_probe(runner, name, width):
     rows=[f'w{k} = lift.mov a{k}' for k in range(8)]
     rows+=['ok = lift.call @validate ('+', '.join('w'+str(k) for k in range(8))+')','base = lift.addr @physical','p = lift.add base w0',f'lift.boundscheck p {width}',f'raw = lift.load.i{width*8} p','r = lift.zext.i16 raw' if width==1 else 'r = lift.mov raw','lift.retval r']
     fn='oracle @ref () (tgt:wire[16]) (fault:wire[4]) (physical:region[4,8] in) ('+', '.join(f'a{k}:i64' for k in range(8))+')\nregs { '+', '.join([f'w{k}:reg[64]' for k in range(8)]+['ok:reg[1]','base:reg[64]','p:reg[64]',f'raw:reg[{width*8}]','r:reg[16]'])+' }\n^entry():\n'+'\n'.join(rows)
-    sig={'abi':'0.8','args':['i64']*8,'fault':4,'in':[],'kind':'oracle','mem':[{'A':4,'W':8,'role':'in'}],'tgt':16,'tier':'q'}
+    sig={'abi':profile().isa,'args':['i64']*8,'fault':4,'in':[],'kind':'oracle','mem':[{'A':4,'W':8,'role':'in'}],'tgt':16,'tier':'q'}
     layout={'A_tab':1,'H':13,'S_cells':8,'globals':{},'heap_base':4096,'heap_limit_max':0,'interface_regions':{'ref':{'physical':{'base':4096}}},'null_size':4096,'ptr_width':64}
-    return object_text(runner.isa,runner.tmp/(name+str(width)+'.bisa'),[fn,helper],{'ref':sig,'validate':{'abi':'0.8','kind':'lproc','params':[64]*8,'result':1,'tier':'q'}},layout)
+    return object_text(runner.isa,runner.tmp/(name+str(width)+'.bisa'),[fn,helper],{'ref':sig,'validate':profile().signature({'abi':profile().isa,'kind':'lproc','params':[64]*8,'result':1,'tier':'q'})},layout)
 
 
 def adjoint_records(events):
