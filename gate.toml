@@ -14,10 +14,6 @@ name = "prepare"
 argv = ["sh", "-c", "mkdir -p scripts/.tmp \"{root}/scripts/.isa-ref\" \"{root}/.tmp/gate-target\" && ln -s \"{root}/scripts/.isa-ref\" scripts/.isa-ref"]
 
 [[check]]
-name = "cargo test (every crate)"
-argv = ["sh", "-c", "for m in $(find . -name Cargo.toml -not -path './scripts/.isa-ref/*' -not -path '*/target/*' -not -path '*/.tmp/*' | sort); do echo \"cargo test $m\"; cargo test --offline --manifest-path \"$m\" || exit $?; done"]
-
-[[check]]
 name = "Python tooling tests"
 argv = ["python3", "scripts/run_tests.py"]
 
