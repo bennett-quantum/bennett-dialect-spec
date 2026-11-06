@@ -16,3 +16,7 @@ Layout:
 - `SPEC_VERSIONS.toml`: ISA version this repo is graded against (the gate validates inputs at the commits in `gate.toml`).
 
 Current state and open consumer blockers: [HANDOFF.md](HANDOFF.md).
+
+Run the default tooling suite with `python3 scripts/run_tests.py`. Expensive execution witnesses
+remain in `python3 scripts/run_tests.py --slow`; the push gate runs both suites and the spec checker.
+The measured scope, coverage and structural baseline are recorded in [docs/quality.md](docs/quality.md).

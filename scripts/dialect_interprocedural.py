@@ -42,4 +42,4 @@ printf("[%u,%u,%u,%u,%u]\\n",calls,next,first!=second,total,code);return 0;}'''
             driver=driver.replace('extern void put(void);extern void use(void);','extern void stash(void*);extern void useall(void);')
             driver=driver.replace('put();++calls;put();++calls;use();','void *a=__bennett_qalloc(0,1),*b=__bennett_qalloc(0,1);stash(a);++calls;stash(b);++calls;useall();++calls;')
         run_native(runner,name,source,driver,[[v['entry_calls'],v['instances'],int(v['distinct']),v['live_after'],v['trap']]])
-    else:raise d.Fail('unknown round-4 state '+name)
+    else:raise d.Fail('unknown interprocedural state '+name)

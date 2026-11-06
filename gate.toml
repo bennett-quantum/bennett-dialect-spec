@@ -25,6 +25,10 @@ argv = ["python3", "scripts/run_tests.py", "--slow"]
 name = "dialect gate"
 argv = ["python3", "scripts/dialect_check_v02.py", "--json", "scripts/.tmp/pre-push-gate.json"]
 
+[[check]]
+name = "Tooling quality ratchet"
+argv = ["python3", "scripts/quality.py"]
+
 [siblings."bennett-isa-spec"]
 sha = "c1d13200acb08af4922535f5a15a1ab872b78b41"
 note = "clean interpreter of the dossier's 2902/2902 run"
