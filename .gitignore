@@ -15,3 +15,10 @@ __pycache__/
 *.gate.lock*
 .tmp/
 scripts/.isa-ref/
+*.pyc
+*.log
+*.darc
+.beads/**/LOCK
+.beads/**/*.lock
+*LAST-RUN*
+*PROGRESS*

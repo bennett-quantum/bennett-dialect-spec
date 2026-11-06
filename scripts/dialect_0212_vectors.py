@@ -1,6 +1,6 @@
+"""Independent boundary oracles; samples do not certify consumer implementations."""
 from dialect_profile import profile
 import dialect_check as d
-"""Independent boundary oracles; samples do not certify consumer implementations."""
 import json
 from pathlib import Path
 from dialect_check_v02 import command, equal, ROOT

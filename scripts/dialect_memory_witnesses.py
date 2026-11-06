@@ -1,4 +1,4 @@
-"""Round-5 source-derived witnesses, executed by native LLVM or the ISA CLI."""
+"""Source-derived source-derived witnesses, executed by native LLVM or the ISA CLI."""
 from dialect_profile import profile
 import json
 import dialect_check as d

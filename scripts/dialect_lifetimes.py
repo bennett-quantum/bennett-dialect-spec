@@ -1,5 +1,5 @@
+"""Source-derived contract microvectors. C/LLVM and Rust supply observed outcomes."""
 from dialect_profile import profile
-"""Round-2 contract microvectors. C/LLVM and Rust supply observed outcomes."""
 import json
 import dialect_check as d
 from dialect_check_v02 import equal

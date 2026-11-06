@@ -1,4 +1,4 @@
-"""Round-7 source witnesses: independent LLVM verification and native execution."""
+"""Source-derived source witnesses: independent LLVM verification and native execution."""
 import json
 import re
 import dialect_check as d

@@ -1,4 +1,4 @@
-"""Round-4 source-derived execution adapters; expectations are spec inputs."""
+"""Source-derived source-derived execution adapters; expectations are spec inputs."""
 import json
 import dialect_check as d
 from dialect_check_v02 import equal

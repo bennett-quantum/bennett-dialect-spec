@@ -1,5 +1,5 @@
-from dialect_profile import profile
 """Dialect §16 reference-object map. Emits rows without consulting object= text."""
+from dialect_profile import profile
 import collections
 import json
 import re

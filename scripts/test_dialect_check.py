@@ -20,7 +20,7 @@ class ContractTests(unittest.TestCase):
     @slow("independent execution across LLVM majors and ISA oracle")
     def test_round8_zero_execution(self):
         import json
-        from dialect_round8 import check_state, ZEROS
+        from dialect_initialisation import check_state, ZEROS
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             for name in sorted(ZEROS):
@@ -79,7 +79,7 @@ define void @top(i64 %n) {
     @slow("independent execution across LLVM majors and ISA oracle")
     def test_round8_bitcast_execution(self):
         import json
-        from dialect_round8 import check_state, BITCASTS
+        from dialect_initialisation import check_state, BITCASTS
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             for name in sorted(BITCASTS):
@@ -190,7 +190,7 @@ define void @top() {
     @slow("independent execution across LLVM majors and ISA oracle")
     def test_round7_fp_execution(self):
         import json
-        from dialect_round7 import check_libm
+        from dialect_scalar_witnesses import check_libm
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             for name in ('n-libm-x86-f128','n-libm-x86-ppcf128','n-libm-arm-ppcf128','n-libm-riscv-ppcf128','libm-invalid-casts'):
@@ -207,7 +207,7 @@ define void @top() {
     @slow("independent execution across LLVM majors and ISA oracle")
     def test_round7_lane_execution(self):
         import json
-        from dialect_round7 import check_lanes
+        from dialect_scalar_witnesses import check_lanes
         from dialect_native import check
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state','native'})
@@ -248,7 +248,7 @@ define void @top() {
     @slow("independent execution across LLVM majors and ISA oracle")
     def test_round7_pointer_execution(self):
         import json
-        from dialect_round7 import check_state, STATES
+        from dialect_scalar_witnesses import check_state, STATES
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             for name in ('pt5-int-wrap','pt4-wide-wrap','pt6-unknown-address'):
@@ -290,7 +290,7 @@ define void @top() {
     @slow("independent execution across LLVM majors and ISA oracle")
     def test_round6_execution(self):
         import json
-        from dialect_round6 import check_state
+        from dialect_atomic_witnesses import check_state
         from dialect_native import check
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state','native'})
@@ -447,8 +447,8 @@ define void @top() {
     def test_round5_execution(self):
         import json
         from dialect_native import check
-        from dialect_round5 import check_state
-        from dialect_round4 import check_state as check_handle
+        from dialect_memory_witnesses import check_state
+        from dialect_interprocedural import check_state as check_handle
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'native','state'})
             for name in ('n-fpconv-wide','n-wide-intrinsics','n-atomic-wrap','n-atomic-usub','pointer-as270'):
@@ -493,7 +493,7 @@ define void @top() {
         r=ir.replace('define void @put()','define internal void @put(ptr %env)')+'\ndefine void @launch() {\n call void @__bennett_reversible(ptr @put, ptr null, ptr null)\n ret void\n}\n'
         _,a=v.recognise(d.with_decls(r))
         self.assertTrue(any(code=='BD-B-ISA12' and 'entry' in reason for code,reason in a.blockers))
-        from dialect_round4 import check_state
+        from dialect_interprocedural import check_state
         import json
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
@@ -521,7 +521,7 @@ define void @top() {
 
     @slow("ISA or native execution witness; retained by the gate")
     def test_round4_gep_index(self):
-        from dialect_round4 import check_state
+        from dialect_interprocedural import check_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             check_state(runner,self.block('state','n-gep-index'))
@@ -535,7 +535,7 @@ define void @top() {
 
     @slow("ISA or native execution witness; retained by the gate")
     def test_round3_loops(self):
-        from dialect_round3 import check_state
+        from dialect_boundaries import check_state
         import json
         vectors = {
             'co-loop-identity': {'counts':[1,2], 'p_one':[0,0], 'flags_clean':True, 'trap':0},
@@ -553,7 +553,7 @@ define void @top() {
 
     @slow("ISA or native execution witness; retained by the gate")
     def test_round3_deferred_placement(self):
-        from dialect_round3 import adjoint_records, check_state
+        from dialect_boundaries import adjoint_records, check_state
         import json
         events=[('record','a','w'),('cx','w','t'),('h','a')]
         self.assertEqual(adjoint_records(events),[('h','a'),('record','a','w'),('cx','w','t')])
@@ -566,7 +566,7 @@ define void @top() {
 
     @slow("ISA or native execution witness; retained by the gate")
     def test_round3_observe_store(self):
-        from dialect_round3 import check_state
+        from dialect_boundaries import check_state
         import json
         value={'after_first':[2,1], 'after_store':[2,1,9,9], 'after_second':[0,9,2,0,0], 'load':[9,0], 'event_invalidates':True, 'unobserved_store':4}
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -623,7 +623,7 @@ entry:
 
     @slow("ISA or native execution witness; retained by the gate")
     def test_round3_stack_liveness(self):
-        from dialect_round3 import check_state
+        from dialect_boundaries import check_state
         import json
         value={'live':[7,0], 'popped':[0,7], 'spanning':[0,7], 'padding':[0,7], 'restored':[0,7], 'wrap':[0,7], 'replay':[7,0], 'store_unchanged':True}
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -635,7 +635,7 @@ entry:
 
     @slow("ISA or native execution witness; retained by the gate")
     def test_round3_stale_generation(self):
-        from dialect_round3 import check_state
+        from dialect_boundaries import check_state
         import json
         value={'physical_slots':1,'equal':False,'stale_code':4,'second_value':0,'live_after':0}
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -655,7 +655,7 @@ entry:
             self.assertIn('p0 = lift.const.i1 0\nlift.retval p0',wrapper)
             self.assertEqual(mapper.signatures['ref']['tgt'],1)
             self.assertEqual(mapper.signatures['ref']['fault'],4)
-        from dialect_round3 import check_state
+        from dialect_boundaries import check_state
         import json
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
@@ -697,7 +697,7 @@ entry:
 
     @slow("ISA or native execution witness; retained by the gate")
     def test_round2_action_lifetimes(self):
-        from dialect_round2 import check_state
+        from dialect_lifetimes import check_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             for name in ('generation-cancel','nested-cl-view','fault-output-lifetime','co-loop-adjoint','deferred-channel-adj','co-store-release'):
@@ -715,7 +715,7 @@ entry:
 
     @slow("ISA or native execution witness; retained by the gate")
     def test_round2_memory_contracts(self):
-        from dialect_round2 import check_state
+        from dialect_lifetimes import check_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
             runner=v.Runner(self.blocks,self.spec,tmp,{'state'})
             for name in ('entry-allocation-only','arena-logical-bounds'):
@@ -741,11 +741,17 @@ entry:
             v.equal('deliberately-wrong', '§3.4', 'accept', got)
         self.assertEqual(got, 'reject:BD-E-OPERAND')
 
-    def test_unknown_effect_does_not_crash(self):
-        b = self.block('example', 'effect-console-write') if any(
-            x['attrs'].get('example') == 'effect-console-write' for x in self.blocks
-        ) else self.block('example', 'effect-console-r')
-        self.assertEqual(v.recognise(d.with_decls(b['body']),rmode=b['attrs'].get('rmode'))[0], b['attrs']['verdict'])
+    def test_effect_console_requires_r_fault_lowering(self):
+        source = ('@msg = private constant [3 x i8] c"hi\\0A"\n'
+                  'define i32 @main() {\n'
+                  ' call void @__bennett_effect_console_write(ptr @msg, i64 3)\n'
+                  ' ret i32 0\n}\n')
+        verdict, analysis = v.recognise(d.with_decls(source), rmode='@main')
+        self.assertEqual(verdict, 'blocked:BD-B-ISA7')
+        self.assertEqual([code for code, _ in analysis.blockers], ['BD-B-ISA7'])
+        invalid = source.replace('i64 3', 'i32 3')
+        self.assertEqual(v.recognise(d.with_decls(invalid), rmode='@main')[0],
+                         'reject:BD-E-MARKER-SIGNATURE')
 
     def test_first_region_candidates(self):
         b = self.block('example', 'region-reversible-in-action')
@@ -996,7 +1002,7 @@ entry:
             with patch.object(runner.isa,'call',side_effect=AssertionError('ISA 0.8 must not execute ISA 0.9 result')):
                 receipt=r_budget_prefix(runner,self.block('state','r-budget-prefix'))
             self.assertEqual(receipt['verdict'],'blocked:BD-B-ISA7')
-            self.assertEqual(receipt['bead'],'b-dialect-spec-bz6')
+            self.assertEqual(receipt['capability'],'R-BUDGET-FAULT')
             self.assertFalse(receipt['executed'])
             self.assertEqual(receipt['required_isa09']['fault'],1)
             self.assertEqual(len(receipt['required_isa09']['terminal_records']),1)

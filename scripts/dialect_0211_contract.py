@@ -52,7 +52,7 @@ def check_item(runner,item):
         if not matches:raise d.Fail(item['item']+' missing executed witness '+ref)
         for row in matches:equal(item['item'],ref+' executed','passed',row['status'])
         evidence.append(ref)
-    return {'bead':item['bead'],'section':item['section'],
+    return {'item':item['item'],'section':item['section'],
             'retained_executed_rows':evidence,'claim':'clarification and retained evidence only'}
 
 

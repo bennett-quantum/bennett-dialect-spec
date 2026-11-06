@@ -1,7 +1,7 @@
 """ISA 0.9 witnesses of draft 0.3: objects built from the §25.1 lowerings, run on the reference interpreter.
 
 Python places the rows; every stated result comes from the executor (P-3). An executor diagnostic in
-ABSENT means the ISA row is not implemented there yet: the row reports blocked, naming the bead (P-2).
+ABSENT means the ISA row is not implemented there yet: the row reports blocked, naming the capability (P-2).
 Any other diagnostic is a failure. Fixtures follow ISA 0.9 §16.3 examples 4 to 8.
 """
 import collections,hashlib,json,re
@@ -10,7 +10,7 @@ import dialect_check as d
 import dialect_check_v02 as v2
 import dialect_cc as cc
 
-BEAD='b-isa-spec-fuk.7'
+CAPABILITY='ISA09-EXECUTOR'
 ABSENT=(r'qreg size must be a canonical unsigned INT',r'qreg instructions are CC only',
         r'unknown (?:CC/R )?(?:opcode|instruction).*budget\.mint',r'budget\.mint',r'qinplace.*(?:operand|form|arity|expected)',
         r'qreg\.(?:width|id|from_id)')
@@ -48,7 +48,7 @@ def absent(e,name):
     text=str(e)
     for pattern in ABSENT:
         if re.search(pattern,text):
-            raise v2.Unavailable('ISA 0.9 row of witness '+name+': '+text.strip().splitlines()[-1][:160],'bennett-isa-ref with ISA 0.9 K1-K4',BEAD)
+            raise v2.Unavailable('ISA 0.9 row of witness '+name+': '+text.strip().splitlines()[-1][:160],'bennett-isa-ref with ISA 0.9 K1-K4',CAPABILITY)
     raise e
 
 

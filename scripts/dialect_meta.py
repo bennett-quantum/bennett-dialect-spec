@@ -20,7 +20,7 @@ def budget_table(runner,block):
     for e in obj['entries']:
         equal(ident,'§9.2 selector count',1,sum(k in e for k in ('identity','region_key','symbol')))
     if ident=='budget-stage':
-        from dialect_round6 import check_budget_stage
+        from dialect_atomic_witnesses import check_budget_stage
         return check_budget_stage(runner,json.loads(runner.block('state',ident)['body']))
     src=runner.block('lift',ident);name=src['attrs']['region'].lstrip('@')
     resolved=resolve_budget(obj,name)

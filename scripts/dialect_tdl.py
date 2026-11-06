@@ -1,9 +1,9 @@
-from dialect_profile import profile
 """CC-level event execution, using independent ISA action calls per event.
 
 Keeping calls separate is required by ISA 0.8 coarse memory windows. Python
 only transports/reorders interface bits; every quantum transition runs in Rust.
 """
+from dialect_profile import profile
 import collections
 import json
 import math
@@ -402,7 +402,7 @@ def check_tdl(runner,block):
         generated=[f'xmask @t+0 0x{v["parent_store"]:02x} ctrl c1']
         if v['parent_store']==v['child_test']:generated.append('x z ctrl c1 c2')
         equal(name,'inherited recorder events',d.collapse(text)[1:],generated)
-        from dialect_round2 import check_state
+        from dialect_lifetimes import check_state
         check_state(runner,runner.block('state',name));return
     if name in ORIGINAL:
         equal(name,'TDL-3 partition and events' ,d.collapse(text),d.collapse(original_artifact(runner,name)))

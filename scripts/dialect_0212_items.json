@@ -1,249 +1,215 @@
 [
   {
-    "bead": "mkb",
     "section": "7.2",
-    "id": "mkb/1",
+    "id": "CLARIFICATION-01",
     "sentence": "**N0 and resolution order.** Before testing the forwarding-thunk predicate or freezing candidates, the plugin MUST apply the N0 passes of \u00a712.2 to the virtual device bodies used by S2; \u00a77.2 resolution then uses those bodies, and \u00a77.3 hashes their materialised closures.",
     "witnesses": [
       "normalise/n-lower-widenable"
     ]
   },
   {
-    "bead": "mkb",
     "section": "7.2",
-    "id": "mkb/2",
+    "id": "CLARIFICATION-02",
     "sentence": "The plugin MUST retain A(S) for every original source function or alias whose address reaches the region operand, dispatching that address to its post-N0 resolved candidate even when N0 removes the forwarding call; a declaration remaining after N0 is still F(8), but an intrinsic call removed by N0 MUST NOT turn its containing defined body into an external candidate.",
     "witnesses": [
       "normalise/n-lower-widenable"
     ]
   },
   {
-    "bead": "jjr",
     "section": "17.1",
-    "id": "jjr/1",
+    "id": "CLARIFICATION-03",
     "sentence": "**C allocation alignment.** The `__bennett_nz_alloc(n)` primitive MUST retain ISA \u00a77.1's exact byte bump by max(n,1), zero fill, requested-size allocation record and nonreclaiming history; neither backend may insert hidden alignment into that primitive.",
     "witnesses": []
   },
   {
-    "bead": "jjr",
     "section": "17.1",
-    "id": "jjr/2",
+    "id": "CLARIFICATION-04",
     "sentence": "The C `malloc`/`calloc` wrappers MUST provide the target ABI's `max_align_t` alignment by requesting a rounded extent from that primitive: with a = ABI alignment of `max_align_t`, allocate a \u00d7 ceil(max(n,1)/a) bytes, checking multiplication/rounding overflow as fault 2 before mutation; `free` passes the returned base, and both builds use the same wrapper and history.",
     "witnesses": []
   },
   {
-    "bead": "jjr",
     "section": "17.1",
-    "id": "jjr/1",
+    "id": "CLARIFICATION-05",
     "sentence": "If another runtime allocation leaves the next primitive address unaligned, runtimes MUST first allocate the minimal positive padding to reach the next a-aligned address, as an explicit ordinary primitive allocation charged to the same heap/history; it MUST track the next byte address across every runtime primitive allocation, and neither backend may conceal that padding or round a primitive result. Overflow/padding-budget failure faults before the corresponding allocation mutation. A heap with no intervening unaligned request needs no padding allocation.",
     "witnesses": []
   },
   {
-    "bead": "lbq",
     "section": "11.2",
-    "id": "lbq/1",
+    "id": "CLARIFICATION-06",
     "sentence": "**Console syscall framing.** For virtual stdout/stderr, runtimes MUST implement `writev` by validating the vector count and total length before the first effect, then emitting one `console.write` per nonempty vector in source order (zero-length writes emit no record), returning the total byte count; the descriptor ABI limits are 0..1024 vectors and total at most target SSIZE_MAX, with invalid counts/overflow returning EINVAL and a null nonempty vector table returning EFAULT.",
     "witnesses": []
   },
   {
-    "bead": "lbq",
     "section": "11.2",
-    "id": "lbq/2",
+    "id": "CLARIFICATION-07",
     "sentence": "The console shim MUST return ENOTTY for `ioctl(TIOCGWINSZ)`, ESPIPE for seeking, and success for closing a virtual stdout/stderr descriptor, with no extra device effect or terminal metadata; this close releases no host resource and does not disable the virtual byte sink.",
     "witnesses": []
   },
   {
-    "bead": "lbq",
     "section": "11.3",
-    "id": "lbq/1",
+    "id": "CLARIFICATION-08",
     "sentence": "**Model history.** R console writes MUST use only the ISA effect tape, while L model state is ordinary reversible memory initialised from descriptor bindings, private and discarding only under the oracle rules of \u00a711.3; action console capacity exhaustion MUST fault before mutation under TDL-12, and a standalone native-model test undo log MUST NOT substitute for either tier's history. No second production model-history ABI is required.",
     "witnesses": []
   },
   {
-    "bead": "lbq",
     "section": "19.2",
-    "id": "lbq/1",
+    "id": "CLARIFICATION-09",
     "sentence": "**Process context.** Before entering `<sym>`, the driver/runtimes preparation MUST establish a static single-thread musl process context with the supplied argc/argv/envp bytes, a null-terminated argv and envp, `environ`, program name, initial fenv and the libc/stdio state needed by the linked program; comparison-only Linux `_start` is permitted, but Linux ELF crt/TLS/auxv entry is not required in device tiers.",
     "witnesses": []
   },
   {
-    "bead": "lbq",
     "section": "19.2",
-    "id": "lbq/2",
+    "id": "CLARIFICATION-10",
     "sentence": "For a C `main` entry, the runtimes entry wrapper MUST treat normal return as `exit(status)`, running registered exit handlers and flushing stdio exactly once under \u00a714.7 before the launch stub catches the exit pseudo-exception; explicit `exit` follows that same path, and `_Exit` bypasses handlers/flush as \u00a714.7 specifies.",
     "witnesses": []
   },
   {
-    "bead": "0na",
     "section": "17.7",
-    "id": "0na/1",
+    "id": "CLARIFICATION-11",
     "sentence": "**Comparison-only support exception.** Only after the materialised device module has been fixed, the native comparison backend MAY define the three `__bennett_nz_` primitives of \u00a73.1 as native support, and the driver MUST emit `__bennett_rt_native_layout` as specified in \u00a719.5; these definitions MUST NOT enter producer inputs, production device bitcode, region identity or the materialised module used by the ISA map.",
     "witnesses": []
   },
   {
-    "bead": "0na",
     "section": "17.7",
-    "id": "0na/2",
+    "id": "CLARIFICATION-12",
     "sentence": "The native primitive support MUST reproduce the resolved device addresses, zero fill, live allocation sizes, nonreclaiming allocation/free history and fault outcomes of \u00a7\u00a717.1/17.5, with capacity for every history admitted by the resolved heap budget (at most one heap record per byte since max(n,1) \u2265 1), without an arbitrary smaller record cap; host setup/resource failure MUST terminate comparison with an explicit infrastructure failure, never silently relocate the heap, choose defaults, use host malloc, or report a successful dialect outcome.",
     "witnesses": []
   },
   {
-    "bead": "0na",
     "section": "17.7",
-    "id": "0na/3",
+    "id": "CLARIFICATION-13",
     "sentence": "**Definedness classifiers.** The comparison binary MUST detect the materialised memory faults of \u00a717.5 (out-of-live-allocation access, use after free and invalid/double free), division by zero and signed division overflow, and reached explicit fault/unreachable paths; instrumentation or a checked memory adapter may supply these checks outside the materialised module, and UBSan-only coverage MUST NOT be reported as satisfying the memory-fault obligation.",
     "witnesses": []
   },
   {
-    "bead": "0na",
     "section": "17.7",
-    "id": "0na/4",
+    "id": "CLARIFICATION-14",
     "sentence": "The harness MUST separately classify source inputs using instrumented original-input builds or a checked reference interpreter as in NS \u00a73.2, report flagged inputs as undefined/excluded, and record the classifier's actual detection coverage; no classifier claims source UB erased by optimisation is detectable in the comparison binary.",
     "witnesses": []
   },
   {
-    "bead": "0na",
     "section": "19.5",
-    "id": "0na/1",
+    "id": "CLARIFICATION-15",
     "sentence": "**Native layout ABI v1.** The driver MUST define exactly one external constant `@__bennett_rt_native_layout = constant { i64, i64, i64 } { i64 1, i64 heap_base, i64 heap_limit_max }, align 8` in comparison-only support, with fields at byte offsets 0, 8 and 16 in target little-endian order and values from this same resolved \u00a719.5 layout; runtimes declares that object and validates the version/range before use, with no weak/default definition. The third field is a byte capacity, not an end address; it includes shadow-stack allocations under \u00a79.2. This object has no relationship to blockaddress identity objects `__bennett_rt_blk.<f>`.",
     "witnesses": []
   },
   {
-    "bead": "dfd",
     "section": "13.1",
-    "id": "dfd/1",
+    "id": "CLARIFICATION-16",
     "sentence": "**PPCDoubleDouble priority and rounding.** The reference to the LLVM major's APFloat `PPCDoubleDouble` names its two-binary64 value representation and operation conventions, not permission to violate this section's explicit numerical guarantees: implementations MUST preserve the exact real value high + low for conversions and the correctly-rounded requirements for `sqrt`, `fma` and rounding-to-integral operations, and MUST NOT substitute the legacy consecutive-106-bit fallback when it changes such a result.",
     "witnesses": []
   },
   {
-    "bead": "dfd",
     "section": "13.1",
-    "id": "dfd/2",
+    "id": "CLARIFICATION-17",
     "sentence": "For these guarantees, a finite canonical double-double is a nonoverlapping pair (h,l) of binary64 values with h = roundTiesToEven(h+l) and l the exact residual (positive zero when the residual is zero), zero represented as (signed zero,+0); the result MUST be the canonical pair whose exact sum is nearest the exact mathematical result (or its directed neighbour for \u00a713.5), with nearest ties resolved as follows. Let L and U be the adjacent canonical finite values bracketing the exact result, with L < U. If either low component is nonzero, compare the parities of BOTH low-component integer significands, treating a zero significand as even. Otherwise compare the high-component integer significands. The integer significand is the binary64 significand including the implicit leading bit for a normal value and without it for a subnormal; its sign does not affect parity. Choose the candidate of even parity when exactly one is even; if the parities coincide, choose the candidate whose exact sum has smaller absolute value. Existing exact-zero sign and overflow rules apply separately. This tie rule applies wherever this section requires nearest-even canonical-pair rounding, including incoming IEEE conversions, FMA and nearest-even carrier transcendentals of \u00a713.4. Directed and nearest-away modes retain their specified rules. NaNs and infinities are represented in the high component with low +0. Overflow is determined by rounding with an unbounded high exponent first and then applying binary64's high-component exponent limit with IEEE overflow outcomes for the active mode (the finite maximum or infinity as appropriate); underflow uses tininess after rounding of the exact pair sum, with subnormal threshold 2^-1022.",
     "witnesses": [
       "state/ppc-zero-low-parity"
     ]
   },
   {
-    "bead": "dfd",
     "section": "13.1",
-    "id": "dfd/3",
+    "id": "CLARIFICATION-18",
     "sentence": "Cross-format conversion MUST use the exact sum of both components, be exact whenever that sum is representable in the destination, and otherwise round once to the destination format under the requested mode; it MUST NOT drop a representable low component, saturate an in-range positive total because its low component is negative, or introduce intermediate-conversion flags. For example, high = 1 and low = 2^-60 convert to x86_fp80 as exactly 1 + 2^-60, not 1. The `fpext` exactness statement describes true numerical widening; a cross-format pair whose value sets are not nested still uses this conversion rule, regardless of equal storage width.",
     "witnesses": []
   },
   {
-    "bead": "dfd",
     "section": "13.1",
-    "id": "dfd/4",
+    "id": "CLARIFICATION-19",
     "sentence": "Constrained operations covered by these guarantees MUST derive invalid/divbyzero/overflow/underflow/inexact from the mathematical operation and final rounding, not the status of an inaccurate APFloat fallback or an intermediate high/low operation; for sqrt/fma/conversion, inexact means the final pair's exact sum differs from the exact finite result, and underflow requires both tininess after rounding and inexactness. Rounding-to-integral follows the named IEEE operation: rint/lrint/llrint signal inexact on a nonintegral finite operand, nearbyint suppresses inexact, and floor/ceil/trunc/round/roundeven/lround/llround do not raise inexact merely for discarding a fractional part. Other PPC operations retain their named major-specific APFloat semantics subject to the explicit canonical-NaN rules above.",
     "witnesses": []
   },
   {
-    "bead": "1av",
     "section": "13.3",
-    "id": "1av/1",
+    "id": "CLARIFICATION-20",
     "sentence": "A producer MUST report a route as `lowered` only when its linked implementation satisfies that complete contract; a missing numerical implementation is an implementation blocker, never permission to reject, trap or silently narrow the format capability.",
     "witnesses": []
   },
   {
-    "bead": "1av",
     "section": "13.4",
-    "id": "1av/1",
+    "id": "CLARIFICATION-21",
     "sentence": "**Accuracy envelope.** For each finite mathematical result of a \u00a713.4 own-format carrier transcendental, the implementation MUST return a B value within one local ulp of that exact result, over the entire finite input domain; local ulp is the spacing of B's adjacent finite values bracketing the exact result, taking an exactly representable result as the lower endpoint (the upper endpoint at the largest finite value), with the least positive subnormal spacing at zero or in the subnormal interval. For ppcf128 use \u00a713.1's ordered canonical-pair values. Special values, domain errors, poles, signed zeros and overflow results follow the named operation's mathematical/IEEE semantics rather than this finite-result envelope. At overflow the result is the correctly rounded overflow outcome for the requested mode. This is an error bound, not a general correct-rounding claim.",
     "witnesses": []
   },
   {
-    "bead": "1av",
     "section": "13.4",
-    "id": "1av/2",
+    "id": "CLARIFICATION-22",
     "sentence": "The bound MUST apply separately to both fields of sincos/sincospi; modf MUST split the input exactly with truncation toward zero and preserve required zero signs, and powi MUST retain its specified repeated-squaring sequence with each multiplication/division rounded under \u00a713.1, rather than claiming the one-ulp bound for the whole sequence.",
     "witnesses": []
   },
   {
-    "bead": "1av",
     "section": "13.4",
-    "id": "1av/3",
+    "id": "CLARIFICATION-23",
     "sentence": "For `_rm` carrier transcendentals, implementations MUST choose a result within the same envelope on the requested side of the exact result for directed modes, use nearest-side selection for the two nearest modes, and raise IEEE invalid for a domain error or signaling NaN, divbyzero for a pole, overflow when the correctly rounded mathematical result overflows B, underflow when that result is tiny after rounding and inexact, and inexact iff the returned finite value differs from the exact mathematical result; approximation work alone MUST NOT set a flag on an exactly representable mathematical result. For nearest-side selection, compare the distances to the two B neighbours bracketing the exact result, with ties to even or away as requested; this constrained case is correctly rounded. Unconstrained carrier operations retain the one-ulp allowance. Flags for modf/powi follow their exact split/sequenced arithmetic semantics. The native-format musl libm accuracy policy remains the recorded, versioned musl implementation; the quantitative carrier envelope applies to every own-format carrier route.",
     "witnesses": []
   },
   {
-    "bead": "z7u",
     "section": "13.1",
-    "id": "z7u/1",
+    "id": "CLARIFICATION-24",
     "sentence": "**Arbitrary-format naming and carriers.** Format metadata MUST be the LLVM-major LangRef interpretation MDString, not a user-defined precision/exponent record; the integer carrier is exactly the interpretation's storage width, scalarised lane by lane by N21. LLVM 23's names are `Float8E5M2`, `Float8E5M2FNUZ`, `Float8E4M3`, `Float8E4M3FN`, `Float8E4M3FNUZ`, `Float8E4M3B11FNUZ`, `Float8E3M4`, `Float8E8M0FNU` (i8), `Float6E3M2FN`, `Float6E2M3FN` (i6), and `Float4E2M1FN` (i4). These intrinsics are absent on LLVM 18; the name set is the major's published set, not a list of formats that its current APFloat converter happens to implement.",
     "witnesses": []
   },
   {
-    "bead": "z7u",
     "section": "13.1",
-    "id": "z7u/2",
+    "id": "CLARIFICATION-25",
     "sentence": "For each such name fmt and each B of \u00a713.1, N32 MUST emit `iN @__bennett_sf_convert_to_<fmt>_B(C_B, i32 R, i1 Sat)` for to-arbitrary (format MDString removed, rounding encoded by \u00a713.5, immediate saturation retained), and `C_B @__bennett_sf_convert_from_<fmt>_B(iN)` for from-arbitrary; fmt is spelled exactly as its case-sensitive MDString, N is its listed bit width, and results are integer bits / bitcast B respectively. Finite conversions use the named format's rounding, saturation and nonfinite rules with canonical NaNs; N1 defines a source-poison conversion result as zero bits, including unsaturated out-of-range FP4/FP6 inputs. A missing APFloat lowering is an implementation obligation, never permission to reject a valid named format or emit an unresolved numerical placeholder.",
     "witnesses": []
   },
   {
-    "bead": "z7u",
     "section": "13.1",
-    "id": "z7u/3",
+    "id": "CLARIFICATION-26",
     "sentence": "**Static instantiation request v1.** The driver MUST collect required concrete arith instances before the final link and supply a UTF-8 JSON object with exactly `schema: \"bennett-arith-instantiations-1\"`, `llvm_major` (integer), `target_triple` (string), `data_layout` (LLVM string), and `entries` (array); a conversion entry has exactly `op: \"convert_to\" | \"convert_from\"`, `format` (the MDString above), and `base` (B suffix), and a powi entry has exactly `op: \"powi\"`, `base`, and `exponent_bits` (integer K, 1..8388608). A powi entry requests both `C_B @__bennett_sf_powi_<B>_i<K>(C_B, iK)` and `C_B @__bennett_sf_powi_<B>_i<K>_rm(C_B, iK, i32 R)` (the suffix `_rm` is last); a conversion entry requests its exact signature above. Duplicate entries denote one instance; canonical request bytes are JCS with entries sorted by (op, base, format or empty string, exponent_bits or zero).",
     "witnesses": []
   },
   {
-    "bead": "z7u",
     "section": "13.1",
-    "id": "z7u/4",
+    "id": "CLARIFICATION-27",
     "sentence": "The arith distribution MUST provide a documented offline generator accepting that request and producing matching-major ordinary bitcode plus a JCS manifest containing `schema: \"bennett-arith-instances-1\"`, the request SHA-256 as `request_sha256`, `bitcode_sha256`, and `exports` (array of objects with exact `symbol` and LLVM `function_type` strings sorted by symbol); every requested definition and its reachable closure MUST be present, with no hardware FP or host libm import, and linked before normalisation identically in both builds. Default prebuilt exponent widths are a cache, never a capability bound; generation failure is an explicit implementation blocker, not a successful link, unsupported-format verdict, or silent narrower substitute.",
     "witnesses": []
   },
   {
-    "bead": "21a",
     "section": "13.5",
-    "id": "21a/1",
+    "id": "CLARIFICATION-28",
     "sentence": "**Quiet and signaling comparison ABI.** N32 MUST lower `llvm.experimental.constrained.fcmp` to `i1 @__bennett_sf_cmp_B_rm(C_B, C_B, i32 P, i32 R)` and `llvm.experimental.constrained.fcmps` to the distinct `i1 @__bennett_sf_cmps_B_rm(C_B, C_B, i32 P, i32 R)`, with P exactly the 0..15 predicate encoding of \u00a713.1 and R = 0 (these intrinsics have exception metadata but no rounding metadata); vector forms scalarise first, and no predicate-bit extension encodes signalingness.",
     "witnesses": []
   },
   {
-    "bead": "21a",
     "section": "13.5",
-    "id": "21a/2",
+    "id": "CLARIFICATION-29",
     "sentence": "Both entries MUST compute the same LLVM predicate truth value, while quiet `cmp` raises invalid only for a signaling NaN operand and signaling `cmps` raises invalid for either quiet or signaling NaN, even for predicates false/true; neither raises divbyzero, overflow, underflow or inexact, and no comparison canonicalises or modifies its input bits.",
     "witnesses": []
   },
   {
-    "bead": "21a",
     "section": "13.5",
-    "id": "21a/3",
+    "id": "CLARIFICATION-30",
     "sentence": "For `fpexcept.ignore`, the normaliser MUST use `i1 @__bennett_sf_cmp_B(C_B, C_B, i32 P)` for either intrinsic so the observable fenv is unchanged; for `fpexcept.maytrap` or `fpexcept.strict` it MUST use the corresponding `_rm` entry, OR invalid into the sticky flags and return the predicate without a host trap (the dialect's deterministic exception convention), identically on LLVM 18 and 23. The plain cmp entry therefore has no flag side effect, and every `_rm` comparison entry always records the flags it raises.",
     "witnesses": []
   },
   {
-    "bead": "round11",
     "section": "13.5",
-    "id": "round11/fenv-layout",
+    "id": "CLARIFICATION-31",
     "sentence": "bennett-runtimes defines @__bennett_rt_fenv as a global { i32, i32 }, align 4; round is field 0 at byte offset 0, flags is field 1 at byte offset 4, initially {0,0}; bennett-arith declares that same object.",
     "witnesses": []
   },
   {
-    "bead": "round11",
     "section": "13.5",
-    "id": "round11/DF-evidence",
+    "id": "CLARIFICATION-32",
     "sentence": "Suite DF checks the independent \u00a7\u00a713.1/13.4/13.5 boundary vectors in `scripts/0212_numerical.c`; full-domain accuracy and exact-flag implementation obligations remain open.",
     "witnesses": [
       "coverage/0212/round11/DF-boundaries"
     ]
   },
   {
-    "bead": "round11",
     "section": "17.1",
-    "id": "round11/DR-DD-evidence",
+    "id": "CLARIFICATION-33",
     "sentence": "Suites DR/DD check the \u00a7\u00a717.1/19.5 allocation/layout boundary vector in `scripts/0212_allocation.c` and `scripts/dialect_0212_vectors.py`; this is a conformance vector, not a new primitive.",
     "witnesses": [
       "coverage/0212/round11/DR-DD-boundaries"
     ]
   },
   {
-    "bead": "round11",
     "section": "18.7",
-    "id": "round11/reference-fault",
+    "id": "CLARIFICATION-34",
     "sentence": "The comparison binary detects the materialised faults required by \u00a717.7; the reference interpreter supplies the authoritative cause. Source-definedness classification is a separate build and is reported separately.",
     "witnesses": []
   }

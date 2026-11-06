@@ -1,5 +1,5 @@
-from dialect_profile import profile
 """Dialect execution: shared definitions extracted without changing checker behavior."""
+from dialect_profile import profile
 from pathlib import Path
 import cmath
 import hashlib

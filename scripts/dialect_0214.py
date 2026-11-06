@@ -1,4 +1,4 @@
-"""0.2.14 contract and finite witnesses (brt-vbi §§12.8/19.1/19.9; R23 §11.2).
+"""0.2.14 runtime instance delivery and native console-close witnesses.
 
 The vectors are wire-format and expected-value evidence for the runtime integer
 instance-delivery protocol, not a runtimes generator or helper implementation.
@@ -17,11 +17,11 @@ from dialect_check_v02 import command, equal
 STATES = {'runtime-instance-request', 'runtime-instance-i257'}
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / '0214_runtime_instances.c'
-CONSOLE_SENTENCE = ('Editorial clarification (advisor R23 2026-11-03, b-dialect-spec-9rd), resolving an ambiguity toward native'
-                    ' semantics: closing a virtual stdout/stderr descriptor has native descriptor semantics, so a later `write`,'
+CONSOLE_SENTENCE = ('closing a virtual stdout/stderr descriptor has native descriptor semantics, so a later `write`,'
                     ' `writev` or `lseek` on that descriptor returns -1 with EBADF; "the virtual byte sink" names the console'
                     ' device, which stays available to other descriptors bound to it, and "releases no host resource" means no'
                     ' host-side close.')
+
 # §12.8 op set of the delivery protocol, with its minimum request width (exclusive).
 WIDE = ('mul', 'udiv', 'sdiv', 'urem', 'srem', 'shl', 'lshr', 'ashr')
 ROWS = ('bswap', 'bitreverse', 'ctpop', 'ctlz', 'cttz', 'fshl', 'fshr', 'sshl_sat', 'ushl_sat',

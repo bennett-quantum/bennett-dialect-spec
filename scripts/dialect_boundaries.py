@@ -1,5 +1,5 @@
+"""Source-derived contract witnesses: observations from native code and Rust ISA execution."""
 from dialect_profile import profile
-"""Round-3 contract witnesses: observations from native code and Rust ISA execution."""
 import json
 import math
 import dialect_check as d

@@ -1,10 +1,10 @@
-from dialect_profile import profile
 """Auditable CC/R fixtures for §11/§14 checked programs.
 
 The fixtures spell the explicit state propagation of the demonstrated source
 programs; constants are read from their source. The run result is never used to
 construct the object. Native C runs provide a separate comparison.
 """
+from dialect_profile import profile
 import json
 import re
 from dialect_check_v02 import equal
@@ -218,7 +218,7 @@ def r_budget_prefix(runner,block):
         'required under ISA 0.9: run=FAILED; exactly one terminal record, code=1; no host request; reversible prefix history retained',
     ]
     equal(ident,'§17.6/ISA-0.9 recorded obligation',expected,lines)
-    receipt={'verdict':verdict,'bead':'b-dialect-spec-bz6','executed':False,
+    receipt={'verdict':verdict,'capability':'R-BUDGET-FAULT','executed':False,
              'execution_target':'ISA 0.8','requires':'ISA 0.9 fault C, 61550b4 §0.2 K5 / §4.1',
              'required_isa09':{'status':'FAILED','fault':int(faults[0]),'console_hex':'',
                                'tape':[],'terminal_records':[{'code':1}],

@@ -1,5 +1,5 @@
-from dialect_profile import profile
 """Executable §19/§20 driver boundary operations, independent of expected results."""
+from dialect_profile import profile
 import hashlib
 import re
 import dialect_check as d

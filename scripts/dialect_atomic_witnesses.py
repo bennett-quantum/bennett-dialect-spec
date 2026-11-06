@@ -1,4 +1,4 @@
-"""Round-6 recognition and independent execution of the spec's source witnesses."""
+"""Source-derived recognition and independent execution of the spec's source witnesses."""
 import json
 import re
 import dialect_check as d
