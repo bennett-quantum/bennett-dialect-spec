@@ -810,28 +810,28 @@ def action_object(isa,path,name,widths,rows):
 
 
 def state_check(runner,block):
-    from dialect_0213 import STATES as PATCH0213, check_state as check_0213
-    if block['attrs']['state'] in PATCH0213:return check_0213(runner,block)
-    from dialect_0214 import STATES as PATCH0214, check_state as check_0214
-    if block['attrs']['state'] in PATCH0214:return check_0214(runner,block)
+    from dialect_0213 import STATES as FLOAT_ALLOCATOR_STATES, check_state as check_0213
+    if block['attrs']['state'] in FLOAT_ALLOCATOR_STATES:return check_0213(runner,block)
+    from dialect_0214 import STATES as RUNTIME_DELIVERY_STATES, check_state as check_0214
+    if block['attrs']['state'] in RUNTIME_DELIVERY_STATES:return check_0214(runner,block)
     if block['attrs']['state']=='compatible-allocator-graph':
         from dialect_0211 import check_graph
         return check_graph(runner,block)
-    from dialect_0211 import STATES as DRAFT0211, check_state as check_0211
-    if block['attrs']['state'] in DRAFT0211:return check_0211(runner,block)
-    from dialect_initialisation import STATES as ROUND8, check_state as check_round8
-    if block['attrs']['state'] in ROUND8:return check_round8(runner,block)
-    from dialect_scalar_witnesses import STATES as ROUND7, check_state as check_round7
-    if block['attrs']['state'] in ROUND7:return check_round7(runner,block)
-    from dialect_atomic_witnesses import STATES as ROUND6, check_state as check_round6
-    if block['attrs']['state'] in ROUND6:return check_round6(runner,block)
-    from dialect_memory_witnesses import STATES as ROUND5, check_state as check_round5
-    if block['attrs']['state'] in ROUND5:return check_round5(runner,block)
+    from dialect_0211 import STATES as COLLECTION_STATES, check_state as check_0211
+    if block['attrs']['state'] in COLLECTION_STATES:return check_0211(runner,block)
+    from dialect_initialisation import STATES as INITIALISATION_STATES, check_state as check_initialisation
+    if block['attrs']['state'] in INITIALISATION_STATES:return check_initialisation(runner,block)
+    from dialect_scalar_witnesses import STATES as SCALAR_STATES, check_state as check_scalar
+    if block['attrs']['state'] in SCALAR_STATES:return check_scalar(runner,block)
+    from dialect_atomic_witnesses import STATES as ATOMIC_STATES, check_state as check_atomic
+    if block['attrs']['state'] in ATOMIC_STATES:return check_atomic(runner,block)
+    from dialect_memory_witnesses import STATES as MEMORY_STATES, check_state as check_memory
+    if block['attrs']['state'] in MEMORY_STATES:return check_memory(runner,block)
     a=block['attrs'];ident=a['state'];at=int(a['at'])
-    from dialect_interprocedural import STATES as ROUND4, check_state as check_round4
-    if ident in ROUND4:return check_round4(runner,block)
-    from dialect_boundaries import STATES as ROUND3, check_state as check_round3
-    if ident in ROUND3:return check_round3(runner,block)
+    from dialect_interprocedural import STATES as INTERPROCEDURAL_STATES, check_state as check_interprocedural
+    if ident in INTERPROCEDURAL_STATES:return check_interprocedural(runner,block)
+    from dialect_boundaries import STATES as BOUNDARY_STATES, check_state as check_boundaries
+    if ident in BOUNDARY_STATES:return check_boundaries(runner,block)
     from dialect_lifetimes import STATES, check_state
     if ident in STATES:return check_state(runner,block)
     from dialect_driver import SCENARIOS, check_scenario

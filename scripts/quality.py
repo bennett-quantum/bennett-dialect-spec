@@ -12,7 +12,7 @@ import sys
 ROOT = Path(__file__).resolve().parent.parent
 LENGTH_BINS = (25, 50, 100, 200, 300)
 LITTER = ('*.pyc', '*.log', '*.darc', 'LAST-RUN*', '*LAST-RUN*', '*PROGRESS*', 'LOCK', '*.lock')
-PROCESS_ID = re.compile(r'\b(?:b-(?:dialect-spec|isa-spec)-[a-z0-9]+(?:\.[0-9]+)*|brt-[a-z0-9]{3}(?:\.[0-9]+)*|bennett-[a-z0-9]{3}(?!-))\b')
+PROCESS_ID = re.compile(r'\b(?:b-(?:dialect-spec|isa-spec)-[a-z0-9]+(?:\.[0-9]+)*|brt-[a-z0-9]{3}(?:\.[0-9]+)*|bennett-[a-z0-9]{3}(?!-)|ROUND[0-9]+|round[0-9]+|round-[0-9]+|R[0-9]{2})\b')
 BEGIN = '<!-- quality-baseline -->'
 END = '<!-- /quality-baseline -->'
 

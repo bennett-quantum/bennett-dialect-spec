@@ -148,7 +148,7 @@ live[slots[0]]=live[slots[1]]=0;unsigned total=0;for(unsigned j=0;j<64;j++)total
 printf("[%u,%u,%u,%u,%u]\\n",next,distinct,total,0,maxlive);return 0;}'''
         run_native(runner,name,'',src,[[v['instances'],int(v['distinct']),v['live_after'],v['trap'],v['max_live']]])
     elif name == 'shadow-stack-liveness':
-        src='#include "'+str(d.ROOT/'scripts/round3_runtime.c')+'"\n'+'''static void show(struct stack*s,uint64_t p){unsigned c;unsigned v=ss_load(s,p,&c);printf("[%u,%u]\\n",v,c);}
+        src='#include "'+str(d.ROOT/'scripts/logical_stack_runtime.c')+'"\n'+'''static void show(struct stack*s,uint64_t p){unsigned c;unsigned v=ss_load(s,p,&c);printf("[%u,%u]\\n",v,c);}
 static uint64_t f(struct stack*s){uint64_t p=ss_push(s,1);if(ss_store(s,p,7))abort();ss_pop(s,p);return p;}
 int main(void){struct stack s={0};uint64_t p=ss_push(&s,1);ss_store(&s,p,7);show(&s,p);
 struct stack replay=s;ss_pop(&s,p);show(&s,p);unsigned old=s.bytes[0];ss_store(&s,0,9);
@@ -217,4 +217,4 @@ printf("[%u,%u,%u,%u]\\n",generation_equal,code,second,live);return 0;}'''
                 observed=runner.isa.call('run-cc',caller,'controlled','--arg',f'token:{budget},0,32,1','--arg',f'qreg:{control}')
                 equal(name,key+' controlled status','COMPLETED',observed['status'])
                 equal(name,key+' controlled fault',str(v[key][1] if control else 0),observed['results'][0]['value'])
-    else:raise d.Fail('unimplemented round-3 state '+name)
+    else:raise d.Fail('unimplemented boundary state '+name)

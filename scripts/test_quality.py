@@ -2,7 +2,7 @@
 from pathlib import Path
 import tempfile
 import unittest
-from quality import source_metrics, regressions, measure
+from quality import PROCESS_ID, source_metrics, regressions, measure
 
 
 class Ratchet(unittest.TestCase):
@@ -35,3 +35,9 @@ class Ratchet(unittest.TestCase):
             self.assertEqual(measure(root)['litter'], [])
             subprocess.run(['git', '-C', str(root), 'add', 'scratch.log'], check=True)
             self.assertEqual(measure(root)['litter'], ['scratch.log'])
+
+    def test_identifier_grep_separates_process_tags_from_repository_names(self):
+        tags = ['b-dialect-spec-abc', 'b-isa-spec-xyz.2', 'brt-vbi', 'bennett-4ht',
+                'round11', 'ROUND8', 'R23']
+        self.assertEqual(PROCESS_ID.findall(' '.join(tags)), tags)
+        self.assertEqual(PROCESS_ID.findall('bennett-isa-spec bennett-driver DLT-19.9-P1'), [])

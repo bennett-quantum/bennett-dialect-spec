@@ -13,7 +13,7 @@ STATES={'handle-setjmp-reentry','entry-allocation-only','arena-logical-bounds','
 def check_state(runner,block):
     name=block['attrs']['state']
     try:v=json.loads(block['body'])
-    except ValueError as e:raise d.Fail('round-2 witness must be one JSON object') from e
+    except ValueError as e:raise d.Fail('lifecycle witness must be one JSON object') from e
     if name=='handle-setjmp-reentry':
         from dialect_check_v02 import recognise
         verdict,a=recognise(d.with_decls(runner.block('example',name)['body']))
@@ -70,21 +70,21 @@ int main(void){unsigned char x=1;int a=valid(0,1,0,1,0);int b=valid(2,1,0,1,1);i
     elif name=='generation-cancel':
         ops={'qalloc':0,'gate-x':1,'qfree':2,'ret':3}
         program=','.join(str(ops[x]) for x in v['source'])
-        src='#include "'+str(d.ROOT/'scripts/round2_runtime.c')+'"\nint main(void){unsigned ops[]={'+program+'};'
+        src='#include "'+str(d.ROOT/'scripts/lifecycle_runtime.c')+'"\nint main(void){unsigned ops[]={'+program+'};'
         for c in v['controls']:
-            src+=f'{{struct generation g={{.steps={v["steps"]}}};unsigned code=round2_generate(&g,ops,sizeof ops/sizeof *ops);printf("[%u,%u,%u]\\n",{c}?code:0,g.local,code==4);}}'
+            src+=f'{{struct generation g={{.steps={v["steps"]}}};unsigned code=lifecycle_generate(&g,ops,sizeof ops/sizeof *ops);printf("[%u,%u,%u]\\n",{c}?code:0,g.local,code==4);}}'
         src+='return 0;}'
         run_native(runner,name,'',src,v['results'])
         # Failed f skips use; failed use cancels both unapplied recorders.
-        src='#include "'+str(d.ROOT/'scripts/round2_runtime.c')+'"\nint main(void){unsigned a[]={0,1,1,2,3};'
+        src='#include "'+str(d.ROOT/'scripts/lifecycle_runtime.c')+'"\nint main(void){unsigned a[]={0,1,1,2,3};'
         for failed in v['compute_failure']:
-            src+=f'{{struct generation f={{.steps={1 if failed=="f" else 9}}},u={{.steps=1}};unsigned foreign={v["foreign_before"]};unsigned c=round2_generate(&f,a,5);if(!c)c=round2_generate(&u,a,5);if(c){{f.events=0;f.local=0;u.events=0;u.local=0;}}printf("[%u,%u,%u]\\n",c,f.local+u.local,foreign);}}'
+            src+=f'{{struct generation f={{.steps={1 if failed=="f" else 9}}},u={{.steps=1}};unsigned foreign={v["foreign_before"]};unsigned c=lifecycle_generate(&f,a,5);if(!c)c=lifecycle_generate(&u,a,5);if(c){{f.events=0;f.local=0;u.events=0;u.local=0;}}printf("[%u,%u,%u]\\n",c,f.local+u.local,foreign);}}'
         src+='return 0;}'
         run_native(runner,name+'-compute','',src,[[1,0,v['foreign_after']]]*len(v['compute_failure']))
     elif name=='nested-cl-view':
         # The native recorder establishes the inherited Cl value. Rust executes
         # the corresponding controlled writes and child quantum event.
-        src='#include "'+str(d.ROOT/'scripts/round2_runtime.c')+'"\nint main(void){'+f'struct view parent={{.shadow=0,.written=1,.value={v["parent_store"]}}};struct view child={{.parent=&parent}};printf("%u\\n",round2_read(&child));return 0;}}'
+        src='#include "'+str(d.ROOT/'scripts/lifecycle_runtime.c')+'"\nint main(void){'+f'struct view parent={{.shadow=0,.written=1,.value={v["parent_store"]}}};struct view child={{.parent=&parent}};printf("%u\\n",lifecycle_read(&child));return 0;}}'
         run_native(runner,name,'',src,[v['child_test']])
         for (c1,c2),want in zip(v['controls'],v['results']):
             q=Session(runner,name+str(c1)+str(c2));q.alloc('c1',1,c1);q.alloc('c2',1,c2);q.alloc('t',8);q.alloc('z',1)
@@ -158,11 +158,11 @@ int main(void){unsigned char x=1;int a=valid(0,1,0,1,0);int b=valid(2,1,0,1,1);i
             if any(abs(a-b)>1e-7 for a,b in zip(probs,v['probabilities'])):raise d.Fail('deferred adjoint channel probabilities '+str(probs))
             equal(name,'retained record',v['record_retained'],'record' in q.widths);equal(name,'trap',0,v['trap'])
     elif name=='co-store-release':
-        src='#include "'+str(d.ROOT/'scripts/round2_runtime.c')+'"\nint main(void){'
+        src='#include "'+str(d.ROOT/'scripts/lifecycle_runtime.c')+'"\nint main(void){'
         expected=[]
         for value,want in zip(v['co_values'],v['observe_first_results']):
-            src+=f'{{struct object o={{.k=2,.arena={value}}};unsigned c=round2_store(&o,{v["store_value"]});unsigned r=round2_release(&o);printf("[%u,%u,%u]\\n",c,r,o.arena);round2_observe(&o,{value});c=round2_store(&o,{v["store_value"]});printf("[%u,%u]\\n",c,o.shadow);}}'
+            src+=f'{{struct object o={{.k=2,.arena={value}}};unsigned c=lifecycle_store(&o,{v["store_value"]});unsigned r=lifecycle_release(&o);printf("[%u,%u,%u]\\n",c,r,o.arena);lifecycle_observe(&o,{value});c=lifecycle_store(&o,{v["store_value"]});printf("[%u,%u]\\n",c,o.shadow);}}'
             expected += [[v['store_code'],v['release_code'],value],[0,want]]
         src+='return 0;}'
         run_native(runner,name,'',src,expected);equal(name,'dirty reuse',False,v['reuse_permitted'])
-    else:raise d.Fail('unimplemented round-2 state '+name)
+    else:raise d.Fail('unimplemented lifecycle state '+name)
