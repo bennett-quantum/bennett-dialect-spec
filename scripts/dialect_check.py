@@ -38,14 +38,15 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from dialect_pins import sibling
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "spec" / "Bennett-Dialect-Spec.md"
 HEADER = ROOT / "spec" / "bennett_markers.h"
 LEG = ROOT / "corpus" / "legality"
 TOOLCHAINS = LEG / "toolchains.toml"
-ISA_SPEC = ROOT.parent / "bennett-isa-spec" / "spec" / "Bennett-ISA-Spec.md"
-NORTH_STAR = ROOT.parent / "bennett" / "docs" / "Bennett-NorthStar.md"
+ISA_SPEC = sibling("bennett-isa-spec") / "spec" / "Bennett-ISA-Spec.md"
+NORTH_STAR = sibling("bennett") / "docs" / "Bennett-NorthStar.md"
 MAJORS = ("18", "20", "23")
 
 

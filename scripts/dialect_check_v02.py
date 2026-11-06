@@ -33,7 +33,7 @@ import dialect_check as d
 ROOT = d.ROOT
 SCRATCH = ROOT / 'scripts' / '.tmp'
 ISA_DIR = ROOT / 'scripts' / '.isa-ref'
-ISA_SOURCE = ROOT.parent / 'bennett-isa-spec' / 'reference-interpreter'
+ISA_SOURCE = d.sibling('bennett-isa-spec') / 'reference-interpreter'
 CLI_BEAD = 'b-isa-spec-xam'
 TAGS = ('markers-ir', 'markers-c', 'example', 'normalise-in', 'normalise-out',
         'native', 'lift', 'linkmap', 'object', 'reference-body', 'hash', 'run',

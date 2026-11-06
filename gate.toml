@@ -18,6 +18,10 @@ name = "cargo test (every crate)"
 argv = ["sh", "-c", "for m in $(find . -name Cargo.toml -not -path './scripts/.isa-ref/*' -not -path '*/target/*' -not -path '*/.tmp/*' | sort); do echo \"cargo test $m\"; cargo test --offline --manifest-path \"$m\" || exit $?; done"]
 
 [[check]]
+name = "Python tooling tests"
+argv = ["python3", "scripts/run_tests.py", "--all"]
+
+[[check]]
 name = "dialect gate"
 argv = ["python3", "scripts/dialect_check_v02.py", "--json", "scripts/.tmp/pre-push-gate.json"]
 

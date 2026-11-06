@@ -16,7 +16,7 @@ ITEMS=json.loads((Path(__file__).with_name('dialect_0211_items.json')).read_text
 
 
 def dependency_ids():
-    directory=d.ROOT.parent/'bennett-conformance'/'clauses'
+    directory=d.sibling('bennett-conformance')/'clauses'
     # These ledger dependencies name sections/clauses, not statement text or
     # graph hashes. Regeneration may add statements without changing this check.
     # Keep exact ID membership: a missing pinned dependency must fail loudly.

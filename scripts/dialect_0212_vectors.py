@@ -1,3 +1,4 @@
+import dialect_check as d
 """Independent boundary oracles; samples do not certify consumer implementations."""
 import json
 from pathlib import Path
@@ -69,7 +70,7 @@ def allocation(runner):
     out=runner.tmp/'0212-driver-layout';out.mkdir(exist_ok=True)
     resolved=out/'input-layout.json'
     resolved.write_text(json.dumps({**layout,'heap_limit_max':32}))
-    emitter=ROOT.parent/'bennett-driver/scripts/native-layout.py'
+    emitter=d.sibling('bennett-driver')/'scripts/native-layout.py'
     command(['python3',emitter,out,out/'unused-device',resolved,'4096',''])
     ll=out/'native-layout.ll'
     equal('0212/DD','driver emits one constant with resolved fields and alignment',
