@@ -3,6 +3,7 @@
 import argparse
 import collections
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -56,6 +57,9 @@ def main(argv=None):
         parser.add_argument('--json',type=Path)
         args=parser.parse_args(argv)
         selected={x for f in args.family or [] for x in f.split(',')}
+        known = set(v2.TAG_FAMILY.values()) | v2.AUX_FAMILIES | {'lowering', 'isa09'}
+        if selected - known:
+            parser.error('unknown family: ' + ', '.join(sorted(selected - known)))
         v2.headless_env()
         text=args.spec.read_text();blocks=d.extract_blocks(text)
         v2.initialise(blocks);d.SPEC_PATH=args.spec

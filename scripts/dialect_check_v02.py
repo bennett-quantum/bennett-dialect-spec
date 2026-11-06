@@ -37,6 +37,7 @@ SCRATCH = ROOT / 'scripts' / '.tmp'
 ISA_DIR = ROOT / 'scripts' / '.isa-ref'
 ISA_SOURCE = d.sibling('bennett-isa-spec') / 'reference-interpreter'
 CLI_CAPABILITY = 'ISA-CLI'
+AUX_FAMILIES = frozenset({'parse', 'frontend', 'coverage', 'xrefs', 'asm', 'inventory', 'seeds'})
 TAGS = ('markers-ir', 'markers-c', 'example', 'normalise-in', 'normalise-out',
         'native', 'lift', 'linkmap', 'object', 'reference-body', 'hash', 'run',
         'fb', 'step-check', 'inplace', 'semantics', 'events', 'state', 'tdl',
@@ -690,7 +691,7 @@ def main(argv=None):
     parser.add_argument('--json', type=Path, help='write structured results')
     args = parser.parse_args(argv)
     selected = {x for f in args.family or [] for x in f.split(',')}
-    known = set(TAG_FAMILY.values()) | {'parse','frontend','coverage','xrefs','asm','inventory','seeds'}
+    known = set(TAG_FAMILY.values()) | AUX_FAMILIES
     if selected - known:
         parser.error('unknown family: ' + ', '.join(sorted(selected-known)))
     headless_env()
