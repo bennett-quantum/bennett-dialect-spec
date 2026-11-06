@@ -1,6 +1,7 @@
 """Exercise publication composition through real recognizer verdicts."""
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -56,3 +57,46 @@ class Publications(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught:
             main(['--family', 'not-a-check-family'])
         self.assertEqual(caught.exception.code, 2)
+
+
+class FixtureFailures(unittest.TestCase):
+    def test_unexpected_emission_errors_remain_failed_rows(self):
+        import dialect03_witnesses as witnesses
+        runner = object.__new__(v2.Runner)
+        runner.rows, runner.selected = [], set()
+        with tempfile.TemporaryDirectory() as tmp:
+            runner.tmp = Path(tmp)
+            for diagnostic in ('invalid signature', 'interface hash mismatch', 'interpreter command exited 127'):
+                with self.subTest(diagnostic=diagnostic):
+                    error = d.Fail('fixture: ' + diagnostic)
+                    with patch.object(witnesses.cc, 'emit', side_effect=error):
+                        with self.assertRaises(d.Fail) as caught:
+                            witnesses.build(runner, 'malformed', [], {})
+                        self.assertIs(caught.exception, error)
+                        runner.check('isa09', 'malformed', 'fixture',
+                                     lambda: witnesses.build(runner, 'malformed', [], {}))
+                    self.assertEqual(runner.rows[-1]['status'], 'failed')
+                    self.assertIn(str(error), runner.rows[-1]['detail'])
+                    self.assertEqual(runner.rows[-1]['blocked_on'], '')
+
+    def test_unsupported_emission_requires_second_reader_pin(self):
+        import dialect03_witnesses as witnesses
+        runner = object.__new__(v2.Runner)
+        runner.rows, runner.selected = [], set()
+        with tempfile.TemporaryDirectory() as tmp:
+            runner.tmp = Path(tmp)
+            with patch.object(witnesses.cc, 'emit', side_effect=d.Fail('qreg instructions are CC only')):
+                runner.check('isa09', 'unsupported', 'fixture',
+                             lambda: witnesses.build(runner, 'unsupported', [], {}))
+        self.assertEqual(runner.rows[0]['status'], 'blocked')
+        self.assertIn('SECOND-READER-PIN', runner.rows[0]['blocked_on'])
+
+    def test_successful_emission_returns_object_path(self):
+        import dialect03_witnesses as witnesses
+        runner = object.__new__(v2.Runner)
+        with tempfile.TemporaryDirectory() as tmp:
+            runner.tmp = Path(tmp)
+            with patch.object(witnesses.cc, 'emit') as emit:
+                result = witnesses.build(runner, 'valid', [], {})
+            self.assertEqual(result, Path(tmp) / 'valid.bisa')
+            emit.assert_called_once_with(runner, result, [], {}, None, None)

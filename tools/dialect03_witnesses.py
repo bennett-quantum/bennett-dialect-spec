@@ -25,6 +25,8 @@ def build(runner,name,functions,signatures,data=None,devices=None):
     try:
         cc.emit(runner,path,functions,signatures,data,devices)
     except d.Fail as e:
+        if not unsupported_row(e):
+            raise
         admitted_by_second_reader(path)
         absent(e,name)
     return path
@@ -36,20 +38,21 @@ def build_quiet(runner,name,functions,signatures):
 
 
 def admitted_by_second_reader(path):
-    """While the reference cannot admit a row, the VM's published binary reads the fixture: a fixture
-    it refuses is this checker's bug, a failure rather than a blocked row. Admission only, no execution."""
+    """Unsupported rows require a pinned independent admission reader before execution evidence."""
     raise v2.Unavailable('independent admission of an unsupported ISA 0.9 row',
                          'configure a published second-reader binary in gate.toml',
                          'SECOND-READER-PIN')
 
 
 
+def unsupported_row(error):
+    return any(re.search(pattern,str(error)) for pattern in ABSENT)
+
+
 def absent(e,name):
-    text=str(e)
-    for pattern in ABSENT:
-        if re.search(pattern,text):
-            raise v2.Unavailable('ISA 0.9 row of witness '+name+': '+text.strip().splitlines()[-1][:160],'bennett-isa-ref with ISA 0.9 K1-K4',CAPABILITY)
-    raise e
+    if not unsupported_row(e):
+        raise e
+    raise v2.Unavailable('ISA 0.9 row of witness '+name+': '+str(e).strip().splitlines()[-1][:160],'bennett-isa-ref with ISA 0.9 K1-K4',CAPABILITY)
 
 
 def call(runner,verb,path,entry,args='',name=''):

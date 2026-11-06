@@ -67,8 +67,8 @@ The gate compares total and per-file metrics, including wrappers, against this r
 baseline. New files are measured too. Baseline refreshes are explicit reviewable changes; no threshold
 or automatic baseline rewrite is used.
 
-Totals: 762 functions; maximum 295 lines; 132 over 25, 47 over 50, 14 over 100, 3 over 200, 0 over 300.
-Cognitive mass 12332; trivial wrappers 3. No function exceeds 300 lines.
+Totals: 766 functions; maximum 295 lines; 132 over 25, 47 over 50, 14 over 100, 3 over 200, 0 over 300.
+Cognitive mass 12334; trivial wrappers 3. No function exceeds 300 lines.
 
 The litter scan checks the git index for bytecode, caches, logs, lock files, backups and
 LAST-RUN/PROGRESS files: **0 tracked**. The identifier grep checks non-test Python/C/JSON tooling,
@@ -89,6 +89,10 @@ unsupported draft 0.3 rows (now explicit blocked evidence); **b-dialect-spec-2qq
 recognizer/normalizer labels in round 2. Contract P0/P1 beads, spec text and emission bytes were
 outside this change and remain untouched. Critical verdict/gate changes require the programme's
 fresh review/council; this implementer does not claim review clearance.
+
+The failure-classification fix adds a shared unsupported-row predicate and three regression tests.
+Its reviewed baseline adjustment adds four functions and two cognitive-mass points; maximum
+function length, length bins, wrappers and hygiene counts are unchanged.
 
 <!-- quality-baseline -->
 ```json
@@ -755,8 +759,8 @@ fresh review/council; this implementer does not claim review clearance.
       "wrappers": 0
     },
     "tools/dialect03_witnesses.py": {
-      "complexity": 119,
-      "functions": 26,
+      "complexity": 120,
+      "functions": 27,
       "max_lines": 52,
       "over_100": 0,
       "over_200": 0,
@@ -777,9 +781,9 @@ fresh review/council; this implementer does not claim review clearance.
       "wrappers": 0
     },
     "tools/test_dialect_v03.py": {
-      "complexity": 1,
-      "functions": 5,
-      "max_lines": 15,
+      "complexity": 2,
+      "functions": 8,
+      "max_lines": 18,
       "over_100": 0,
       "over_200": 0,
       "over_25": 0,
