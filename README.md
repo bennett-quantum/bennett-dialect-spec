@@ -15,7 +15,7 @@ Layout:
 - `emission/`, `docs/`: emission notes and audit/brief records.
 - `SPEC_VERSIONS.toml`: ISA version this repo is graded against (the gate validates inputs at the commits in `gate.toml`).
 
-Current state and open consumer blockers: [HANDOFF.md](HANDOFF.md).
+Current state and open blockers: [bennett/HANDOFF.md](../bennett/HANDOFF.md).
 
 Run the default tooling suite with `python3 scripts/run_tests.py`. Expensive execution witnesses
 remain in `python3 scripts/run_tests.py --slow`; the push gate runs both suites and the spec checker.
