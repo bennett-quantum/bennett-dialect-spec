@@ -2,9 +2,10 @@
 
 Recorded 2026-11-06. This covers Python tooling, not a new contract or a consumer conformance claim.
 
-The default command is `python3 scripts/run_tests.py`. The fresh instrumented default run passed
-150 tests in 64.276 s (runner timing). The final uninstrumented run passed **151 tests in 38.26 s wall**
-(37.848 s runner timing), measured with `/usr/bin/time -f %e timeout 180 python3 scripts/run_tests.py`.
+The default command is `python3 scripts/run_tests.py`. After the failure-classification and
+state-dispatch fixes, the uninstrumented default run passed **156 tests in 93.55 s wall**
+(92.497 s runner timing), measured with `/usr/bin/time -f %e timeout 180 python3 scripts/run_tests.py`.
+The fresh instrumented default run also passed 156 tests in 162.643 s (runner timing).
 The gate also runs `python3 scripts/run_tests.py --slow`; none of the 33 slow tests was deleted.
 The combined suite passed 179 tests in 703.888 s before the final additional unit cases; those added
 cases were checked separately. Slow checks include native LLVM matrices, ISA execution and O3 traces.
@@ -33,26 +34,26 @@ The full push gate is reserved for merge-time orchestration.
 
 ## Coverage
 
-**46.43%** statement-and-branch coverage in the fresh default suite, using coverage.py 7.17.2.
+**47.71%** statement-and-branch coverage in the fresh default suite, using coverage.py 7.17.2.
 This is the measured fast-suite scope, not an assertion about the full spec/matrix gate.
-The report counted 4790/9696 statements and 2081/5104 branch exits covered. Test modules and the
+The report counted 4942/9699 statements and 2121/5104 branch exits covered. Test modules and the
 snapshot build recorder are excluded from the denominator. Exact commands (headless environment,
 project-local TMPDIR, and pinned sibling cache):
 
 ```sh
-COVERAGE_FILE="$PWD/.tmp/quality-dialect/coverage-final" timeout 180   .tmp/quality-dialect/venv/bin/python -m coverage run --branch   --source=scripts,tools,corpus/legality/harness   --omit='*/test_*,*/interpreter_test_support.py' scripts/run_tests.py
-COVERAGE_FILE="$PWD/.tmp/quality-dialect/coverage-final"   .tmp/quality-dialect/venv/bin/python -m coverage json   -o .tmp/quality-dialect/default-coverage.json
+COVERAGE_FILE="$PWD/.tmp/quality-dialect/coverage-r2" timeout 180   .tmp/quality-dialect/venv/bin/python -m coverage run --branch   --source=scripts,tools,corpus/legality/harness   --omit='*/test_*,*/interpreter_test_support.py' scripts/run_tests.py
+COVERAGE_FILE="$PWD/.tmp/quality-dialect/coverage-r2"   .tmp/quality-dialect/venv/bin/python -m coverage json   -o .tmp/quality-dialect/default-coverage-r2.json
 ```
 
-The five lowest modules in that report tie at 0%. Their execution is retained outside the default:
+The five lowest modules in that report are execution checks mostly retained outside the default:
 
-| Module | Reason and retained evidence |
-|---|---|
-| `scripts/dialect_0212_contract.py` | Whole-run inherited ledger; both complete v02 runs and final 78-row ledger check passed. |
-| `scripts/dialect_0212_vectors.py` | Native numerical/allocation fixtures plus ISA boundary calls, executed by the spec gate and final ledger check. |
-| `scripts/dialect_atomic_witnesses.py` | LLVM/native/ISA matrix; `test_round6_execution` is in the passing slow suite. |
-| `scripts/dialect_boundaries.py` | Native/ISA lifecycle and boundary execution; retained slow cases passed, and renamed stack helper was rechecked. |
-| `scripts/dialect_driver.py` | Native/reversible platform scenarios; `test_driver_platform_scenarios` passed in the slow suite. |
+| Module | Coverage | Reason and retained evidence |
+|---|---|---|
+| `scripts/dialect_0212_contract.py` | 0% | Whole-run inherited ledger; the full v02 pre-change run passed. |
+| `scripts/dialect_0212_vectors.py` | 0% | Native numerical/allocation fixtures plus ISA boundary calls, executed by the spec gate. |
+| `scripts/dialect_native.py` | 3.33% | Native/frontend compilation and execution matrices run in the full v02 checker and slow suite. |
+| `scripts/dialect_lifetimes.py` | 4.74% | Lifetime boundary witnesses execute in the full v02 checker; the pre-change run passed. |
+| `scripts/dialect_boundaries.py` | 5.26% | Native/ISA lifecycle and boundary execution; retained slow cases passed in the earlier combined run. |
 
 ## Structure and hygiene
 
@@ -91,7 +92,7 @@ outside this change and remain untouched. Critical verdict/gate changes require 
 fresh review/council; this implementer does not claim review clearance.
 
 The failure-classification fix adds a shared unsupported-row predicate and three regression tests.
-Its reviewed baseline adjustment adds four functions and two cognitive-mass points; maximum
+Its explicit baseline adjustment adds four functions and two cognitive-mass points; maximum
 function length, length bins, wrappers and hygiene counts are unchanged.
 
 The state-dispatch fix composes a draft dispatcher per runner, removing the import-time
