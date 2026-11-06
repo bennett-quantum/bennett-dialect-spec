@@ -1,7 +1,9 @@
 """Exercise publication composition through real recognizer verdicts."""
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +14,47 @@ from dialect_profile import ISA09, using_profile
 
 
 class Publications(unittest.TestCase):
+    def test_v02_state_receipt_survives_draft_import_and_scope_exit(self):
+        source = textwrap.dedent('''\
+            import sys
+            sys.path[:0] = ['scripts', 'tools']
+            from pathlib import Path
+            from tempfile import TemporaryDirectory
+            import dialect_check as d
+            import dialect_check_v02 as v2
+            from dialect_profile import ISA08, ISA09, profile, using_profile
+            text = d.SPEC.read_text()
+            blocks = d.extract_blocks(text)
+            v2.initialise(blocks)
+            block = next(b for b in blocks if b['attrs'].get('state') == 'r-budget-prefix')
+            with TemporaryDirectory() as tmp:
+                runner = v2.Runner(blocks, text, Path(tmp), {'state'})
+                before = v2.state_check(runner, block)
+                assert before['verdict'] == 'blocked:BD-B-ISA7', before
+                assert before['capability'] == 'R-BUDGET-FAULT', before
+                assert before['executed'] is False, before
+                with using_profile(ISA09):
+                    import dialect_check_v03
+                assert profile() == ISA08, profile()
+                assert v2.state_check(runner, block) == before
+            ''')
+        result = subprocess.run([sys.executable, '-c', source], cwd=d.ROOT,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_draft_state_witnesses_and_inherited_state_dispatch(self):
+        from dialect_check_v03 import Runner03
+        text = (d.ROOT / 'spec' / ISA09.spec_name).read_text()
+        blocks = d.extract_blocks(text)
+        with tempfile.TemporaryDirectory() as tmp, using_profile(ISA09):
+            runner = Runner03(blocks, text, Path(tmp), {'state'})
+            for name in ('r-budget-prefix', 'r-fault-code', 'inplace-bound'):
+                with self.subTest(state=name):
+                    self.assertIsNone(runner.state_check(runner, runner.block('state', name)))
+            block = runner.block('state', 'r-budget-prefix')
+            with self.assertRaises(v2.Mismatch):
+                runner.state_check(runner, dict(block, body=block['body'].replace('fault=1', 'fault=2')))
+
     def test_r_entry_blocker_is_isa09_lowering_and_does_not_leak(self):
         source = 'define void @entry() {\n ret void\n}\n'
         self.assertEqual(v2.recognise(source, rmode='@entry')[0], 'blocked:BD-B-ISA7')

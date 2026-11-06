@@ -359,16 +359,10 @@ def check(runner,block):
     return WITNESSES[block['attrs']['witness09']](runner,block)
 
 
-ORIGINAL_STATE=v2.state_check
-
-
 def state_check(runner,block):
     name=block['attrs']['state']
     if name in STATES:return STATES[name](runner,block)
-    return ORIGINAL_STATE(runner,block)
-
-
-v2.state_check=state_check
+    return v2.state_check(runner,block)
 
 TOKEN_MAP=[('isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8','isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9'),
            ('"abi":"0.8"','"abi":"0.9"'),('"version":"0.8"','"version":"0.9"')]

@@ -67,8 +67,8 @@ The gate compares total and per-file metrics, including wrappers, against this r
 baseline. New files are measured too. Baseline refreshes are explicit reviewable changes; no threshold
 or automatic baseline rewrite is used.
 
-Totals: 766 functions; maximum 295 lines; 132 over 25, 47 over 50, 14 over 100, 3 over 200, 0 over 300.
-Cognitive mass 12334; trivial wrappers 3. No function exceeds 300 lines.
+Totals: 769 functions; maximum 295 lines; 133 over 25, 47 over 50, 14 over 100, 3 over 200, 0 over 300.
+Cognitive mass 12336; trivial wrappers 3. No function exceeds 300 lines.
 
 The litter scan checks the git index for bytecode, caches, logs, lock files, backups and
 LAST-RUN/PROGRESS files: **0 tracked**. The identifier grep checks non-test Python/C/JSON tooling,
@@ -93,6 +93,11 @@ fresh review/council; this implementer does not claim review clearance.
 The failure-classification fix adds a shared unsupported-row predicate and three regression tests.
 Its reviewed baseline adjustment adds four functions and two cognitive-mass points; maximum
 function length, length bins, wrappers and hygiene counts are unchanged.
+
+The state-dispatch fix composes a draft dispatcher per runner, removing the import-time
+assignment to the v02 module. Its baseline adjustment records the constructor and two
+regression tests, including a fresh-process import/scope check. The largest added test
+is 27 lines; production function maxima, wrappers and hygiene counts remain unchanged.
 
 <!-- quality-baseline -->
 ```json
@@ -352,7 +357,7 @@ function length, length bins, wrappers and hygiene counts are unchanged.
       "wrappers": 0
     },
     "scripts/dialect_check_v02.py": {
-      "complexity": 554,
+      "complexity": 555,
       "functions": 46,
       "max_lines": 86,
       "over_100": 0,
@@ -771,7 +776,7 @@ function length, length bins, wrappers and hygiene counts are unchanged.
     },
     "tools/dialect_check_v03.py": {
       "complexity": 30,
-      "functions": 5,
+      "functions": 6,
       "max_lines": 26,
       "over_100": 0,
       "over_200": 0,
@@ -781,12 +786,12 @@ function length, length bins, wrappers and hygiene counts are unchanged.
       "wrappers": 0
     },
     "tools/test_dialect_v03.py": {
-      "complexity": 2,
-      "functions": 8,
-      "max_lines": 18,
+      "complexity": 3,
+      "functions": 10,
+      "max_lines": 27,
       "over_100": 0,
       "over_200": 0,
-      "over_25": 0,
+      "over_25": 1,
       "over_300": 0,
       "over_50": 0,
       "wrappers": 0

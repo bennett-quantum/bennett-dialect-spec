@@ -17,6 +17,9 @@ import dialect03_witnesses as W
 
 
 class Runner03(v2.Runner):
+    def __init__(self, blocks, spec, tmp, selected):
+        super().__init__(blocks, spec, tmp, selected, state_dispatch=W.state_check)
+
     def materialised(self,block):
         return block['attrs'].get('mode') in ('materialised','validate')
 

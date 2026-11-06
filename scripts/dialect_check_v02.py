@@ -462,8 +462,9 @@ def validate(text,*,linked=()):
     return 'accept' 
 
 class Runner:
-    def __init__(self, blocks, spec, tmp, selected):
+    def __init__(self, blocks, spec, tmp, selected, state_dispatch=None):
         self.blocks, self.spec, self.tmp, self.selected = blocks, spec, Path(tmp), selected
+        self.state_check = state_check if state_dispatch is None else state_dispatch
         self.rows = []
         self.trace_cache = {}
         self.scenario_evidence = set()
@@ -660,7 +661,7 @@ class Runner:
                 self.check('events',ident,'§18.4',lambda b=b:events_check(self,b))
             if 'state' in a and a['state'] not in SCENARIOS.values():
                 family='blocker' if a.get('verdict','').startswith('blocked:') else 'state'
-                self.check(family,ident,'§18.4',lambda b=b:state_check(self,b))
+                self.check(family,ident,'§18.4',lambda b=b:self.state_check(self,b))
             if 'tdl' in a:
                 from dialect_tdl import check_tdl
                 self.check('tdl', ident, '§10/§18', lambda b=b:check_tdl(self,b))
