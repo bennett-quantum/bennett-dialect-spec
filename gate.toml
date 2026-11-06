@@ -19,7 +19,11 @@ argv = ["sh", "-c", "for m in $(find . -name Cargo.toml -not -path './scripts/.i
 
 [[check]]
 name = "Python tooling tests"
-argv = ["python3", "scripts/run_tests.py", "--all"]
+argv = ["python3", "scripts/run_tests.py"]
+
+[[check]]
+name = "Python slow execution tests"
+argv = ["python3", "scripts/run_tests.py", "--slow"]
 
 [[check]]
 name = "dialect gate"

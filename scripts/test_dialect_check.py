@@ -1,5 +1,6 @@
 """Regression checks for the 0.2 pre-flight. Run: python3 -m unittest discover -s scripts."""
 import unittest
+from run_tests import slow
 import tempfile
 
 import dialect_check as d
@@ -16,6 +17,7 @@ class ContractTests(unittest.TestCase):
     def block(self, tag, name):
         return next(b for b in self.blocks if b['attrs'].get(tag) == name)
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_round8_zero_execution(self):
         import json
         from dialect_round8 import check_state, ZEROS
@@ -74,6 +76,7 @@ define void @top(i64 %n) {
                     for val,want in json.loads(self.block('state',name)['body'])['domains'].items():
                         self.assertEqual(a.av(f,val),{0:frozenset(('I',x) for x in want)})
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_round8_bitcast_execution(self):
         import json
         from dialect_round8 import check_state, BITCASTS
@@ -184,6 +187,7 @@ define void @top() {
                 p=v.Path(tmp)/'fp.ll';p.write_text(got)
                 v.command([d.toolchains()['23']/'opt','-passes=verify',p,'-disable-output'])
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_round7_fp_execution(self):
         import json
         from dialect_round7 import check_libm
@@ -200,6 +204,7 @@ define void @top() {
                     want['vectors'][1][1]='0'*32
                     with self.assertRaises(d.Fail):check_libm(runner,dict(b,body=json.dumps(want)))
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_round7_lane_execution(self):
         import json
         from dialect_round7 import check_lanes
@@ -240,6 +245,7 @@ define void @top() {
             src='define i8 @g() {\n %v = insertelement <2 x i8> <i8 5, i8 9>, i8 7, i32 '+idx+'\n %f = freeze <2 x i8> %v\n %r = extractelement <2 x i8> %f, i32 0\n ret i8 %r\n}\n'
             self.assertIn('ret i8 5',v.normalise(src))
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_round7_pointer_execution(self):
         import json
         from dialect_round7 import check_state, STATES
@@ -281,6 +287,7 @@ define void @top() {
                     p=v.Path(tmp)/'atomic.ll';p.write_text(got)
                     v.command([d.toolchains()['23']/'opt','-passes=verify',p,'-disable-output'])
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_round6_execution(self):
         import json
         from dialect_round6 import check_state
@@ -436,6 +443,7 @@ define void @top() {
         self.assertIn('__bennett_rt_i192_ctpop',got)
         self.assertNotIn('call i192',got)
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_round5_execution(self):
         import json
         from dialect_native import check
@@ -472,6 +480,7 @@ define void @top() {
             got=isa.call('run-oracle',p,'ref','--input','','--arg','4294967297','--mem','m0=00000000aaaaaaaa','--budget','100,0,32,8')
             self.assertEqual((got['payload'],got['code']),(1,0))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round4_cross_entry(self):
         ir=self.block('example','handle-cross-entry')['body']
         verdict,a=v.recognise(d.with_decls(ir))
@@ -510,6 +519,7 @@ define void @top() {
         self.assertEqual(d.collapse(v.normalise(self.block('normalise-in','n-vector-i24')['body'])),
                          d.collapse(self.block('normalise-out','n-vector-i24')['body']))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round4_gep_index(self):
         from dialect_round4 import check_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -518,10 +528,12 @@ define void @top() {
             b=self.block('state','n-gep-index')
             with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body'].replace('8589934591,1,4294967296','8589934591,1,8589934592')))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round4_subtraction(self):
         self.assertEqual(d.collapse(v.normalise(self.block('normalise-in','n-wide-sub')['body'])),
                          d.collapse(self.block('normalise-out','n-wide-sub')['body']))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round3_loops(self):
         from dialect_round3 import check_state
         import json
@@ -539,6 +551,7 @@ define void @top() {
                 else:wrong['bijective']=True
                 with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(wrong)))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round3_deferred_placement(self):
         from dialect_round3 import adjoint_records, check_state
         import json
@@ -551,6 +564,7 @@ define void @top() {
             check_state(runner,b)
             with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body'].replace('[0.5, 0.5]','[1, 0]')))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round3_observe_store(self):
         from dialect_round3 import check_state
         import json
@@ -562,6 +576,7 @@ define void @top() {
             value['load']=[0,4]
             with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(value)))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round3_interprocedural_setjmp(self):
         ir='''@jb = global [256 x i8] zeroinitializer
 @slots = global [2 x ptr] zeroinitializer
@@ -617,6 +632,7 @@ entry:
             value['popped']=[7,0]
             with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(value)))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round3_stale_generation(self):
         from dialect_round3 import check_state
         import json
@@ -628,6 +644,7 @@ entry:
             value['stale_code']=0
             with self.assertRaises(d.Fail):check_state(runner,dict(b,body=json.dumps(value)))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round3_empty_oracle(self):
         from dialect_map import Mapper
         link='null_size=4096 heap_base=4096 heap_limit_max=0 globals=none budget-table: stack max 32, heap max 0'
@@ -648,6 +665,7 @@ entry:
                 with self.subTest(field=field),self.assertRaises(d.Fail):
                     check_state(runner,dict(b,body=json.dumps(dict(value,**{field:wrong}))))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_native_fault_probe_disables_core_dump(self):
         from dialect_native import fault_probe
         import signal
@@ -702,6 +720,7 @@ entry:
                 check_state(runner,b)
                 with self.assertRaises(d.Fail):check_state(runner,dict(b,body=b['body'].replace('4112','4096').replace('513','514')))
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_round2_materialisation_boundaries(self):
         for intrinsic in ('abs','ctlz','cttz'):
             ir=f'declare i8 @llvm.{intrinsic}.i8(i8, i1 immarg)\ndefine i8 @f(i8 %x) {{\n %v = call i8 @llvm.{intrinsic}.i8(i8 %x, i1 false)\n ret i8 %v\n}}\n'
@@ -789,6 +808,7 @@ entry:
             if b['attrs']:
                 self.assertTrue(v.families(b), b['attrs'])
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_normalisation_pairs(self):
         for b in self.blocks:
             if 'normalise-in' not in b['attrs']:
@@ -800,6 +820,7 @@ entry:
                 self.assertEqual(d.collapse(want), d.collapse(got))
                 self.assertEqual(v.validate(got,linked=v.NORMALISATION_LINK), 'accept')
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_trace_abi02(self):
         b = self.block('semantics', 'sem2-adj')
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -810,12 +831,14 @@ entry:
         with self.assertRaises(v.Mismatch):
             v.equal('deliberately-wrong-events', '§18.4', expected + ['x H0.0'], events)
 
+    @slow("ISA or native execution witness; retained by the gate")
     def test_materialised_isa7_and_parameterised_inplace(self):
         b = self.block('example', 'r-fault-code')
         self.assertEqual(v.recognise(d.with_decls(b['body']), materialised=True)[0], 'blocked:BD-B-ISA7')
         b = self.block('example', 'inplace-param-quantum')
         self.assertEqual(v.recognise(d.with_decls(b['body']))[0], 'accept')
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_new_native_drivers(self):
         from dialect_native import cases
         for name in ('n-fcmp', 'fp-aggregate', 'entry-stack'):
@@ -864,6 +887,7 @@ entry:
                 self.assertNotIn('load i1,',got)
                 self.assertNotIn('call i64 @llvm.experimental.gc.',got)
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_boundary_state_execution(self):
         from dialect_state import check_native_state
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -886,6 +910,7 @@ entry:
                         path,_=fixture(runner,b['attrs']['cc-run'])
                         runner.isa.call('check',path)
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_tdl_state_prefixes(self):
         from dialect_tdl import ORIGINAL,compare_original
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -906,6 +931,7 @@ entry:
             for name in ('partial-observe','classical-event-application','sv39-kernel-alias'):
                 with self.subTest(example=name):check_native_state(runner,self.block('state',name))
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_tdl_artifacts_and_mutations(self):
         from dialect_tdl import check_tdl
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -930,6 +956,7 @@ entry:
         self.assertEqual(verdict,'accept')
         self.assertEqual(a.first_candidates(),{'f','g'})
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_one_shot_program_adapter(self):
         from dialect_cc import check
         with tempfile.TemporaryDirectory(dir=v.SCRATCH) as tmp:
@@ -938,6 +965,7 @@ entry:
                 if 'cc-run' in b['attrs']:
                     with self.subTest(example=b['attrs']):check(runner,b,'run-program')
 
+    @slow("independent execution across LLVM majors and ISA oracle")
     def test_driver_platform_scenarios(self):
         from dialect_driver import SCENARIOS, check_scenario
         from dialect_meta import coverage
@@ -990,12 +1018,15 @@ entry:
                 v.command(['git','-C',repo,'add','.'])
                 v.command(['git','-C',repo,'-c','user.name=Checker test','-c','user.email=checker@example.invalid','commit','--quiet','-m',str(revision)])
             commit(1)
-            with patch.object(v,'ISA_SOURCE',src),patch.object(v,'ISA_DIR',Path(tmp)/'snapshot'):
+            from interpreter_test_support import record_build
+            with patch.object(v,'ISA_SOURCE',src),patch.object(v,'ISA_DIR',Path(tmp)/'snapshot'), patch.object(v, 'command', side_effect=record_build):
                 interpreter=v.Interpreter()
-                self.assertEqual(interpreter.call('hash','unused')['revision'],1)
+                interpreter.build()
+                self.assertEqual(interpreter.exe.read_text(), (src/'src/main.rs').read_text())
                 first=interpreter.exe
                 commit(2)
-                self.assertEqual(interpreter.call('hash','unused')['revision'],2)
+                interpreter.build()
+                self.assertEqual(interpreter.exe.read_text(), (src/'src/main.rs').read_text())
                 self.assertNotEqual(first,interpreter.exe)
                 import json
                 receipt=json.loads((v.ISA_DIR/'BUILD.json').read_text())

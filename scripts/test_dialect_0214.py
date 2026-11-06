@@ -2,6 +2,7 @@
 import copy
 import tempfile
 import unittest
+from run_tests import slow
 from pathlib import Path
 
 import dialect_check as d
@@ -94,6 +95,7 @@ class Publication(unittest.TestCase):
             with self.assertRaises(d.Fail):
                 m.check_state(runner, result)
 
+    @slow("native and ISA execution witnesses")
     def test_independent_executors(self):
         from dialect_0214 import STATES
         blocks = d.extract_blocks(self.spec)

@@ -1,8 +1,13 @@
 import unittest
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+from run_tests import slow
 from run import ROOT, evaluate, prepare_case, runtime_objects, task_for, tools_for
 
 
 class SeedTests(unittest.TestCase):
+    @slow("O3 trace preservation on three LLVM majors")
     def test_all_seeds_keep_trace_through_o3_on_all_majors(self):
         tcs = tools_for([18, 20, 23])
         runtime = runtime_objects()

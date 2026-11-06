@@ -1,5 +1,6 @@
 """Publication regressions for the council-accepted allocator and PPC repairs."""
 import unittest
+from run_tests import slow
 import tempfile
 import hashlib
 import os
@@ -51,6 +52,7 @@ class Publication(unittest.TestCase):
         for ident in STATES:
             self.assertEqual(sum(b['attrs'].get('state') == ident for b in blocks), 1)
 
+    @slow("native and ISA execution witnesses")
     def test_independent_executors(self):
         from dialect_0213 import STATES
         blocks = d.extract_blocks(self.spec)
