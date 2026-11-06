@@ -29,6 +29,7 @@ import time
 
 sys.modules.setdefault("dialect_check_v02", sys.modules[__name__])
 import dialect_check as d
+from dialect_report import summary
 
 ROOT = d.ROOT
 SCRATCH = ROOT / 'scripts' / '.tmp'
@@ -714,6 +715,7 @@ def main(argv=None):
         print(f'{family:16} {len(rs):8} {passed:6} {len(rs)-passed:6} ' + '; '.join(blockers))
     if args.json:
         args.json.write_text(json.dumps(rows, indent=2)+'\n')
+    print(summary(rows))
     failures = sum(r['status']!='passed' for r in rows)
     print(f'\n{"FAIL" if failures else "OK"}: {len(rows)-failures}/{len(rows)} checks passed; {failures} failed or blocked')
     return 1 if failures else 0

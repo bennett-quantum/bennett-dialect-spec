@@ -128,6 +128,7 @@ def main(argv=None):
         n=collections.Counter(r['status'] for r in rs)
         print(f"{family:16}{len(rs):8}{n['passed']:7}{n['failed']:7}{n['blocked']:8} "+'; '.join(sorted({r['blocked_on'] for r in rs if r['blocked_on']})))
     if args.json:args.json.write_text(json.dumps(rows,indent=2)+'\n')
+    print(v2.summary(rows))
     n=collections.Counter(r['status'] for r in rows)
     print(f"\n{'OK' if n['passed']==len(rows) else 'FAIL'}: {n['passed']}/{len(rows)} passed; {n['failed']} failed; {n['blocked']} blocked")
     return 0 if n['passed']==len(rows) else 1
