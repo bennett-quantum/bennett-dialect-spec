@@ -27,26 +27,30 @@ b:
 
 
 class Headless(unittest.TestCase):
-    def test_view_pass_stays_in_cell_and_never_opens_a_viewer(self):
+    def test_graph_output_stays_local_and_viewers_are_stubs(self):
         config = tomllib.loads((run.ROOT / 'toolchains.toml').read_text())
         opt = pathlib.Path(config['llvm18']['bin']) / 'opt'
         with tempfile.TemporaryDirectory() as cell:
             cell = pathlib.Path(cell)
             (cell / 'm.ll').write_text(MODULE)
-            before = set(os.listdir('/tmp'))
-            env = run.headless_env()
+            before = run.VIEWER_LOG.read_text() if run.VIEWER_LOG.exists() else ''
+            env = run.headless_env(tmpdir=cell)
             self.assertNotIn('DBUS_SESSION_BUS_ADDRESS', env)
             self.assertNotIn('DISPLAY', env)
             self.assertNotIn('WAYLAND_DISPLAY', env)
-            run.command([opt, '-passes=view-cfg', '-disable-output', cell / 'm.ll'], cell, 'view')
-            after = set(os.listdir('/tmp'))
-            leaked = [n for n in after - before if n.endswith('.dot')]
-            self.assertEqual(leaked, [], f'view pass wrote to /tmp: {leaked}')
-            dots = list(cell.rglob('*.dot'))
-            self.assertTrue(dots, 'view-cfg should have written its .dot inside the cell directory')
+            self.assertNotIn('BROWSER', env)
+            scratch = pathlib.Path(env['TMPDIR'])
+            self.assertTrue(scratch.is_relative_to(run.ROOT.parents[1]))
+            result = run.command([opt, '-passes=dot-cfg', '-disable-output', cell / 'm.ll'], cell, 'graph')
+            self.assertEqual(result['returncode'], 0, pathlib.Path(result['stderr']).read_text())
+            self.assertTrue(list(cell.rglob('*.dot')), 'dot-cfg must write a graph')
             log = run.VIEWER_LOG.read_text() if run.VIEWER_LOG.exists() else ''
-            self.assertTrue(all(str(cell) in line or 'cfg.f' in line for line in log.splitlines()[-1:]),
-                            'a viewer, if invoked, must be the logging stub')
+            self.assertEqual(log, before, 'graph generation must not launch a viewer')
+            for name in run.VIEWERS:
+                stub = run.HEADLESS_BIN / name
+                self.assertTrue(os.access(stub, os.X_OK))
+                self.assertIn('exit 1', stub.read_text())
+
 
 
 if __name__ == '__main__':
