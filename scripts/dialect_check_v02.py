@@ -37,7 +37,7 @@ SCRATCH = ROOT / 'scripts' / '.tmp'
 ISA_DIR = ROOT / 'scripts' / '.isa-ref'
 ISA_SOURCE = d.sibling('bennett-isa-spec') / 'reference-interpreter'
 CLI_CAPABILITY = 'ISA-CLI'
-AUX_FAMILIES = frozenset({'parse', 'frontend', 'coverage', 'xrefs', 'asm', 'inventory', 'seeds'})
+AUX_FAMILIES = frozenset({'parse', 'frontend', 'coverage', 'xrefs', 'asm', 'inventory', 'seeds', 'r-contract'})
 TAGS = ('markers-ir', 'markers-c', 'example', 'normalise-in', 'normalise-out',
         'native', 'lift', 'linkmap', 'object', 'reference-body', 'hash', 'run',
         'fb', 'step-check', 'inplace', 'semantics', 'events', 'state', 'tdl',
@@ -680,6 +680,9 @@ class Runner:
         check_0213(self)
         from dialect_0214 import check_all as check_0214
         check_0214(self)
+        if profile().isa == '0.9':
+            from dialect_r_contract import check_all as check_r_contract
+            check_r_contract(self)
         return self.rows
 
 

@@ -1,0 +1,53 @@
+{
+  "id": "r-console-binding",
+  "kind": "console",
+  "rule": "\u00a7\u00a711.2/19.2; ISA \u00a77.3",
+  "requires": [
+    [
+      "11.2",
+      "Return-time flushing MUST emit buffered bytes even without a trailing newline, with no added newline or close record."
+    ]
+  ],
+  "functions": [
+    "fn r @main () () () () ()\n^entry():\naddress = const.i64 4096\np = inttoptr address\nlen = const.i64 22\neffect console.write p len\nret"
+  ],
+  "signatures": {
+    "main": {
+      "abi": "0.9",
+      "kind": "r",
+      "params": [],
+      "results": [],
+      "tier": "r"
+    }
+  },
+  "data": {
+    "msg": "7879202d372039203261205a20303030313220616263"
+  },
+  "devices": {
+    "models": {
+      "console": {
+        "version": "0.9"
+      }
+    },
+    "services": {}
+  },
+  "native": "formatted-console.c",
+  "expected": {
+    "status": "COMPLETED",
+    "console_hex": "7879202d372039203261205a20303030313220616263",
+    "effect_tape_length": 1
+  },
+  "reset": {
+    "status": "REVERSED",
+    "console_hex": "",
+    "memory_equals_entry": true,
+    "effect_tape_length": 0
+  },
+  "invalid_range": {
+    "status": "FAILED",
+    "fault": 7,
+    "results": [],
+    "console_hex": "",
+    "effect_tape_length": 0
+  }
+}

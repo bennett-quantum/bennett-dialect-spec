@@ -1,0 +1,23 @@
+{
+  "id": "r-object-identities",
+  "kind": "identity",
+  "rule": "\u00a7\u00a719.9/23; ISA \u00a79.2",
+  "requires": [
+    [
+      "19.9",
+      "The R-contract plugin identity is `dialect-0.3-r1;isa-0.9`."
+    ]
+  ],
+  "functions": [
+    "fn r @main () () () () ()\n^entry():\nret"
+  ],
+  "signatures": {
+    "main": {
+      "abi": "0.9",
+      "kind": "r",
+      "params": [],
+      "results": [],
+      "tier": "r"
+    }
+  }
+}
