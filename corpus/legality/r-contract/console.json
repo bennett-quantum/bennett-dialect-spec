@@ -6,6 +6,18 @@
     [
       "11.2",
       "Return-time flushing MUST emit buffered bytes even without a trailing newline, with no added newline or close record."
+    ],
+    [
+      "11.2",
+      "Closing fd 1 does not close fd 2 or the console device;"
+    ],
+    [
+      "11.2",
+      "invalid memory faults 7 before appending any byte or entry."
+    ],
+    [
+      "19.2",
+      "A terminal R fault (\u00a717.6) is none of these paths: exit handlers and stdio flush do not run,"
     ]
   ],
   "functions": [

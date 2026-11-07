@@ -6,6 +6,22 @@
     [
       "19.9",
       "The R-contract plugin identity is `dialect-0.3-r1;isa-0.9`."
+    ],
+    [
+      "19.9",
+      "`-bennett-dialect` and an optional Error-behaviour `bennett.dialect` module flag MUST equal `0.3-r1`;"
+    ],
+    [
+      "19.9",
+      "`isa_version: \"0.9\"` and `replay_profile: \"saved-tape-v1\"`."
+    ],
+    [
+      "19.9",
+      "Editing only version labels or retaining an old claimed hash is not migration."
+    ],
+    [
+      "23",
+      "It targets ISA `0.9` and retains map `0.3`, normaliser `0.2.8`, marker ABI `0.2` and descriptor version 2."
     ]
   ],
   "functions": [

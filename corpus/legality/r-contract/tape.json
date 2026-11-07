@@ -6,10 +6,22 @@
     [
       "18.6",
       "The R-contract replay profile is `saved-tape-v1`."
+    ],
+    [
+      "18.6",
+      "Mismatch or missing input MUST leave that step's memory, devices, history and journal cursor unchanged;"
+    ],
+    [
+      "18.6",
+      "Whole-run reversal empties the active tape but MUST NOT erase the saved forward journal."
+    ],
+    [
+      "18.6",
+      "It MUST NOT be converted into `FAILED` with a fabricated source fault code."
     ]
   ],
   "functions": [
-    "fn r @main () () () () ()\n^entry():\naddress = const.i64 4096\np = inttoptr address\nlen = const.i64 1\neffect console.write p len\nret"
+    "fn r @main () () () () ()\n^entry():\naddress = const.i64 4096\np = inttoptr address\nlen = const.i64 1\neffect console.write p len\nsecond = const.i64 4097\nq = inttoptr second\neffect console.write q len\nret"
   ],
   "signatures": {
     "main": {
@@ -21,7 +33,7 @@
     }
   },
   "data": {
-    "msg": "78"
+    "msg": "7879"
   },
   "devices": {
     "models": {
@@ -33,8 +45,8 @@
   },
   "expected": {
     "status": "COMPLETED",
-    "console_hex": "78",
-    "effect_tape_length": 1
+    "console_hex": "7879",
+    "effect_tape_length": 2
   },
   "journal": [
     {
@@ -43,6 +55,15 @@
         1
       ],
       "bytes": "78",
+      "dev": "console",
+      "op": "write"
+    },
+    {
+      "args": [
+        4097,
+        1
+      ],
+      "bytes": "79",
       "dev": "console",
       "op": "write"
     }
@@ -56,6 +77,7 @@
     "dev": "clock",
     "op": "read",
     "missing": null,
-    "trailing": null
+    "trailing": null,
+    "reordered": null
   }
 }

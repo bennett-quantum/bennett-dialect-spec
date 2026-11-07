@@ -17,6 +17,6 @@ int main(void) {
     errno = 0;
     if (lseek(2, 0, SEEK_SET) != -1 || errno != EBADF) return 4;
     if (printf("%s %d %u %x %c %05d %.3s", "xy", -7, 9u, 42u,
-               'Z', 12, "abcdef") != 21) return 5;
+               'Z', 12, "abcdef") != 22) return 5;
     return 0;
 }

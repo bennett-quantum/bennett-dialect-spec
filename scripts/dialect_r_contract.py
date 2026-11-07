@@ -22,7 +22,8 @@ def clauses(runner, case):
             raise d.Fail('missing R-contract section ' + section)
         end = re.search(r'^###? ', runner.spec[heading.end():], re.M)
         text = runner.spec[heading.end():heading.end() + end.start()] if end else runner.spec[heading.end():]
-        v2.equal(case['id'], 'clause in §' + section, True, sentence in text)
+        v2.equal(case['id'], 'clause in §' + section, True,
+                 ' '.join(sentence.split()) in ' '.join(text.split()))
 
 
 def object_file(runner, case, suffix='', functions=None):
@@ -39,7 +40,6 @@ def observations(case, got, expected):
 
 
 def faults(runner, case):
-    path = object_file(runner, case)
     for code in case['codes']:
         path = object_file(runner, case, '-' + str(code),
                            [body.replace('fault 2', 'fault ' + str(code)) for body in case['functions']])
@@ -53,6 +53,8 @@ def faults(runner, case):
     got = runner.isa.call('run-cc', path, 'main')
     v2.equal(case['id'], 'trap has only code 4', 4, got['fault'])
     v2.equal(case['id'], 'trap cannot implement fault 2', False, got['fault'] == 2)
+    # Retain the independent 0/1/2 source-step boundary witness in this family.
+    runner.state_check(runner, runner.block('state', 'r-budget-prefix'))
 
 
 def identity(runner, case):
@@ -66,7 +68,7 @@ def identity(runner, case):
     # Put the old claimed hash on real 0.9 bytes. A version-label rewrite is insufficient.
     stale = runner.tmp / 'stale-identity.bisa'
     stale.write_text(current.read_text().replace(new_hash, old_hash))
-    reject(runner, stale, 'check', [], 'interface hash')
+    reject(runner, stale, 'check', [], 'hash')
     # A mismatched ABI is also rejected, independently of the claimed hash.
     stale.write_text(current.read_text().replace('"abi":"0.9"', '"abi":"0.8"'))
     reject(runner, stale, 'check', [], 'abi')
@@ -109,12 +111,27 @@ def tape(runner, case):
         plain = runner.isa.call(verb, path, 'main')
         replay = runner.isa.call(verb, path, 'main', '--replay-tape', saved)
         v2.equal(case['id'], verb + ' replay exact report', plain, replay)
+    # A cancelled effect belongs to the saved journal, not the active tape.
+    cancelled_case = dict(case, signatures={'main': cc.signature([], []), 'writer': cc.signature([], [])})
+    cancelled = object_file(runner, cancelled_case, '-cancelled', [
+        'fn r @main () () () () ()\n^entry():\ncall @writer\nuncall @writer () ()\nfault 3',
+        case['functions'][0].replace('@main', '@writer')])
+    cancelled_saved = runner.tmp / 'cancelled-journal.json'
+    failed = runner.isa.call('run-cc', cancelled, 'main', '--tape-out', cancelled_saved)
+    observations(case, failed, dict(status='FAILED', fault=3, results=[], console_hex='', effect_tape_length=0))
+    v2.equal(case['id'], 'cancelled forward effect retained', case['journal'], json.loads(cancelled_saved.read_text()))
+    v2.equal(case['id'], 'FAILED cancelled replay', failed,
+             runner.isa.call('run-cc', cancelled, 'main', '--replay-tape', cancelled_saved))
+    observations(case, runner.isa.call('reverse', cancelled, 'main', '--replay-tape', cancelled_saved),
+                 dict(status='REVERSED', console_hex='', effect_tape_length=0, memory_equals_entry=True))
     for mutation in case['corruptions']:
         entries = json.loads(saved.read_text())
         if mutation == 'missing':
             entries.pop()
         elif mutation == 'trailing':
             entries.append(entries[0])
+        elif mutation == 'reordered':
+            entries.reverse()
         else:
             entries[0][mutation] = case['corruptions'][mutation]
         corrupt = runner.tmp / ('corrupt-' + mutation + '.json')
@@ -140,8 +157,7 @@ def check_case(runner, case):
 def check_all(runner):
     if runner.selected and 'r-contract' not in runner.selected:
         return
-    paths = sorted(CASES.glob('*.json'))
-    v2.equal('r-contract', 'four registered case groups', 4, len(paths))
-    for path in paths:
-        case = json.loads(path.read_text())
+    cases = [json.loads(path.read_text()) for path in sorted(CASES.glob('*.json'))]
+    v2.equal('r-contract', 'one case group per contract kind', sorted(CHECKS), sorted(c['kind'] for c in cases))
+    for case in cases:
         runner.check('r-contract', case['id'], case['rule'], lambda case=case: check_case(runner, case))

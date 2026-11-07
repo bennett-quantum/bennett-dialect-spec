@@ -1,13 +1,14 @@
 # Bennett LLVM Dialect — Specification, draft 0.3
 
-**Date:** 2026-11-03. **Status:** draft 0.3, not yet graded; the orchestrator convenes the council at an acceptance
-candidate. It derives from draft 0.2.12 (accepted by the sol seat in round 11) and carries the
+**Date:** 2026-11-07. **Status:** full draft 0.3 remains ungraded. The classical R-contract
+profile `0.3-r1` (§1.7) is an acceptance candidate for separate council grading, not an
+assertion of council acceptance or whole-0.3 conformance. It derives from draft 0.2.12 (accepted by the sol seat in round 11) and carries the
 matching 0.2.13 allocator/PPC amendments and the 0.2.14 runtime integer instance delivery and console close clarification published in `Bennett-Dialect-Spec.md`. The grading target is Bennett ISA **0.9** (`Bennett-ISA-Spec-0.9.md`, accepted by all three
 seats, K1–K81). The dossier is `docs/notes/2026-11-01-dialect-0.3-dossier.md`.
 
 **Versioning.** Dialect 0.3: markers 0.2, handles 0.3, regions 0.3, oracle-abi 0.3, tdl 0.3, effects 0.3, norm 0.2.8, map 0.3, asm 0.2, platform 0.3, driver 0.3, corpus 0.2; targets ISA 0.9. [deps: DLT-front-P2, DLT-23]
 The **full version string** (`0.3`) is the compatibility unit (§23): drafts are not compatible with each other. [deps: DLT-front-P2, DLT-23]
-Marker signatures, the header and descriptor version 2 are unchanged from 0.2.12; every reference object and hash changes with the ISA version string (ISA §9.2). Producers and executors of the 0.2.x/ISA 0.9 track stay on that track until they migrate explicitly.
+Marker signatures, the header and descriptor version 2 are unchanged from 0.2.12; every reference object and hash changes with the ISA version string (ISA §9.2). Producers and executors of the published 0.2.x/ISA 0.8 track stay on that track until they migrate explicitly. The R-contract's full compatibility string is `0.3-r1`, with the separately versioned map `0.3` (§23).
 Declared dependency markers are retained for historical context; the council withdrew the requirement on 2026-10-31 (CLAUDE.md rule 12).
 
 **Standing rule (CLAUDE.md rule 10; council rubric S0).** This document narrows no capability
@@ -177,6 +178,53 @@ A module's **verdict** is one of:
 
 A module that would be rejected and blocked is rejected. Warnings (`BD-W-*`, §22.4) never change
 a verdict.
+
+### 1.7 Classical R-contract profile (acceptance candidate)
+
+`0.3-r1` names a full dialect compatibility identity under §23 for the classical
+R-contract slice of this draft targeting ISA 0.9. It is not an alias for `0.3`, a
+0.2.x patch, or a claim that the rest of 0.3 has been graded. Its publication is
+conditional on council acceptance of this slice; until then it is a candidate.
+The following is the exact grading boundary, restricted to each clause's
+classical R applicability and the CC launch stub that enters it:
+
+| Sections submitted | Contract carried by the slice |
+|---|---|
+| §§1–5 | conformance, diagnostics, ordinary marker ABI/recognition, processing order, placement, addresses and device-closure analysis |
+| §§7.1, 7.5(b), 7.6; §§9.1–9.5 | R entry/outlining, measure prohibition, budget resolution, units and exhaustion |
+| §§11.1–11.2, 11.4–11.5; §12 | R devices, CC launch services, typed faults, complete applicable normalisation and residual validation |
+| §§13–15 | arithmetic, calls/recursion, varargs, stack/control transfer, exit and asm/intrinsic realisation in classical R |
+| §§16.1–16.5; §17 | materialised mapping/identity obligations, layout, classical memory, shadow stack, lowering, faults, counters and native comparison |
+| §§18.1, 18.6–18.7; §§19.1–19.2, 19.4–19.9 | classical reference state, reversal/replay, outcome comparison, linked closure/process lifecycle, launch, layout and output identities |
+| §§21–23; §§24–25 | applicable corpus/verdict/version rules, retained mechanics and blocker discipline |
+
+All other clauses, and the coherent/quantum parts of these sections, remain
+**ungraded**. They remain specified and binding wherever applicable: this slice
+deletes or weakens no rule, changes no accepted verdict into a rejection, and
+does not authorise treating a capability outside the grading boundary as inert.
+A missing implementation fails loud with its clause; a capability genuinely
+inexpressible on the ISA requires a §25.1 blocker with verdict `blocked:`, never
+`reject:`. The classical R slice introduces no such blocker on ISA 0.9.
+Mixed native-container/general host-pointer launch obligations remain those
+already stated in §17.1 and ISA §12.3; this profile is not their publication.
+
+An executor admits the independently identified device object under §19.9,
+executes its classical R closure including linked libc, and implements ISA
+§§4.9, 7.3–7.4 and 10. It MUST distinguish terminal fault results from tool,
+admission or replay errors. A producer's successful compilation does not prove
+that an executor supports its object; unavailable ISA rows fail at admission.
+For rung 3 the acceptance workload includes integer `%s %d %u %x %c` with
+width/precision and normal-return buffered output without a trailing newline,
+through musl `vfprintf`, on both executors and LLVM 18/23. Floating formats and
+every other classical operation retain §§12–15's contracts; that workload is
+an evidence target, not a restriction on legal programs.
+
+The additional finite boundary vectors are `corpus/legality/r-contract/*.json`,
+run by `python3 tools/dialect_check_v03.py --family r-contract`. They exercise
+independent native/ISA oracles and clause retention, not a plugin-generated
+musl execution or all of the grading boundary. Existing checked examples stay
+unchanged. The full draft and its ungraded clauses require their own acceptance;
+passing this focused family does not grade them.
 
 ## 2. Terminology
 
@@ -4660,6 +4708,28 @@ driver declares the models in `devices.models` (ISA §9.1) and supplies `block_i
 **Console syscall framing.** For virtual stdout/stderr, runtimes MUST implement `writev` by validating the vector count and total length before the first effect, then emitting one `console.write` per nonempty vector in source order (zero-length writes emit no record), returning the total byte count; the descriptor ABI limits are 0..1024 vectors and total at most target SSIZE_MAX, with invalid counts/overflow returning EINVAL and a null nonempty vector table returning EFAULT.
 
 The console shim MUST return ENOTTY for `ioctl(TIOCGWINSZ)`, ESPIPE for seeking, and success for closing a virtual stdout/stderr descriptor, with no extra device effect or terminal metadata; this close releases no host resource and does not disable the virtual byte sink. Editorial clarification (advisor R23 2026-11-03, b-dialect-spec-9rd), resolving an ambiguity toward native semantics: closing a virtual stdout/stderr descriptor has native descriptor semantics, so a later `write`, `writev` or `lseek` on that descriptor returns -1 with EBADF; "the virtual byte sink" names the console device, which stays available to other descriptors bound to it, and "releases no host resource" means no host-side close.
+
+**R-contract console binding.** The `console` entry in `devices.models` is
+`{"version":"0.9"}`. Its state is the initially empty byte sequence of ISA
+§7.3, shared by stdout and stderr in effect order; it preserves all bytes,
+including NUL, without encoding or newline conversion. A successful nonempty
+write appends exactly its bytes and one tape entry; invalid memory faults 7
+before appending any byte or entry. There is no ISA flush or close operation.
+Buffering, descriptor liveness, errno and exit handlers are ordinary linked
+musl/runtime memory and code, charged and reversed with that code. Closing fd 1
+does not close fd 2 or the console device; the EBADF rule above takes precedence
+over ESPIPE on a closed descriptor. A failed syscall that returns errno without
+an effect adds no device record.
+
+Return-time flushing MUST emit buffered bytes even without a trailing newline, with no added newline or close record.
+For a normal `main` return the §19.2 wrapper executes the same musl exit/stdio
+cleanup path as explicit `exit`, exactly once, before successful status return.
+`_Exit` bypasses cleanup, and a terminal fault executes neither cleanup nor a
+caller successor. The executor executes emitted code/effects; it MUST NOT
+invent a return-time flush, a host print, or a host-side close. Whole-run
+reversal restores buffer contents, descriptor liveness and console state as
+well as memory and tape. The source-level printf call count is not the tape
+length: actual successful nonempty write vectors determine the tape entries.
 
 Device models beyond the four arrive with an ISA version (ISA §17 item 3, a mechanics
 deferral, §24): until then an effect on another device is `FAULT_EFFECT_UNMODELLED`.
@@ -10312,7 +10382,7 @@ instruction is one frame of the R history (ISA §7.4).
 | `sdiv`, `srem` of the minimum value by −1 | 6 `FAULT_UB_SDIV_OVERFLOW` |
 | an access outside every live allocation; `free` of a non-null pointer that is not the base of a live heap allocation | 7 `FAULT_UB_MEMFAULT` |
 | `unreachable` reached; N11; an indirect call or `indirectbr` matching no candidate (§14.2, §14.9); unwinding out of a region (§14.4); a descriptor shape mismatch (`T-IFACE`); `T-TAINT-HOST`; every other run-time check of §18.3 | 4 `FAULT_UB_TRAP` |
-| `__bennett_nz_fault(C)` | C |
+| `__bennett_nz_fault(C)` | C when nonzero, otherwise 4 (ISA effective cause) |
 | steps budget exhausted | 1 `FAULT_BUDGET_STEPS` |
 | heap budget or shadow stack exhausted | 2 `FAULT_BUDGET_HEAP` |
 | depth or lifted stack budget exhausted | 3 `FAULT_BUDGET_DEPTH` |
@@ -10337,8 +10407,27 @@ prefix, open activations included.
 - R faults end the whole run (ISA §4.1, §4.9): a CC caller receives no status and runs no successor;
   the launch result carries the code (ISA §10).
 
+A generic `trap` MUST NOT replace a non-4 fault.
+The producer MUST preserve the effective code in §§11.5/17.5, including all
+nonzero 64-bit program-defined codes. `fault C` has an ISA literal operand; a
+nonconstant primitive argument requires value-preserving dispatch to literal
+faults, not truncation to four bits or substitution of code 9 (`FAULT_CALLEE`,
+the nested-oracle outcome, not an R terminal cause). Code 0 explicitly faults
+with code 4; ordinary completion has no fault record, not a record with code 0.
+Counter instrumentation and its own checks are not themselves recursively counted.
+A zero source-step budget therefore faults 1 before the first counted
+instruction; at any later boundary the exhausted instruction creates no
+result, memory mutation, device effect or caller continuation. The terminal
+record preserves its program point and exactly one effective code. Earlier
+memory, displaced values, allocation history, device/tape entries and open
+activations remain intact until an explicit eligible reversal removes the
+record and undoes that prefix (ISA §§4.9, 7.4, 10, T4). In particular no fault
+path silently rolls back forward effects or flushes pending stdio.
+
 The counter is dialect instrumentation; ISA 0.9 does not turn an interpreter's host-fuel option
-into it (ISA §4.9 "Charge and history"). The materialised boundary after the failing pre-instruction check is:
+into it (ISA §4.9 "Charge and history"). Executor infrastructure limits MUST be
+reported separately from this source budget; a host-fuel diagnostic is not
+evidence of the required fault 1. The materialised boundary after the failing pre-instruction check is:
 
 ```llvm example=r-budget-prefix verdict=accept mode=materialised lowering=K5
 define internal void @budgeted(ptr %e) {
@@ -10573,6 +10662,55 @@ its classical effects on memory are those of §18.1, its effects are ISA device 
 (§11.2), its region calls are R-tier region calls (§7.5b), and the run history (ISA §7.4) is
 retained, so the whole run is reversible by `bennett_reverse` (ISA §10). A fault ends the run
 (§17.6); the `FAILED` run is reversible too, under the same eligibility (ISA K6).
+
+**R-contract saved replay (tool contract, not an ISA envelope extension).**
+The R-contract replay profile is `saved-tape-v1`.
+This profile adopts the saved-tape profile v1 of the ISA reference-interpreter
+tool interface. ISA §§7.3/10 still own the active tape: ordered `(dev, op, args)`
+entries, with launch iterator operands unsigned 64-bit little-endian, in ISA
+operand order and pointers zero-extended from `ptr_width`. Device history also
+retains the reversal data of ISA §7.3. The saved file is an execution journal:
+every successfully executed effect in execution order, including effects later
+cancelled by segment `uncall`; a faulting effect contributes nothing. Whole-run
+reversal empties the active tape but MUST NOT erase the saved forward journal.
+
+The journal is a JSON array. Each entry has exactly `args`, `bytes`, `dev`, `op`,
+with no duplicate or extra keys. `dev`/`op` are strings; `args` is an array of
+canonical unsigned integers fitting u128, encoded as JSON numbers through
+2^53−1 and decimal strings above it, without signs, leading zeros, fractions
+or exponents. `bytes` is even-length hex (empty allowed); readers accept either
+case, writers use lowercase. Writers use canonical JSON followed by LF. The
+u128 tool encoding does not widen any ISA operand. `bytes` contains the bytes
+transferred by that operation, not its undo data: console output, bytes written
+by clock/entropy/block reads, or block-write input, as appropriate.
+
+`run-cc`, CC/R `reverse`, and `run-program` MUST support `--tape-out <file>`
+and `--replay-tape <file>`, each at most once, and allow both together. Tape-out
+saves the forward journal after command success, including a normal JSON
+`FAILED` outcome; reverse with an explicit prefix length saves only that
+forward prefix. Replay and reversal errors write no tape output.
+Replay requires the same object/root, entry, arguments, entry memory/global
+images, entropy, checked host-request replies, measurement inputs when
+applicable, source budgets, tool fuel and forward prefix length. The build
+record (§19.9) identifies the replay profile; a saved journal is not a
+substitute for these inputs, a certificate, or object/entry identity checks.
+
+Before committing each effect the executor compares the next saved entry's
+device, operation, integer operands and transferred bytes with the deterministic
+candidate formed from the current state. Mismatch or missing input MUST leave
+that step's memory, devices, history and journal cursor unchanged; earlier
+successfully committed steps remain a prefix. Unconsumed entries at the end
+of the requested forward run/prefix also fail. An exact-match journal produces
+byte-identical stdout JSON for the same command and inputs, including results,
+faults, console, active tape and reset report, without replay-only fields.
+Changed payload/operand/device/op, deletion, insertion, reordering, malformed
+schema/hex/integer encodings and I/O errors MUST fail loudly. A replay mismatch
+exits 1 with a `replay mismatch` diagnostic citing ISA §§7.3/10, no success JSON
+and no tape-output write. It MUST NOT be converted into `FAILED` with a
+fabricated source fault code. Schema and I/O failures are likewise tool errors.
+The active tape and the saved journal coincide only when no effect was
+cancelled; consumers MUST use tape-out rather than save the active array when
+there was cancellation. No persistence/import of private undo frames is implied.
 
 ### 18.7 Conformance
 
@@ -11609,6 +11747,51 @@ Mixed-major bitcode links within the tested envelope MUST use its newest reader 
 `dialect-0.3;isa-0.9`; the driver refuses a plugin whose string differs. [deps: DLT-19.9, DLT-23] One plugin build per LLVM
 major (NS §3.2).
 
+**R-contract identity overrides.** The R-contract plugin identity is `dialect-0.3-r1;isa-0.9`.
+For this profile only, `-bennett-dialect` and an optional Error-behaviour
+`bennett.dialect` module flag MUST equal `0.3-r1`; `-bennett-isa` MUST equal
+`0.9`. The driver checks the exact plugin identity; the plugin checks options
+and module flags with `BD-E-VERSION`, before producing output. Absence of the
+optional flag does not waive option checks. A plugin advertising bare `0.3`
+does not advertise this profile. These overrides do not rename the separately
+versioned map or change the ungraded full-draft identity above.
+
+| Identity checked | Published 0.2.14 track | R-contract candidate |
+|---|---|---|
+| full dialect / targeted ISA | `0.2.14` / `0.8` | `0.3-r1` / `0.9` |
+| plugin string | `dialect-0.2.14;isa-0.8` | `dialect-0.3-r1;isa-0.9` |
+| ISA object header: `isa object launch sched cert coverage target` | each `0.8` | each `0.9` |
+| signature `abi`; device model `version` | `0.8` | `0.9` |
+| certificate `bindings.dialect_mapping_version` | `0.2.9` | `0.3` |
+| materialisation `normaliser_version`; marker ABI; descriptor version | `0.2.8`; `0.2`; 2 | `0.2.8`; `0.2`; 2 |
+| coverage source prefix | `dialect-0.2.14:` | `dialect-0.3-r1:` |
+
+The executor/loader MUST check the ISA-owned header versions, pointer width,
+signatures, model declarations and imports under ISA §§9–10, and validate
+interface/closure/object, target, schedule and certificate bindings with the
+ISA 0.9 algorithms. Certificate `versions` use the ISA-owned 0.9 identities;
+`reference_program_hash` retains its ISA meaning, not a dialect version hash.
+Every selected entry and transitive closure must match its supplied
+certificate and checked invocation/claim context (ISA §12.3); program-defined
+R fault codes are 64-bit even though a coherent fault register has four wires.
+The §19.9 build record MUST additionally name `dialect_version: "0.3-r1"`,
+`isa_version: "0.9"` and `replay_profile: "saved-tape-v1"`. Its JCS SHA-256
+remains bound by the existing certificate `producer.version` metadata channel
+(`<driver version>+build.<hex>`), alongside materialisation/LLVM version,
+pipeline, resolved budget-table and runtime/arith/instance hashes already
+required below. Admission of a profile-labelled bundle checks this build
+record and its hash as well as the ISA object. No new ISA signature, header,
+certificate field or opaque-handle format is introduced.
+
+A 0.2.x/ISA 0.8 consumer MUST NOT accept this 0.9 object as an 0.8 object; a
+consumer requiring this profile MUST NOT accept a 0.2.x build record or an
+0.8 object as this profile. Multi-version tools may select a matching track
+explicitly. Migration re-materialises under the selected contract and
+recomputes semantic envelopes and interface/closure/object hashes (ISA §9.2),
+and all dependent certificates/schedules/build records. Editing only version
+labels or retaining an old claimed hash is not migration. Identical marker
+prototypes or descriptor version 2 do not establish object compatibility.
+
 **Outputs** (in `-bennett-out`, file names plugin-defined, §24 D22): the materialised device
 variants as bitcode (§17.7); the host module with device entries replaced by launch stubs; the ISA
 objects (ISA §9, §16); the certificate (ISA §12) with `producer.materialisation = {llvm_version,
@@ -12042,6 +12225,17 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
+- The classical R-contract profile (§1.7) has the distinct full compatibility
+  string `0.3-r1`; its status is acceptance candidate until council grading.
+  It targets ISA `0.9` and retains map `0.3`, normaliser `0.2.8`, marker ABI
+  `0.2` and descriptor version 2. Its exact plugin/options/module-flag,
+  certificate/build-record and coverage identities are §19.9's overrides;
+  replay uses §18.6 `saved-tape-v1`. A semantic change to this profile requires
+  a new full string; neither bare `0.3` nor a 0.2.x label is an alias. This is
+  a named publication profile, not a claim that any ungraded section of the
+  full 0.3 draft is accepted. Published 0.2.14 and its ISA 0.8 objects remain
+  unchanged. The decision and evidence limits are recorded in
+  `docs/notes/classical-r-contract-profile.md`.
 - The **full version string** of this document (`0.3`) is the unit of compatibility: a plugin
   implements exactly one dialect version and targets exactly one ISA version (§19.9); drafts are
   not compatible with each other. [deps: DLT-23, DLT-19.9]

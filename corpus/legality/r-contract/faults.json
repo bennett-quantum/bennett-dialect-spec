@@ -6,6 +6,22 @@
     [
       "17.6",
       "A generic `trap` MUST NOT replace a non-4 fault."
+    ],
+    [
+      "17.6",
+      "Counter instrumentation and its own checks are not themselves recursively counted."
+    ],
+    [
+      "17.6",
+      "A zero source-step budget therefore faults 1 before the first counted instruction;"
+    ],
+    [
+      "17.6",
+      "In particular no fault path silently rolls back forward effects or flushes pending stdio."
+    ],
+    [
+      "17.5",
+      "| `__bennett_nz_fault(C)` | C when nonzero, otherwise 4 (ISA effective cause) |"
     ]
   ],
   "codes": [
