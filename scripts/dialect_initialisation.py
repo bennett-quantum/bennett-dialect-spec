@@ -1,4 +1,4 @@
-"""Round-8 DB/DN/DS witnesses: observed native widths must belong to S2."""
+"""Source-derived DB/DN/DS witnesses: observed native widths must belong to S2."""
 import json
 import re
 import dialect_check as d

@@ -1,4 +1,5 @@
 """Dialect §16 reference-object map. Emits rows without consulting object= text."""
+from dialect_profile import profile
 import collections
 import json
 import re
@@ -201,7 +202,7 @@ class Mapper:
         elif T>R:result=temp(T,f'lift.zext.i{T} r')
         rows.append('lift.retval '+result)
         header='oracle @ref ('+', '.join(f'x{k}:wire[{n}] in' for k,n in enumerate(ins))+f') (tgt:wire[{T}]) (fault:wire[4]) ('+', '.join(f'{n}:region[{A},8] in' for n,A in mem)+') ('+', '.join(f'a{k}:{t}' for k,t in enumerate(args))+')'
-        sig={'abi':'0.8','args':args,'fault':4,'in':ins,'kind':'oracle','mem':[{'A':A,'W':8,'role':'in'} for _,A in mem],'tgt':T,'tier':'q'}
+        sig={'abi':profile().isa,'args':args,'fault':4,'in':ins,'kind':'oracle','mem':[{'A':A,'W':8,'role':'in'} for _,A in mem],'tgt':T,'tier':'q'}
         self.signatures['ref']=sig;self.regions={n:1<<A for n,A in mem}
         regline='regs { '+', '.join(f'{n}:reg[{w}]' for n,w in regs.items())+' }'
         return '\n'.join([header,regline,'^entry():',*rows])
@@ -419,7 +420,7 @@ class Mapper:
                 for n in re.findall(r'[\w.]+',row.split(' = ',1)[0]):
                     if n in widths and n not in order:order.append(n)
         pws=[self.bits(x[0]) for x in f.params]+([64] if name in self.arena_functions else []);R=self.bits(f.ret)
-        sig={'abi':'0.8','kind':'lproc','params':pws,'result':R,'tier':'q'};self.signatures[label]=sig
+        sig=profile().signature({'abi':profile().isa,'kind':'lproc','params':pws,'result':R,'tier':'q'});self.signatures[label]=sig
         header='lproc @'+label+' ('+', '.join(f'a{k}:reg[{w}]' for k,w in enumerate(pws))+f') (r:reg[{R}]) () () ()'
         lines=[header]
         if order:lines.append('regs { '+', '.join(f'{n}:reg[{widths[n]}]' for n in order)+' }')
@@ -452,8 +453,8 @@ class Mapper:
         data=[]
         for name,(g,_,size) in self.globals.items():
             if g in globs:
-                data.append(g+' '+self.image(name).hex());sig={'abi':'0.8','kind':'data','size':size,'tier':'-'};symbols[str(len(symbols))]={'interface_hash':'0'*64,'kind':'data','name':g,'signature':sig}
-        prefix='bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64\n\nsection symbols\n'
+                data.append(g+' '+self.image(name).hex());sig={'abi':profile().isa,'kind':'data','size':size,'tier':'-'};symbols[str(len(symbols))]={'interface_hash':'0'*64,'kind':'data','name':g,'signature':sig}
+        prefix=(profile().object_header + ' ptr_width=64\n\nsection symbols\n')
         tail='\n\nsection functions\n'+'\n'.join(bodies)+'\n'
         if data:tail+='\nsection data\n'+'\n'.join(data)+'\n'
         tail+='\nsection layout\n'+jcs(layout)+'\n'

@@ -8,6 +8,7 @@ BENNETT_ISA_REF to an immutable reference-interpreter/target/release/bennett-isa
 and BENNETT_ISA_REF_SHA256 to its SHA-256. Both are required together. The pin is
 checked before execution and recorded in the results; no check is omitted.
 """
+from dialect_profile import profile
 import argparse
 import collections
 import difflib
@@ -29,12 +30,14 @@ import time
 
 sys.modules.setdefault("dialect_check_v02", sys.modules[__name__])
 import dialect_check as d
+from dialect_report import summary
 
 ROOT = d.ROOT
 SCRATCH = ROOT / 'scripts' / '.tmp'
 ISA_DIR = ROOT / 'scripts' / '.isa-ref'
-ISA_SOURCE = ROOT.parent / 'bennett-isa-spec' / 'reference-interpreter'
-CLI_BEAD = 'b-isa-spec-xam'
+ISA_SOURCE = d.sibling('bennett-isa-spec') / 'reference-interpreter'
+CLI_CAPABILITY = 'ISA-CLI'
+AUX_FAMILIES = frozenset({'parse', 'frontend', 'coverage', 'xrefs', 'asm', 'inventory', 'seeds'})
 TAGS = ('markers-ir', 'markers-c', 'example', 'normalise-in', 'normalise-out',
         'native', 'lift', 'linkmap', 'object', 'reference-body', 'hash', 'run',
         'fb', 'step-check', 'inplace', 'semantics', 'events', 'state', 'tdl',
@@ -51,10 +54,10 @@ class Mismatch(d.Fail):
 
 
 class Unavailable(d.Fail):
-    def __init__(self, capability, command, bead):
-        self.command, self.bead = command, bead
+    def __init__(self, capability, command, code):
+        self.command, self.code = command, code
         super().__init__(f'P-2 checker-unimplemented: {capability}; expected executable check; '
-                         f'actual unavailable; needs {command}; blocked-on {bead}')
+                         f'actual unavailable; needs {command}; blocked-on {code}')
 
 
 def equal(example, rule, expected, actual):
@@ -197,8 +200,8 @@ class Interpreter:
                     raise d.Fail('interpreter sources changed during snapshot; rerun to take a consistent copy')
                 # Exhaustive execution checks require optimized code. Include the
                 # profile in the fingerprint to preserve earlier debug snapshots.
-                command(['cargo', 'build', '--release', '--offline', '-j4', '--manifest-path', manifest,
-                         '--target-dir', manifest.parent / 'target'], timeout=120)
+                command(['cargo', 'build', '--release', '--offline', '-j3', '--manifest-path', manifest,
+                         '--target-dir', manifest.parent / 'target'], timeout=600)
                 stamp.write_text(json.dumps({'commit': commit,
                     'source_sha256': fingerprint, 'profile': 'release', 'files': before}, indent=2) + '\n')
             (ISA_DIR/'BUILD.json').write_text(stamp.read_text())
@@ -212,7 +215,7 @@ class Interpreter:
         self.build()
         readme = (self.exe.parents[2] / 'README.md').read_text()
         if verb in ('run-cc', 'reverse', 'run-action', 'run-program') and not re.search(r'(?:`|bennett-isa-ref )' + verb + r'\s', readme+'\n'+command([self.exe,'--help'])):
-            raise Unavailable(verb, shlex.join(['bennett-isa-ref', verb, *map(str, args)]), CLI_BEAD)
+            raise Unavailable(verb, shlex.join(['bennett-isa-ref', verb, *map(str, args)]), CLI_CAPABILITY)
         output = command([self.exe, verb, *args], timeout=180)
         try:
             return json.loads(output)
@@ -318,8 +321,8 @@ def value_set(mod, f, val, seen=None):
         return {ops[ins.op](a,b) % (1<<w) for a in sa for b in sb}
     try:
         return d.int_candidates(mod, f, val)
-    except (IndexError, ValueError):
-        return 'TOP'
+    except (IndexError, ValueError) as error:
+        raise d.Fail(f'value-set analysis {f.name}/{val}: {error}') from error
 
 
 # The recogniser shares S1's signature/attribute and invoke handling with 0.1.
@@ -372,11 +375,6 @@ def recognise(text, **options):
     a.major=options.get('major')
     try:
         a.s1()
-        # Compatibility anchors for tools/dialect03_patches.py's frozen import
-        # table; its two former guard replacements now affect comments only:
-        # if version != "0.2.12":
-        # "§19.9 expected 0.2.12; actual "
-        # Both tracks enforce the selected document's full version below.
         title = d.SPEC_PATH.read_text().splitlines()[0]
         match = re.fullmatch(r'# Bennett LLVM Dialect — Specification, (?:draft )?([0-9.]+)', title)
         if not match:
@@ -395,7 +393,7 @@ def recognise(text, **options):
         a.instance_rules()
         verify_inplace02(a)
         r_entry_rules(a,options.get("rmode"))
-        return ('blocked:' + a.blockers[0][0] if a.blockers else 'accept'), a
+        return profile().classify('blocked:' + a.blockers[0][0] if a.blockers else 'accept', a)
     except d.Reject as e:
         return 'reject:' + e.code, e
 
@@ -464,8 +462,9 @@ def validate(text,*,linked=()):
     return 'accept' 
 
 class Runner:
-    def __init__(self, blocks, spec, tmp, selected):
+    def __init__(self, blocks, spec, tmp, selected, state_dispatch=None):
         self.blocks, self.spec, self.tmp, self.selected = blocks, spec, Path(tmp), selected
+        self.state_check = state_check if state_dispatch is None else state_dispatch
         self.rows = []
         self.trace_cache = {}
         self.scenario_evidence = set()
@@ -486,9 +485,10 @@ class Runner:
             observation=fn()
             if isinstance(observation,dict):row['evidence']=observation
         except Unavailable as e:
-            row.update(status='blocked', detail=str(e), blocked_on=e.command + ' / ' + e.bead)
-        except (d.Fail, d.Reject, OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
-            # A bug remains a failure and cannot suppress subsequent examples.
+            row.update(status='blocked', detail=str(e), blocked_on=e.command + ' / ' + e.code)
+        except (KeyError, IndexError, TypeError, AttributeError) as e:
+            row.update(status='failed', detail=f'checker defect {type(e).__name__}: {e}')
+        except (d.Fail, d.Reject, OSError, ValueError) as e:
             row.update(status='failed', detail=f'expected contract satisfied; actual {type(e).__name__}: {e}')
         self.rows.append(row)
         if row['status'] != 'passed':
@@ -592,8 +592,8 @@ class Runner:
             generated={'body':got,'line':'generated-'+ident}
             self.verify(generated,major)
 
-    def unsupported(self, capability, command_text, bead=CLI_BEAD):
-        raise Unavailable(capability, command_text, bead)
+    def unsupported(self, capability, command_text, code=CLI_CAPABILITY):
+        raise Unavailable(capability, command_text, code)
 
     def run(self):
         if isinstance(self.isa, PinnedExecutable):
@@ -612,13 +612,13 @@ class Runner:
                            name,"§19/§20",lambda n=name:check_scenario(self,self.block("state",n)))
         covered,evidence=coverage(self)
         for rule,ok in covered.items():
-            self.check('coverage',rule,'P-1',lambda r=rule,ok=ok:equal(r,'P-1 example coverage (b-dialect-spec-gvr)',True,ok))
+            self.check('coverage',rule,'P-1',lambda r=rule,ok=ok:equal(r,'P-1 example coverage',True,ok))
 
         for b in self.blocks:
             a = b['attrs']
             ident = next((a[t] for t in TAGS if t in a), f"line-{b['line']}")
             if b['lang'] in ('llvm','isa') and not a:
-                self.check('inventory', ident, '§1.5', lambda:self.unsupported('untagged normative block', 'add a tag in spec', 'b-dialect-spec-gvr'))
+                self.check('inventory', ident, '§1.5', lambda:self.unsupported('untagged normative block', 'add a tag in spec', 'EXAMPLE-COVERAGE'))
             if b['lang'] == 'llvm':
                 for major in a.get('majors',','.join(d.MAJORS)).split(','):
                     self.check('parse', f'{ident}/llvm{major}', '§1.5', lambda b=b,k=major:self.verify(b,k))
@@ -661,7 +661,7 @@ class Runner:
                 self.check('events',ident,'§18.4',lambda b=b:events_check(self,b))
             if 'state' in a and a['state'] not in SCENARIOS.values():
                 family='blocker' if a.get('verdict','').startswith('blocked:') else 'state'
-                self.check(family,ident,'§18.4',lambda b=b:state_check(self,b))
+                self.check(family,ident,'§18.4',lambda b=b:self.state_check(self,b))
             if 'tdl' in a:
                 from dialect_tdl import check_tdl
                 self.check('tdl', ident, '§10/§18', lambda b=b:check_tdl(self,b))
@@ -671,7 +671,7 @@ class Runner:
             for tag in TAGS:
                 if tag in b['attrs'] and tag not in supported:
                     ident = b['attrs'][tag]
-                    self.check(TAG_FAMILY[tag], ident, 'P-2', lambda t=tag:self.unsupported(t,'python3 scripts/dialect_check.py --family '+TAG_FAMILY[t], 'b-dialect-spec-qxd'))
+                    self.check(TAG_FAMILY[tag], ident, 'P-2', lambda t=tag:self.unsupported(t,'python3 scripts/dialect_check.py --family '+TAG_FAMILY[t], 'EXECUTOR-CAPABILITY'))
         from dialect_0211_contract import check_all
         check_all(self)
         from dialect_0212_contract import check_all as check_0212
@@ -692,7 +692,7 @@ def main(argv=None):
     parser.add_argument('--json', type=Path, help='write structured results')
     args = parser.parse_args(argv)
     selected = {x for f in args.family or [] for x in f.split(',')}
-    known = set(TAG_FAMILY.values()) | {'parse','frontend','coverage','xrefs','asm','inventory','seeds'}
+    known = set(TAG_FAMILY.values()) | AUX_FAMILIES
     if selected - known:
         parser.error('unknown family: ' + ', '.join(sorted(selected-known)))
     headless_env()
@@ -714,6 +714,7 @@ def main(argv=None):
         print(f'{family:16} {len(rs):8} {passed:6} {len(rs)-passed:6} ' + '; '.join(blockers))
     if args.json:
         args.json.write_text(json.dumps(rows, indent=2)+'\n')
+    print(summary(rows))
     failures = sum(r['status']!='passed' for r in rows)
     print(f'\n{"FAIL" if failures else "OK"}: {len(rows)-failures}/{len(rows)} checks passed; {failures} failed or blocked')
     return 1 if failures else 0
@@ -726,7 +727,7 @@ def verify_inplace02(a):
     for f,ins,c,fields in a.inplace_pairs:
         for g,gi in itertools.product(a.cands[id(ins),0],a.cands[id(ins),1]):
             fn=a.m.funcs[g];width=fn.params[0][0][1]
-            if width>24:raise Unavailable('§8.7 sampled inverse evidence', 'bennett-isa-ref run-oracle <inplace-pair> ref --input <samples>', 'b-dialect-spec-qxd')
+            if width>24:raise Unavailable('§8.7 sampled inverse evidence', 'bennett-isa-ref run-oracle <inplace-pair> ref --input <samples>', 'EXECUTOR-CAPABILITY')
             args=fields[1:]
             for values in itertools.product(*args):
                 bodies=[];signatures=[]
@@ -742,12 +743,12 @@ def verify_inplace02(a):
                     body=re.sub(r'^oracle @ref .*$',f'lproc @L{idx} (p0:reg[{width}]) (r:reg[{width}]) () () ()',body,flags=re.M)
                     body=body.replace('lift.retval ','lift.ret ')
                     bodies.append(body)
-                    signatures.append({'abi':'0.8','kind':'lproc','tier':'q','params':[width],'result':width})
-                sig={'abi':'0.8','kind':'oracle','tier':'q','in':[width],'tgt':width,'fault':4,'args':[],'mem':[]}
+                    signatures.append(profile().signature({'abi':profile().isa,'kind':'lproc','tier':'q','params':[width],'result':width}))
+                sig={'abi':profile().isa,'kind':'oracle','tier':'q','in':[width],'tgt':width,'fault':4,'args':[],'mem':[]}
                 symbols={'0':{'name':'ref','kind':'oracle','signature':sig,'interface_hash':'0'*64}}
                 for idx,s in enumerate(signatures,1):symbols[str(idx)]={'name':'L'+str(idx),'kind':'lproc','signature':s,'interface_hash':'0'*64}
                 body=f'oracle @ref (x:wire[{width}] in) (tgt:wire[{width}]) (fault:wire[4]) () ()\nregs {{ y:reg[{width}], z:reg[{width}] }}\n^entry():\ny = lift.call @L1 (x)\nz = lift.call @L2 (y)\nlift.retval z\n'+'\n'.join(bodies)
-                obj='bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64\n\nsection symbols\n'+json.dumps(symbols,sort_keys=True,separators=(',',':'))+'\n\nsection functions\n'+body+'\n\nsection layout\n'+json.dumps({'A_tab':0,'H':12,'S_cells':16,'globals':{},'heap_base':4096,'heap_limit_max':0,'interface_regions':{'ref':{}},'null_size':4096,'ptr_width':64},sort_keys=True,separators=(',',':'))+'\n'
+                obj=(profile().object_header + ' ptr_width=64\n\nsection symbols\n')+json.dumps(symbols,sort_keys=True,separators=(',',':'))+'\n\nsection functions\n'+body+'\n\nsection layout\n'+json.dumps({'A_tab':0,'H':12,'S_cells':16,'globals':{},'heap_base':4096,'heap_limit_max':0,'interface_regions':{'ref':{}},'null_size':4096,'ptr_width':64},sort_keys=True,separators=(',',':'))+'\n'
                 with tempfile.TemporaryDirectory(dir=SCRATCH,prefix='inplace-') as tmp:
                     path=Path(tmp)/'pair.bisa';path.write_text(obj)
                     hashes=isa.call('hash',path)
@@ -798,10 +799,10 @@ def events_check(runner,block):
 
 
 def action_object(isa,path,name,widths,rows):
-    sig={'abi':'0.8','args':[],'bounds':[],'in':[],'kind':'action','mem':[],'mut':widths,'tier':'q'}
+    sig={'abi':profile().isa,'args':[],'bounds':[],'in':[],'kind':'action','mem':[],'mut':widths,'tier':'q'}
     symbols={'0':{'interface_hash':'0'*64,'kind':'action','name':name,'signature':sig}}
     header='action @'+name+' ('+', '.join(f'q{k}:wire[{w}] mut' for k,w in enumerate(widths))+') () () () ()'
-    prefix='bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64\n\nsection symbols\n'
+    prefix=(profile().object_header + ' ptr_width=64\n\nsection symbols\n')
     tail='\n\nsection functions\n'+header+'\n^entry():\n'+'\n'.join(rows)+'\n'
     path.write_text(prefix+json.dumps(symbols,sort_keys=True,separators=(',',':'))+tail)
     hs=isa.call('hash',path);symbols['0']['interface_hash']=hs['symbols'][name]['interface_hash']
@@ -810,29 +811,29 @@ def action_object(isa,path,name,widths,rows):
 
 
 def state_check(runner,block):
-    from dialect_0213 import STATES as PATCH0213, check_state as check_0213
-    if block['attrs']['state'] in PATCH0213:return check_0213(runner,block)
-    from dialect_0214 import STATES as PATCH0214, check_state as check_0214
-    if block['attrs']['state'] in PATCH0214:return check_0214(runner,block)
+    from dialect_0213 import STATES as FLOAT_ALLOCATOR_STATES, check_state as check_0213
+    if block['attrs']['state'] in FLOAT_ALLOCATOR_STATES:return check_0213(runner,block)
+    from dialect_0214 import STATES as RUNTIME_DELIVERY_STATES, check_state as check_0214
+    if block['attrs']['state'] in RUNTIME_DELIVERY_STATES:return check_0214(runner,block)
     if block['attrs']['state']=='compatible-allocator-graph':
         from dialect_0211 import check_graph
         return check_graph(runner,block)
-    from dialect_0211 import STATES as DRAFT0211, check_state as check_0211
-    if block['attrs']['state'] in DRAFT0211:return check_0211(runner,block)
-    from dialect_round8 import STATES as ROUND8, check_state as check_round8
-    if block['attrs']['state'] in ROUND8:return check_round8(runner,block)
-    from dialect_round7 import STATES as ROUND7, check_state as check_round7
-    if block['attrs']['state'] in ROUND7:return check_round7(runner,block)
-    from dialect_round6 import STATES as ROUND6, check_state as check_round6
-    if block['attrs']['state'] in ROUND6:return check_round6(runner,block)
-    from dialect_round5 import STATES as ROUND5, check_state as check_round5
-    if block['attrs']['state'] in ROUND5:return check_round5(runner,block)
+    from dialect_0211 import STATES as COLLECTION_STATES, check_state as check_0211
+    if block['attrs']['state'] in COLLECTION_STATES:return check_0211(runner,block)
+    from dialect_initialisation import STATES as INITIALISATION_STATES, check_state as check_initialisation
+    if block['attrs']['state'] in INITIALISATION_STATES:return check_initialisation(runner,block)
+    from dialect_scalar_witnesses import STATES as SCALAR_STATES, check_state as check_scalar
+    if block['attrs']['state'] in SCALAR_STATES:return check_scalar(runner,block)
+    from dialect_atomic_witnesses import STATES as ATOMIC_STATES, check_state as check_atomic
+    if block['attrs']['state'] in ATOMIC_STATES:return check_atomic(runner,block)
+    from dialect_memory_witnesses import STATES as MEMORY_STATES, check_state as check_memory
+    if block['attrs']['state'] in MEMORY_STATES:return check_memory(runner,block)
     a=block['attrs'];ident=a['state'];at=int(a['at'])
-    from dialect_round4 import STATES as ROUND4, check_state as check_round4
-    if ident in ROUND4:return check_round4(runner,block)
-    from dialect_round3 import STATES as ROUND3, check_state as check_round3
-    if ident in ROUND3:return check_round3(runner,block)
-    from dialect_round2 import STATES, check_state
+    from dialect_interprocedural import STATES as INTERPROCEDURAL_STATES, check_state as check_interprocedural
+    if ident in INTERPROCEDURAL_STATES:return check_interprocedural(runner,block)
+    from dialect_boundaries import STATES as BOUNDARY_STATES, check_state as check_boundaries
+    if ident in BOUNDARY_STATES:return check_boundaries(runner,block)
+    from dialect_lifetimes import STATES, check_state
     if ident in STATES:return check_state(runner,block)
     from dialect_driver import SCENARIOS, check_scenario
     if ident in SCENARIOS.values():return check_scenario(runner,block)
@@ -848,7 +849,7 @@ def state_check(runner,block):
         from dialect_cc import r_budget_prefix
         return r_budget_prefix(runner,block)
     if 'input' not in a:
-        raise Unavailable('TDL state execution',f'bennett-isa-ref run-action {runner.tmp / (ident+".bisa")} {ident} --mut <TDL-registers> --mem <coherent-arena>',CLI_BEAD)
+        raise Unavailable('TDL state execution',f'bennett-isa-ref run-action {runner.tmp / (ident+".bisa")} {ident} --mut <TDL-registers> --mem <coherent-arena>',CLI_CAPABILITY)
     eb=runner.block('events',ident);lines=d.collapse(eb['body'])[:at];widths=[];rows=[]
     wire=lambda w:'q'+w[1:].replace('.', '[')+']'
     for line in lines:

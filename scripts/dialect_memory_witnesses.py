@@ -1,4 +1,5 @@
-"""Round-5 source-derived witnesses, executed by native LLVM or the ISA CLI."""
+"""Source-derived source-derived witnesses, executed by native LLVM or the ISA CLI."""
+from dialect_profile import profile
 import json
 import dialect_check as d
 from dialect_check_v02 import equal, recognise
@@ -24,5 +25,5 @@ extern void top(void);int main(void){top();printf("[%llu,%u,%u]\\n",(unsigned lo
     if name=='pt6-byte-width':
         equal(name,'finite dispatch verdict','accept',verdict)
         equal(name,'wire index',want['wire'],int(d.parse_call(next(i for i in a.m.funcs['top'].instrs() if '@__bennett_gate' in i.text))['args'][2][2]))
-    else:equal(name,'unbounded dispatch dependency','blocked:BD-B-ISA4',verdict)
+    else:equal(name,'unbounded dispatch dependency',profile().verdict('blocked:BD-B-ISA4'),verdict)
     run_native(runner,name,source,driver,[[want['width'],want['live_after'],want['trap']]])

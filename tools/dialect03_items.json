@@ -1,72 +1,72 @@
 [
- {
-  "item": "R01",
-  "section": "19.9",
-  "sentence": "The certificate MUST bind the full invocation and explicit expected relation under ISA 0.9, retain build-record and resolved-table identities and deferred-measurement information in the existing documented metadata channel where no dedicated field exists, and label a fixed-region subdomain as evidence with its covered fraction. [deps: DLT-19.9, DLT-25.2, DLT-18.7, ISA-12.1-P7, ISA-12.2-P1, ISA-12.3-P2, ISA-12.3-P3]"
- },
- {
-  "item": "R02",
-  "section": "17.6",
-  "sentence": "R budget exhaustion MUST lower the existing pre-instruction counter check to fault 1, 2 or 3, preserve the preceding history and execute no later source effect. [deps: DLT-17.6-P1, DLT-17.6-P2, DLT-10-P37, ISA-4.1-P14, ISA-4.9-P13, ISA-10]"
- },
- {
-  "item": "R03",
-  "section": "8.4",
-  "sentence": "When an interface width or descriptor extent is not finitely enumerated by AV, the reference dispatch domain MUST include every valid representable shape allowed by the marker's unsigned i64 fields and the existing parameter-binding checks, rather than treating AV top as a runtime interface failure. [deps: DLT-3.2, DLT-8.1, DLT-8.2, DLT-8.4, ISA-3.3-P7, ISA-3.3-P19]"
- },
- {
-  "item": "R04",
-  "section": "8.4",
-  "sentence": "Each such branch MUST retain the fixed-signature reference-object map and its exact fault and budget semantics, with width selection classical and with no inspection of coherent data to select a shape. [deps: DLT-8.4, DLT-16.2, DLT-9.4, ISA-3.1, ISA-3.3-P19, ISA-5.2]"
- },
- {
-  "item": "R05",
-  "section": "9.5",
-  "sentence": "A device-computed classical budget tuple MUST be resolved with the existing field precedence and minted by budget.mint before region entry, without rounding or substituting any component. [deps: DLT-9.1-P7, DLT-9.2-P8, DLT-9.5-P4, DLT-9.5-P5, ISA-4.1-P17, ISA-5.4-P3, ISA-7.4-P13]"
- },
- {
-  "item": "R06",
-  "section": "6.5",
-  "sentence": "Memory-reaching handles with no finite reference instance bound MUST use a persistent lossless tag-to-ledger-id mapping and qreg.from_id at use, preserving pointer-width tags, identity, liveness, ownership and checked widths. [deps: DLT-6.1-P1, DLT-6.4-P1, DLT-6.5-P10, ISA-3.3-P7, ISA-3.3-P13, ISA-3.3-P14, ISA-3.3-P19, ISA-10]"
- },
- {
-  "item": "R07",
-  "section": "6.6",
-  "sentence": "QREG parameters and results MUST retain their register identity across entries and may outlive a device-entry return, with persistent lookup subject to the ISA run-ownership and CLOSED rules and leak checking at program end. [deps: DLT-6.5-P7, DLT-6.6-P1, ISA-3.3-P14, ISA-3.3-P20, ISA-3.3-P21, ISA-10]"
- },
- {
-  "item": "R08",
-  "section": "7.5",
-  "sentence": "R allocations, releases, slices and concatenations MUST use the ISA ledger-frame semantics, restoring original ids and alias states on reversal without a static hoisting-instance bound. [deps: DLT-7.5, DLT-25.1-P5, ISA-3.3-P7, ISA-3.3-P18, ISA-4.1-P15, ISA-7.4]"
- },
- {
-  "item": "R09",
-  "section": "19.2",
-  "sentence": "Whole-program R mode MUST retain the unmodified entry route and effect tape, and MUST report terminal faults and reverse eligible completed or failed runs according to ISA 0.9. [deps: DLT-19.2, DLT-14.7, DLT-18.6, ISA-4.9-P1, ISA-7.4, ISA-10]"
- },
- {
-  "item": "R10",
-  "section": "8.5",
-  "sentence": "Runtime oracle entry state MUST retain caller bytes and allocator replay in native address order before any wrapper-private allocation, and R callers MUST use reversible register preparation and release for that same snapshot construction. [deps: DLT-8.5, DLT-16.2-P20, ISA-7.1, ISA-7.2, ISA-3.3-P18, ISA-7.4]"
- },
- {
-  "item": "R11",
-  "section": "11.5",
-  "sentence": "On the ISA 0.9 target, an R entry MUST report the exact effective fault cause through the launch result, preserve its entire logical prefix and stop without returning results or running its CC caller's successor. [deps: DLT-11.5-P3, DLT-17.6-P5, ISA-4.1-P14, ISA-4.9-P1, ISA-4.9-P12, ISA-4.9-P13, ISA-10]"
- },
- {
-  "item": "R12",
-  "section": "6.5",
-  "sentence": "Persistent parameter and result roots MUST resolve through the program ledger across entry calls without an entry-count or static-file bound, while retaining the ISA's exclusive open-run ownership and same-id reversal rules. [deps: DLT-6.5-P6, DLT-6.5-P7, DLT-6.6, ISA-3.3-P7, ISA-3.3-P14, ISA-3.3-P18, ISA-10]"
- },
- {
-  "item": "R13",
-  "section": "3.4",
-  "sentence": "Classical runtime widths MUST lower through `qreg[*]` with the existing n >= 1 dialect check and checked transfers. [deps: DLT-3.4, ISA-3.3-P7, ISA-3.3-P8, ISA-3.3-P19]"
- },
- {
-  "item": "R14",
-  "section": "10",
-  "sentence": "A coherent width MUST allocate unconditionally to a sound bound derived from materialised instructions or, absent a tighter bound, the full unsigned marker-width domain, with out-of-range wire operations predicated off. [deps: DLT-3.4, DLT-10-P42, DLT-18.3, ISA-3.3-P7, ISA-3.3-P8, ISA-3.3-P19, ISA-3.5]"
- }
+  {
+    "item": "DRAFT-CLAUSE-01",
+    "section": "19.9",
+    "sentence": "The certificate MUST bind the full invocation and explicit expected relation under ISA 0.9, retain build-record and resolved-table identities and deferred-measurement information in the existing documented metadata channel where no dedicated field exists, and label a fixed-region subdomain as evidence with its covered fraction. [deps: DLT-19.9, DLT-25.2, DLT-18.7, ISA-12.1-P7, ISA-12.2-P1, ISA-12.3-P2, ISA-12.3-P3]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-02",
+    "section": "17.6",
+    "sentence": "R budget exhaustion MUST lower the existing pre-instruction counter check to fault 1, 2 or 3, preserve the preceding history and execute no later source effect. [deps: DLT-17.6-P1, DLT-17.6-P2, DLT-10-P37, ISA-4.1-P14, ISA-4.9-P13, ISA-10]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-03",
+    "section": "8.4",
+    "sentence": "When an interface width or descriptor extent is not finitely enumerated by AV, the reference dispatch domain MUST include every valid representable shape allowed by the marker's unsigned i64 fields and the existing parameter-binding checks, rather than treating AV top as a runtime interface failure. [deps: DLT-3.2, DLT-8.1, DLT-8.2, DLT-8.4, ISA-3.3-P7, ISA-3.3-P19]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-04",
+    "section": "8.4",
+    "sentence": "Each such branch MUST retain the fixed-signature reference-object map and its exact fault and budget semantics, with width selection classical and with no inspection of coherent data to select a shape. [deps: DLT-8.4, DLT-16.2, DLT-9.4, ISA-3.1, ISA-3.3-P19, ISA-5.2]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-05",
+    "section": "9.5",
+    "sentence": "A device-computed classical budget tuple MUST be resolved with the existing field precedence and minted by budget.mint before region entry, without rounding or substituting any component. [deps: DLT-9.1-P7, DLT-9.2-P8, DLT-9.5-P4, DLT-9.5-P5, ISA-4.1-P17, ISA-5.4-P3, ISA-7.4-P13]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-06",
+    "section": "6.5",
+    "sentence": "Memory-reaching handles with no finite reference instance bound MUST use a persistent lossless tag-to-ledger-id mapping and qreg.from_id at use, preserving pointer-width tags, identity, liveness, ownership and checked widths. [deps: DLT-6.1-P1, DLT-6.4-P1, DLT-6.5-P10, ISA-3.3-P7, ISA-3.3-P13, ISA-3.3-P14, ISA-3.3-P19, ISA-10]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-07",
+    "section": "6.6",
+    "sentence": "QREG parameters and results MUST retain their register identity across entries and may outlive a device-entry return, with persistent lookup subject to the ISA run-ownership and CLOSED rules and leak checking at program end. [deps: DLT-6.5-P7, DLT-6.6-P1, ISA-3.3-P14, ISA-3.3-P20, ISA-3.3-P21, ISA-10]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-08",
+    "section": "7.5",
+    "sentence": "R allocations, releases, slices and concatenations MUST use the ISA ledger-frame semantics, restoring original ids and alias states on reversal without a static hoisting-instance bound. [deps: DLT-7.5, DLT-25.1-P5, ISA-3.3-P7, ISA-3.3-P18, ISA-4.1-P15, ISA-7.4]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-09",
+    "section": "19.2",
+    "sentence": "Whole-program R mode MUST retain the unmodified entry route and effect tape, and MUST report terminal faults and reverse eligible completed or failed runs according to ISA 0.9. [deps: DLT-19.2, DLT-14.7, DLT-18.6, ISA-4.9-P1, ISA-7.4, ISA-10]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-10",
+    "section": "8.5",
+    "sentence": "Runtime oracle entry state MUST retain caller bytes and allocator replay in native address order before any wrapper-private allocation, and R callers MUST use reversible register preparation and release for that same snapshot construction. [deps: DLT-8.5, DLT-16.2-P20, ISA-7.1, ISA-7.2, ISA-3.3-P18, ISA-7.4]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-11",
+    "section": "11.5",
+    "sentence": "On the ISA 0.9 target, an R entry MUST report the exact effective fault cause through the launch result, preserve its entire logical prefix and stop without returning results or running its CC caller's successor. [deps: DLT-11.5-P3, DLT-17.6-P5, ISA-4.1-P14, ISA-4.9-P1, ISA-4.9-P12, ISA-4.9-P13, ISA-10]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-12",
+    "section": "6.5",
+    "sentence": "Persistent parameter and result roots MUST resolve through the program ledger across entry calls without an entry-count or static-file bound, while retaining the ISA's exclusive open-run ownership and same-id reversal rules. [deps: DLT-6.5-P6, DLT-6.5-P7, DLT-6.6, ISA-3.3-P7, ISA-3.3-P14, ISA-3.3-P18, ISA-10]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-13",
+    "section": "3.4",
+    "sentence": "Classical runtime widths MUST lower through `qreg[*]` with the existing n >= 1 dialect check and checked transfers. [deps: DLT-3.4, ISA-3.3-P7, ISA-3.3-P8, ISA-3.3-P19]"
+  },
+  {
+    "item": "DRAFT-CLAUSE-14",
+    "section": "10",
+    "sentence": "A coherent width MUST allocate unconditionally to a sound bound derived from materialised instructions or, absent a tighter bound, the full unsigned marker-width domain, with out-of-range wire operations predicated off. [deps: DLT-3.4, DLT-10-P42, DLT-18.3, ISA-3.3-P7, ISA-3.3-P8, ISA-3.3-P19, ISA-3.5]"
+  }
 ]

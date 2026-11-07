@@ -1,4 +1,5 @@
 """Executable §19/§20 driver boundary operations, independent of expected results."""
+from dialect_profile import profile
 import hashlib
 import re
 import dialect_check as d
@@ -117,7 +118,7 @@ def uart(runner,source):
     if addr!=0x10000000:raise d.Fail('§20 UART adapter: address outside transmit window')
     path=runner.tmp/'platform-uart.bisa'
     rows='fn r @main () (r:i32) () () ()\n^entry():\naddress = const.i64 4096\np = inttoptr address\nn = const.i64 1\neffect console.write p n\nr = const.i32 0\nret r'
-    emit(runner,path,[rows],{'main':signature([],['i32'])},{'uart':bytes([value])},{'models':{'console':{'version':'0.8'}},'services':{}})
+    emit(runner,path,[rows],{'main':signature([],['i32'])},{'uart':bytes([value])},{'models':{'console':{'version':profile().isa}},'services':{}})
     got=runner.isa.call('run-cc',path,'main');rev=runner.isa.call('reverse',path,'main')
     equal('UART','§20 faults',[],got['faults']);equal('UART','§20 tape bytes',bytes([value]).hex(),got['tape'][0]['bytes'])
     equal('UART','§20 reverse whole state',True,rev['equals_entry'])

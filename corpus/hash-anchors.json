@@ -1,0 +1,19 @@
+{
+  "provenance": "Hand-transcribed acyclic L1 increment-by-one lproc. ISA 0.8/0.9 section 9.2: version, pointer width, JCS signature, canonical function bytes, every part LF-terminated. No references, data or layout leaves for this lproc. Derived with Python hashlib and independently checked with coreutils sha256sum; never populated from bennett-isa-ref hash output. ISA source pin: c1d13200acb08af4922535f5a15a1ab872b78b41. Anchor edits require manual review and are outside rehash functionality.",
+  "anchors": [
+    {
+      "spec": "Bennett-Dialect-Spec.md",
+      "object": "inc8",
+      "symbol": "L1",
+      "envelope": "isa=0.8\nptr_width=64\n{\"abi\":\"0.8\",\"kind\":\"lproc\",\"params\":[8],\"result\":8,\"tier\":\"q\"}\nlproc @L1 (a0:reg[8]) (r:reg[8]) () () ()\nregs { c0:reg[8], v0:reg[8] }\n^b0():\nc0 = lift.const.i8 1\nv0 = lift.add a0 c0\nlift.ret v0\n",
+      "sha256": "a8c86313c60cd75a4f013bdaaa43ed5db78c444b0338a3d41d98a3871929250e"
+    },
+    {
+      "spec": "Bennett-Dialect-Spec-0.3-draft.md",
+      "object": "inc8",
+      "symbol": "L1",
+      "envelope": "isa=0.9\nptr_width=64\n{\"abi\":\"0.9\",\"args\":[],\"kind\":\"lproc\",\"mem\":[],\"params\":[8],\"result\":8,\"tier\":\"q\",\"tokens\":[]}\nlproc @L1 (a0:reg[8]) (r:reg[8]) () () ()\nregs { c0:reg[8], v0:reg[8] }\n^b0():\nc0 = lift.const.i8 1\nv0 = lift.add a0 c0\nlift.ret v0\n",
+      "sha256": "9eb65ca1fc4f51778f6f15b8f58943ee6c23fa765742cbba40b04483e33094ee"
+    }
+  ]
+}

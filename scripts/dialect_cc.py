@@ -4,6 +4,7 @@ The fixtures spell the explicit state propagation of the demonstrated source
 programs; constants are read from their source. The run result is never used to
 construct the object. Native C runs provide a separate comparison.
 """
+from dialect_profile import profile
 import json
 import re
 from dialect_check_v02 import equal
@@ -18,12 +19,12 @@ def emit(runner,path,functions,signatures,data=None,devices=None):
     functions=[re.sub(r'^(\w+) = gep.i8 (\w+) (\w+)$',gep,f,flags=re.M) for f in functions]
     symbols={str(i):{'interface_hash':'0'*64,'kind':s['kind'],'name':n,'signature':s} for i,(n,s) in enumerate(signatures.items())}
     data=data or {}
-    for name,image in data.items():symbols[str(len(symbols))]={'interface_hash':'0'*64,'kind':'data','name':name,'signature':{'abi':'0.8','kind':'data','size':len(image),'tier':'-'}}
+    for name,image in data.items():symbols[str(len(symbols))]={'interface_hash':'0'*64,'kind':'data','name':name,'signature':{'abi':profile().isa,'kind':'data','size':len(image),'tier':'-'}}
     base=4096;globs={}
     for name,image in data.items():globs[name]={'base':base,'image':name,'size':len(image)};base+=len(image)
     heap=(base+4095)//4096*4096
     layout={'A_tab':12,'H':16,'S_cells':0,'globals':globs,'heap_base':heap,'heap_limit_max':4096,'interface_regions':{},'null_size':4096,'ptr_width':64}
-    prefix='bennett-object isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8 ptr_width=64\n\nsection symbols\n'
+    prefix=(profile().object_header + ' ptr_width=64\n\nsection symbols\n')
     tail='\n\nsection functions\n'+'\n'.join(functions)+'\n'
     if data:tail+='\nsection data\n'+'\n'.join(n+' '+x.hex() for n,x in data.items())+'\n'
     if devices:tail+='\nsection devices\n'+json.dumps(devices,sort_keys=True,separators=(',',':'))+'\n'
@@ -35,7 +36,7 @@ def emit(runner,path,functions,signatures,data=None,devices=None):
 
 
 def signature(params,results,tier='r'):
-    return {'abi':'0.8','kind':tier,'params':params,'results':results,'tier':tier}
+    return {'abi':profile().isa,'kind':tier,'params':params,'results':results,'tier':tier}
 
 
 def fixture(runner,ident,launch=False):
@@ -48,9 +49,9 @@ def fixture(runner,ident,launch=False):
         sigs[entry]=signature([],['i32'] if tier=='r' else [],tier)
         rows=[f'fn {tier} @{entry} () '+('(r:i32)' if tier=='r' else '()')+' () () ()','^entry():','address = const.i64 4096','p = inttoptr address',f'len = const.i64 {len(image)}']
         if tier=='r':
-            rows+=['effect console.write p len','r = const.i32 0','ret r'];devices={'models':{'console':{'version':'0.8'}},'services':{}}
+            rows+=['effect console.write p len','r = const.i32 0','ret r'];devices={'models':{'console':{'version':profile().isa}},'services':{}}
         else:
-            rows+=['q = qreg.new any 1','qreg.free q','reply = hostcall bennett.dev.console.write p len','ret'];devices={'models':{},'services':{'bennett.dev.console.write':{'version':'0.8'}}}
+            rows+=['q = qreg.new any 1','qreg.free q','reply = hostcall bennett.dev.console.write p len','ret'];devices={'models':{},'services':{'bennett.dev.console.write':{'version':profile().isa}}}
         functions=['\n'.join(rows)]
     elif ident=='sjlj-two-frames':
         jump=int(re.search(r'longjmp\(jb, (\d+)\)',source)[1]);m=re.search(r'try_deep\((\d+)\) \+ (\d+) \* try_deep\((\d+)\)',source);n,k,n2=map(int,m.groups())
@@ -217,7 +218,7 @@ def r_budget_prefix(runner,block):
         'required under ISA 0.9: run=FAILED; exactly one terminal record, code=1; no host request; reversible prefix history retained',
     ]
     equal(ident,'§17.6/ISA-0.9 recorded obligation',expected,lines)
-    receipt={'verdict':verdict,'bead':'b-dialect-spec-bz6','executed':False,
+    receipt={'verdict':verdict,'capability':'R-BUDGET-FAULT','executed':False,
              'execution_target':'ISA 0.8','requires':'ISA 0.9 fault C, 61550b4 §0.2 K5 / §4.1',
              'required_isa09':{'status':'FAILED','fault':int(faults[0]),'console_hex':'',
                                'tape':[],'terminal_records':[{'code':1}],

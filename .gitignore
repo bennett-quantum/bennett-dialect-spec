@@ -3,7 +3,7 @@ target/
 *.o
 *.so
 .DS_Store
-# Cargo.lock is kept for libraries; .beads/ is NOT ignored
+# Beads metadata remains tracked; generated runtime state is ignored.
 corpus/legality/results/raw/
 __pycache__/
 
@@ -15,3 +15,10 @@ __pycache__/
 *.gate.lock*
 .tmp/
 scripts/.isa-ref/
+*.pyc
+*.log
+*.darc
+.beads/**/LOCK
+.beads/**/*.lock
+*LAST-RUN*
+*PROGRESS*

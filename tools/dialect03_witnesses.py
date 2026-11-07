@@ -1,7 +1,7 @@
 """ISA 0.9 witnesses of draft 0.3: objects built from the §25.1 lowerings, run on the reference interpreter.
 
 Python places the rows; every stated result comes from the executor (P-3). An executor diagnostic in
-ABSENT means the ISA row is not implemented there yet: the row reports blocked, naming the bead (P-2).
+ABSENT means the ISA row is not implemented there yet: the row reports blocked, naming the capability (P-2).
 Any other diagnostic is a failure. Fixtures follow ISA 0.9 §16.3 examples 4 to 8.
 """
 import collections,hashlib,json,re
@@ -10,7 +10,7 @@ import dialect_check as d
 import dialect_check_v02 as v2
 import dialect_cc as cc
 
-BEAD='b-isa-spec-fuk.7'
+CAPABILITY='ISA09-EXECUTOR'
 ABSENT=(r'qreg size must be a canonical unsigned INT',r'qreg instructions are CC only',
         r'unknown (?:CC/R )?(?:opcode|instruction).*budget\.mint',r'budget\.mint',r'qinplace.*(?:operand|form|arity|expected)',
         r'qreg\.(?:width|id|from_id)')
@@ -25,6 +25,8 @@ def build(runner,name,functions,signatures,data=None,devices=None):
     try:
         cc.emit(runner,path,functions,signatures,data,devices)
     except d.Fail as e:
+        if not unsupported_row(e):
+            raise
         admitted_by_second_reader(path)
         absent(e,name)
     return path
@@ -36,18 +38,21 @@ def build_quiet(runner,name,functions,signatures):
 
 
 def admitted_by_second_reader(path):
-    """While the reference cannot admit a row, the VM's published binary reads the fixture: a fixture
-    it refuses is this checker's bug, a failure rather than a blocked row. Admission only, no execution."""
-    vm=d.ROOT.parent/'bennett-vm'/'target'/'release'/'bennett-vm'
-    if vm.exists():v2.command([vm,'hash',path])
+    """Unsupported rows require a pinned independent admission reader before execution evidence."""
+    raise v2.Unavailable('independent admission of an unsupported ISA 0.9 row',
+                         'configure a published second-reader binary in gate.toml',
+                         'SECOND-READER-PIN')
+
+
+
+def unsupported_row(error):
+    return any(re.search(pattern,str(error)) for pattern in ABSENT)
 
 
 def absent(e,name):
-    text=str(e)
-    for pattern in ABSENT:
-        if re.search(pattern,text):
-            raise v2.Unavailable('ISA 0.9 row of witness '+name+': '+text.strip().splitlines()[-1][:160],'bennett-isa-ref with ISA 0.9 K1-K4',BEAD)
-    raise e
+    if not unsupported_row(e):
+        raise e
+    raise v2.Unavailable('ISA 0.9 row of witness '+name+': '+str(e).strip().splitlines()[-1][:160],'bennett-isa-ref with ISA 0.9 K1-K4',CAPABILITY)
 
 
 def call(runner,verb,path,entry,args='',name=''):
@@ -354,16 +359,10 @@ def check(runner,block):
     return WITNESSES[block['attrs']['witness09']](runner,block)
 
 
-ORIGINAL_STATE=v2.state_check
-
-
 def state_check(runner,block):
     name=block['attrs']['state']
     if name in STATES:return STATES[name](runner,block)
-    return ORIGINAL_STATE(runner,block)
-
-
-v2.state_check=state_check
+    return v2.state_check(runner,block)
 
 TOKEN_MAP=[('isa=0.8 object=0.8 launch=0.8 sched=0.8 cert=0.8 coverage=0.8 target=0.8','isa=0.9 object=0.9 launch=0.9 sched=0.9 cert=0.9 coverage=0.9 target=0.9'),
            ('"abi":"0.8"','"abi":"0.9"'),('"version":"0.8"','"version":"0.9"')]

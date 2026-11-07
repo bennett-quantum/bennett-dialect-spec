@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 import dialect_check_v02 as v
+from interpreter_test_support import record_build
 
 
 class InterpreterSnapshot(unittest.TestCase):
@@ -42,11 +43,12 @@ edition = "2021"
             cache.mkdir()
             link = root / 'linked-cache'
             link.symlink_to(cache, target_is_directory=True)
-            with patch.object(v, 'ISA_SOURCE', ref), patch.object(v, 'ISA_DIR', link), \
+            with patch.object(v, 'ISA_SOURCE', ref), patch.object(v, 'ISA_DIR', link), patch.object(v, 'command', side_effect=record_build), \
                  patch.object(v, 'read_commit', return_value='fixture-head'), \
                  patch.dict(os.environ, {'CARGO_TARGET_DIR': str(root / 'external-target')}):
                 interpreter = v.Interpreter()
-                self.assertEqual(interpreter.call('run-program'), {})
+                interpreter.build()
+                self.assertEqual(interpreter.exe.read_text(), (ref / 'src/main.rs').read_text())
                 first = interpreter.exe
                 self.assertTrue(first.is_file())
                 self.assertEqual(first.parent.name, 'release')

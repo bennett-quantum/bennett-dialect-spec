@@ -8,11 +8,15 @@ Depends on: `bennett-isa-spec` (its reference semantics targets the ISA formal m
 
 Layout:
 
-- `spec/`: normative text. [`Bennett-Dialect-Spec.md`](spec/Bennett-Dialect-Spec.md) is the current draft (version in its title; 0.2.12 at time of writing, accepted by the sol seat in round 11), `bennett_markers.h` the marker ABI header, `errata-0.2.10.md` binding interpretations of accepted 0.2.10. See [`spec/README.md`](spec/README.md) for the change rules.
+- `spec/`: normative text. [`Bennett-Dialect-Spec.md`](spec/Bennett-Dialect-Spec.md) is the current draft (full version in its title), `bennett_markers.h` the marker ABI header, `errata-0.2.10.md` binding interpretations of accepted 0.2.10. See [`spec/README.md`](spec/README.md) for the change rules.
 - `corpus/legality/`: legality corpus.
-- `validator/`: Rust crate `bennett-dialect-validator`.
-- `scripts/`: the dialect checker (`dialect_check_v02.py`) and `pre-push`, which gates a clean worktree of the pushed commit (cargo test in `validator/` plus the checker).
+- The residual-poison validator is the Python `validate()` checker in `scripts/dialect_check_v02.py`. A linkable validator can be added when a consumer needs one.
+- `scripts/`: the dialect checker (`dialect_check_v02.py`) and `pre-push`, which gates a clean worktree of the pushed commit (Python unit and slow execution suites plus the spec checker).
 - `emission/`, `docs/`: emission notes and audit/brief records.
-- `SPEC_VERSIONS.toml`: ISA version this repo is graded against (a test pins its current value; see HANDOFF.md for what is current).
+- `SPEC_VERSIONS.toml`: ISA version this repo is graded against (the gate validates inputs at the commits in `gate.toml`).
 
-Current state and open consumer blockers: [HANDOFF.md](HANDOFF.md).
+Current state and open blockers: [bennett/HANDOFF.md](../bennett/HANDOFF.md).
+
+Run the default tooling suite with `python3 scripts/run_tests.py`. Expensive execution witnesses
+remain in `python3 scripts/run_tests.py --slow`; the push gate runs both suites and the spec checker.
+The measured scope, coverage and structural baseline are recorded in [docs/quality.md](docs/quality.md).

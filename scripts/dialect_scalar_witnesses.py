@@ -1,4 +1,4 @@
-"""Round-7 source witnesses: independent LLVM verification and native execution."""
+"""Source-derived source witnesses: independent LLVM verification and native execution."""
 import json
 import re
 import dialect_check as d
@@ -91,4 +91,4 @@ def check_libm(runner,block):
             value=int(x,16)
             driver+=f'a[0]={value&((1<<64)-1)}ULL;a[1]={value>>64}ULL;probe(a,r);printf("[\\"%016llx%016llx\\",0]\\n",(unsigned long long)r[1],(unsigned long long)r[0]);'
         driver+='return 0;}'
-        run_native(runner,name+'-'+major,ir,driver,[[y,want['code']] for x,y in want['vectors']],extra=(d.ROOT/'scripts'/'round7_libm.c','-lquadmath'))
+        run_native(runner,name+'-'+major,ir,driver,[[y,want['code']] for x,y in want['vectors']],extra=(d.ROOT/'scripts'/'carrier_oracle.c','-lquadmath'))

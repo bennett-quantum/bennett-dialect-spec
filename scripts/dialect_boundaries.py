@@ -1,4 +1,5 @@
-"""Round-3 contract witnesses: observations from native code and Rust ISA execution."""
+"""Source-derived contract witnesses: observations from native code and Rust ISA execution."""
+from dialect_profile import profile
 import json
 import math
 import dialect_check as d
@@ -27,9 +28,9 @@ def stack_probe(runner, name, width):
     rows=[f'w{k} = lift.mov a{k}' for k in range(8)]
     rows+=['ok = lift.call @validate ('+', '.join('w'+str(k) for k in range(8))+')','base = lift.addr @physical','p = lift.add base w0',f'lift.boundscheck p {width}',f'raw = lift.load.i{width*8} p','r = lift.zext.i16 raw' if width==1 else 'r = lift.mov raw','lift.retval r']
     fn='oracle @ref () (tgt:wire[16]) (fault:wire[4]) (physical:region[4,8] in) ('+', '.join(f'a{k}:i64' for k in range(8))+')\nregs { '+', '.join([f'w{k}:reg[64]' for k in range(8)]+['ok:reg[1]','base:reg[64]','p:reg[64]',f'raw:reg[{width*8}]','r:reg[16]'])+' }\n^entry():\n'+'\n'.join(rows)
-    sig={'abi':'0.8','args':['i64']*8,'fault':4,'in':[],'kind':'oracle','mem':[{'A':4,'W':8,'role':'in'}],'tgt':16,'tier':'q'}
+    sig={'abi':profile().isa,'args':['i64']*8,'fault':4,'in':[],'kind':'oracle','mem':[{'A':4,'W':8,'role':'in'}],'tgt':16,'tier':'q'}
     layout={'A_tab':1,'H':13,'S_cells':8,'globals':{},'heap_base':4096,'heap_limit_max':0,'interface_regions':{'ref':{'physical':{'base':4096}}},'null_size':4096,'ptr_width':64}
-    return object_text(runner.isa,runner.tmp/(name+str(width)+'.bisa'),[fn,helper],{'ref':sig,'validate':{'abi':'0.8','kind':'lproc','params':[64]*8,'result':1,'tier':'q'}},layout)
+    return object_text(runner.isa,runner.tmp/(name+str(width)+'.bisa'),[fn,helper],{'ref':sig,'validate':profile().signature({'abi':profile().isa,'kind':'lproc','params':[64]*8,'result':1,'tier':'q'})},layout)
 
 
 def adjoint_records(events):
@@ -147,7 +148,7 @@ live[slots[0]]=live[slots[1]]=0;unsigned total=0;for(unsigned j=0;j<64;j++)total
 printf("[%u,%u,%u,%u,%u]\\n",next,distinct,total,0,maxlive);return 0;}'''
         run_native(runner,name,'',src,[[v['instances'],int(v['distinct']),v['live_after'],v['trap'],v['max_live']]])
     elif name == 'shadow-stack-liveness':
-        src='#include "'+str(d.ROOT/'scripts/round3_runtime.c')+'"\n'+'''static void show(struct stack*s,uint64_t p){unsigned c;unsigned v=ss_load(s,p,&c);printf("[%u,%u]\\n",v,c);}
+        src='#include "'+str(d.ROOT/'scripts/logical_stack_runtime.c')+'"\n'+'''static void show(struct stack*s,uint64_t p){unsigned c;unsigned v=ss_load(s,p,&c);printf("[%u,%u]\\n",v,c);}
 static uint64_t f(struct stack*s){uint64_t p=ss_push(s,1);if(ss_store(s,p,7))abort();ss_pop(s,p);return p;}
 int main(void){struct stack s={0};uint64_t p=ss_push(&s,1);ss_store(&s,p,7);show(&s,p);
 struct stack replay=s;ss_pop(&s,p);show(&s,p);unsigned old=s.bytes[0];ss_store(&s,0,9);
@@ -216,4 +217,4 @@ printf("[%u,%u,%u,%u]\\n",generation_equal,code,second,live);return 0;}'''
                 observed=runner.isa.call('run-cc',caller,'controlled','--arg',f'token:{budget},0,32,1','--arg',f'qreg:{control}')
                 equal(name,key+' controlled status','COMPLETED',observed['status'])
                 equal(name,key+' controlled fault',str(v[key][1] if control else 0),observed['results'][0]['value'])
-    else:raise d.Fail('unimplemented round-3 state '+name)
+    else:raise d.Fail('unimplemented boundary state '+name)

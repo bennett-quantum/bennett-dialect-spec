@@ -1,4 +1,5 @@
 """Mechanical spec metadata checks: budget schema, cross-references, rule coverage, asm."""
+from dialect_profile import profile
 import fnmatch
 import json
 from pathlib import Path
@@ -19,7 +20,7 @@ def budget_table(runner,block):
     for e in obj['entries']:
         equal(ident,'§9.2 selector count',1,sum(k in e for k in ('identity','region_key','symbol')))
     if ident=='budget-stage':
-        from dialect_round6 import check_budget_stage
+        from dialect_atomic_witnesses import check_budget_stage
         return check_budget_stage(runner,json.loads(runner.block('state',ident)['body']))
     src=runner.block('lift',ident);name=src['attrs']['region'].lstrip('@')
     resolved=resolve_budget(obj,name)
@@ -64,7 +65,7 @@ def stage_budget(table,symbol,build,region_key='',records=()):
     return final,record
 
 def xrefs(text):
-    own=d.headings(d.SPEC_PATH);isa=d.headings(d.ISA_SPEC);ns=d.headings(d.NORTH_STAR)
+    own=d.headings(d.SPEC_PATH);isa=d.headings(d.sibling('bennett-isa-spec') / 'spec' / ('Bennett-ISA-Spec-0.9.md' if profile().isa == '0.9' else 'Bennett-ISA-Spec.md'));ns=d.headings(d.NORTH_STAR)
     questions=d.NORTH_STAR.read_text().split('## 9.',1)[1].split('## 10.',1)[0]
     ns.update('9.'+n for n in re.findall(r'^(\d+)\. ',questions,re.M))
     previous_doc=None;end=-1;results=[]
