@@ -1,8 +1,9 @@
 # Bennett LLVM Dialect — Specification, draft 0.3
 
 **Date:** 2026-11-07. **Status:** full draft 0.3 remains ungraded. The classical R-contract
-profile `0.3-r1` (§1.7) is an acceptance candidate for separate council grading, not an
-assertion of council acceptance or whole-0.3 conformance. It derives from draft 0.2.12 (accepted by the sol seat in round 11) and carries the
+profile `0.3-r1` (§1.7) is council-accepted for that boundary only (2026-11-07;
+`bennett/docs/council/dialect-r3contract-2026-11-07/round-1/report.md`), with no
+assertion of whole-0.3 conformance. It derives from draft 0.2.12 (accepted by the sol seat in round 11) and carries the
 matching 0.2.13 allocator/PPC amendments and the 0.2.14 runtime integer instance delivery and console close clarification published in `Bennett-Dialect-Spec.md`. The grading target is Bennett ISA **0.9** (`Bennett-ISA-Spec-0.9.md`, accepted by all three
 seats, K1–K81). The dossier is `docs/notes/2026-11-01-dialect-0.3-dossier.md`.
 
@@ -179,16 +180,17 @@ A module's **verdict** is one of:
 A module that would be rejected and blocked is rejected. Warnings (`BD-W-*`, §22.4) never change
 a verdict.
 
-### 1.7 Classical R-contract profile (acceptance candidate)
+### 1.7 Classical R-contract profile (council-accepted)
 
 `0.3-r1` names a full dialect compatibility identity under §23 for the classical
 R-contract slice of this draft targeting ISA 0.9. It is not an alias for `0.3`, a
-0.2.x patch, or a claim that the rest of 0.3 has been graded. Its publication is
-conditional on council acceptance of this slice; until then it is a candidate.
+0.2.x patch, or a claim that the rest of 0.3 has been graded. This slice was
+unanimously council-accepted on 2026-11-07 (accept / core accept, no blocking findings;
+`bennett/docs/council/dialect-r3contract-2026-11-07/round-1/report.md`).
 The following is the exact grading boundary, restricted to each clause's
 classical R applicability and the CC launch stub that enters it:
 
-| Sections submitted | Contract carried by the slice |
+| Sections accepted | Contract carried by the slice |
 |---|---|
 | §§1–5 | conformance, diagnostics, ordinary marker ABI/recognition, processing order, placement, addresses and device-closure analysis |
 | §§7.1, 7.5(b), 7.6; §§9.1–9.5 | R entry/outlining, measure prohibition, budget resolution, units and exhaustion |
@@ -11756,7 +11758,7 @@ optional flag does not waive option checks. A plugin advertising bare `0.3`
 does not advertise this profile. These overrides do not rename the separately
 versioned map or change the ungraded full-draft identity above.
 
-| Identity checked | Published 0.2.14 track | R-contract candidate |
+| Identity checked | Published 0.2.14 track | Accepted R-contract profile |
 |---|---|---|
 | full dialect / targeted ISA | `0.2.14` / `0.8` | `0.3-r1` / `0.9` |
 | plugin string | `dialect-0.2.14;isa-0.8` | `dialect-0.3-r1;isa-0.9` |
@@ -12226,7 +12228,8 @@ warning never changes a verdict.
 ## 23. Versioning
 
 - The classical R-contract profile (§1.7) has the distinct full compatibility
-  string `0.3-r1`; its status is acceptance candidate until council grading.
+  string `0.3-r1`; its status is council-accepted for this boundary only
+  (2026-11-07; `bennett/docs/council/dialect-r3contract-2026-11-07/round-1/report.md`).
   It targets ISA `0.9` and retains map `0.3`, normaliser `0.2.8`, marker ABI
   `0.2` and descriptor version 2. Its exact plugin/options/module-flag,
   certificate/build-record and coverage identities are §19.9's overrides;

@@ -1,5 +1,7 @@
 # spec/
 
+[`Bennett-Dialect-Spec-0.3-draft.md` §1.7](Bennett-Dialect-Spec-0.3-draft.md#17-classical-r-contract-profile-council-accepted): **0.3-r1 / ISA 0.9**, council-accepted for the classical R boundary only (2026-11-07; `bennett/docs/council/dialect-r3contract-2026-11-07/round-1/report.md`); bare **0.3** remains **draft, not graded**. See [publication and evidence limits](../docs/notes/classical-r-contract-profile.md).
+
 `Bennett-Dialect-Spec.md` is published **0.2.14** (2026-11-03), under advisor R18 (by extension
 of maintainer D3): council-accepted brt-vbi (§§12.8, 19.1, 19.9 runtime integer instance delivery,
 derive3 round 1, with its sol/astra suggestions and Muse batch-3 S1/S2) and one editorial
