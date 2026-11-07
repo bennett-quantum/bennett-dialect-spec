@@ -13,6 +13,8 @@ import dialect_cc as cc
 from dialect_profile import ISA08, using_profile
 
 CASES = d.ROOT / 'corpus' / 'legality' / 'r-contract'
+# ISA reference CLI output schema (U): larger integers use decimal strings.
+JSON_EXACT_INTEGER_MAX = (1 << 53) - 1
 
 
 def clauses(runner, case):
@@ -44,8 +46,11 @@ def faults(runner, case):
         path = object_file(runner, case, '-' + str(code),
                            [body.replace('fault 2', 'fault ' + str(code)) for body in case['functions']])
         got = runner.isa.call('run-cc', path, 'main')
-        observations(case, got, dict(case['expected'], fault=code if code else 4))
+        effective = code if code else 4
+        encoded = str(effective) if effective > JSON_EXACT_INTEGER_MAX else effective
+        observations(case, got, dict(case['expected'], fault=encoded))
         v2.equal(case['id'], 'one terminal record', 1, len(got['faults']))
+        v2.equal(case['id'], 'exact terminal record code', encoded, got['faults'][0]['code'])
         reset = runner.isa.call('reverse', path, 'main')
         observations(case, reset, case['reset'])
     # A generic trap is a distinguishable, incorrect lowering of fault 2.

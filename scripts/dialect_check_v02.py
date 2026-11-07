@@ -695,6 +695,8 @@ def main(argv=None):
     parser.add_argument('--json', type=Path, help='write structured results')
     args = parser.parse_args(argv)
     selected = {x for f in args.family or [] for x in f.split(',')}
+    if 'r-contract' in selected:
+        parser.error('r-contract requires tools/dialect_check_v03.py (ISA 0.9)')
     known = set(TAG_FAMILY.values()) | AUX_FAMILIES
     if selected - known:
         parser.error('unknown family: ' + ', '.join(sorted(selected-known)))

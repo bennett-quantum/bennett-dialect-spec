@@ -210,7 +210,7 @@ already stated in §17.1 and ISA §12.3; this profile is not their publication.
 
 An executor admits the independently identified device object under §19.9,
 executes its classical R closure including linked libc, and implements ISA
-§§4.9, 7.3–7.4 and 10. It MUST distinguish terminal fault results from tool,
+§4.9, §7.3, §7.4 and §10. It MUST distinguish terminal fault results from tool,
 admission or replay errors. A producer's successful compilation does not prove
 that an executor supports its object; unavailable ISA rows fail at admission.
 For rung 3 the acceptance workload includes integer `%s %d %u %x %c` with
@@ -10421,7 +10421,7 @@ result, memory mutation, device effect or caller continuation. The terminal
 record preserves its program point and exactly one effective code. Earlier
 memory, displaced values, allocation history, device/tape entries and open
 activations remain intact until an explicit eligible reversal removes the
-record and undoes that prefix (ISA §§4.9, 7.4, 10, T4). In particular no fault
+record and undoes that prefix (ISA §4.9, §7.4, §10, T4). In particular no fault
 path silently rolls back forward effects or flushes pending stdio.
 
 The counter is dialect instrumentation; ISA 0.9 does not turn an interpreter's host-fuel option
@@ -10666,7 +10666,7 @@ retained, so the whole run is reversible by `bennett_reverse` (ISA §10). A faul
 **R-contract saved replay (tool contract, not an ISA envelope extension).**
 The R-contract replay profile is `saved-tape-v1`.
 This profile adopts the saved-tape profile v1 of the ISA reference-interpreter
-tool interface. ISA §§7.3/10 still own the active tape: ordered `(dev, op, args)`
+tool interface. ISA §7.3, §10 still own the active tape: ordered `(dev, op, args)`
 entries, with launch iterator operands unsigned 64-bit little-endian, in ISA
 operand order and pointers zero-extended from `ptr_width`. Device history also
 retains the reversal data of ISA §7.3. The saved file is an execution journal:
@@ -10705,7 +10705,7 @@ byte-identical stdout JSON for the same command and inputs, including results,
 faults, console, active tape and reset report, without replay-only fields.
 Changed payload/operand/device/op, deletion, insertion, reordering, malformed
 schema/hex/integer encodings and I/O errors MUST fail loudly. A replay mismatch
-exits 1 with a `replay mismatch` diagnostic citing ISA §§7.3/10, no success JSON
+exits 1 with a `replay mismatch` diagnostic citing ISA §7.3, §10, no success JSON
 and no tape-output write. It MUST NOT be converted into `FAILED` with a
 fabricated source fault code. Schema and I/O failures are likewise tool errors.
 The active tape and the saved journal coincide only when no effect was
@@ -11767,7 +11767,7 @@ versioned map or change the ungraded full-draft identity above.
 | coverage source prefix | `dialect-0.2.14:` | `dialect-0.3-r1:` |
 
 The executor/loader MUST check the ISA-owned header versions, pointer width,
-signatures, model declarations and imports under ISA §§9–10, and validate
+signatures, model declarations and imports under ISA §9, §10, and validate
 interface/closure/object, target, schedule and certificate bindings with the
 ISA 0.9 algorithms. Certificate `versions` use the ISA-owned 0.9 identities;
 `reference_program_hash` retains its ISA meaning, not a dialect version hash.

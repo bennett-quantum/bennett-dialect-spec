@@ -1,11 +1,14 @@
 """Soundness of the R-contract clause/fixture registration, without an executor."""
 import json
+import contextlib
+import io
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 import dialect_check as d
 import dialect_r_contract as contract
+import dialect_check_v02 as v2
 
 
 class ContractClauses(unittest.TestCase):
@@ -31,6 +34,12 @@ class ContractClauses(unittest.TestCase):
             cases.glob.return_value = []
             with self.assertRaises(d.Fail):
                 contract.check_all(SimpleNamespace(selected={'r-contract'}))
+
+    def test_legacy_checker_cannot_report_empty_green_for_this_family(self):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as caught:
+                v2.main(['--family', 'r-contract'])
+        self.assertEqual(caught.exception.code, 2)
 
 
 if __name__ == '__main__':
