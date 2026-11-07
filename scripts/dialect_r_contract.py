@@ -10,7 +10,7 @@ import subprocess
 import dialect_check as d
 import dialect_check_v02 as v2
 import dialect_cc as cc
-from dialect_profile import ISA08, using_profile
+from dialect_profile import ISA08, profile, using_profile
 
 CASES = d.ROOT / 'corpus' / 'legality' / 'r-contract'
 # ISA reference CLI output schema (U): larger integers use decimal strings.
@@ -105,9 +105,7 @@ def console(runner, case):
     observations(case, runner.isa.call('run-cc', bad, 'main'), case['invalid_range'])
 
 
-def tape(runner, case):
-    path = object_file(runner, case)
-    saved = runner.tmp / (case['id'] + '.json')
+def record_and_replay(runner, case, path, saved):
     forward = runner.isa.call('run-cc', path, 'main', '--tape-out', saved)
     observations(case, forward, case['expected'])
     journal = json.loads(saved.read_text())
@@ -116,6 +114,9 @@ def tape(runner, case):
         plain = runner.isa.call(verb, path, 'main')
         replay = runner.isa.call(verb, path, 'main', '--replay-tape', saved)
         v2.equal(case['id'], verb + ' replay exact report', plain, replay)
+
+
+def replay_cancelled_effects(runner, case):
     # A cancelled effect belongs to the saved journal, not the active tape.
     cancelled_case = dict(case, signatures={'main': cc.signature([], []), 'writer': cc.signature([], [])})
     cancelled = object_file(runner, cancelled_case, '-cancelled', [
@@ -129,6 +130,9 @@ def tape(runner, case):
              runner.isa.call('run-cc', cancelled, 'main', '--replay-tape', cancelled_saved))
     observations(case, runner.isa.call('reverse', cancelled, 'main', '--replay-tape', cancelled_saved),
                  dict(status='REVERSED', console_hex='', effect_tape_length=0, memory_equals_entry=True))
+
+
+def reject_corrupt_tapes(runner, case, path, saved):
     for mutation in case['corruptions']:
         entries = json.loads(saved.read_text())
         if mutation == 'missing':
@@ -149,6 +153,14 @@ def tape(runner, case):
     reject(runner, path, 'run-cc', ['main', '--replay-tape', str(malformed)], 'duplicate')
 
 
+def tape(runner, case):
+    path = object_file(runner, case)
+    saved = runner.tmp / (case['id'] + '.json')
+    record_and_replay(runner, case, path, saved)
+    replay_cancelled_effects(runner, case)
+    reject_corrupt_tapes(runner, case, path, saved)
+
+
 CHECKS = {'faults': faults, 'identity': identity, 'console': console, 'tape': tape}
 
 
@@ -166,3 +178,15 @@ def check_all(runner):
     v2.equal('r-contract', 'one case group per contract kind', sorted(CHECKS), sorted(c['kind'] for c in cases))
     for case in cases:
         runner.check('r-contract', case['id'], case['rule'], lambda case=case: check_case(runner, case))
+
+
+def check_runtime_contracts(runner):
+    from dialect_0214 import check_all as check_delivery
+    check_delivery(runner)
+    if profile().isa == '0.9':
+        check_all(runner)
+
+
+def require_legacy_families(parser, selected):
+    if 'r-contract' in selected:
+        parser.error('r-contract requires tools/dialect_check_v03.py (ISA 0.9)')

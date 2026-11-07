@@ -678,11 +678,8 @@ class Runner:
         check_0212(self)
         from dialect_0213 import check_all as check_0213
         check_0213(self)
-        from dialect_0214 import check_all as check_0214
-        check_0214(self)
-        if profile().isa == '0.9':
-            from dialect_r_contract import check_all as check_r_contract
-            check_r_contract(self)
+        from dialect_r_contract import check_runtime_contracts
+        check_runtime_contracts(self)
         return self.rows
 
 
@@ -695,8 +692,8 @@ def main(argv=None):
     parser.add_argument('--json', type=Path, help='write structured results')
     args = parser.parse_args(argv)
     selected = {x for f in args.family or [] for x in f.split(',')}
-    if 'r-contract' in selected:
-        parser.error('r-contract requires tools/dialect_check_v03.py (ISA 0.9)')
+    from dialect_r_contract import require_legacy_families
+    require_legacy_families(parser, selected)
     known = set(TAG_FAMILY.values()) | AUX_FAMILIES
     if selected - known:
         parser.error('unknown family: ' + ', '.join(sorted(selected-known)))
