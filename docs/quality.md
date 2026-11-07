@@ -83,8 +83,19 @@ The gate compares total and per-file metrics, including wrappers, against this r
 baseline. New files are measured too. Baseline refreshes are explicit reviewable changes; no threshold
 or automatic baseline rewrite is used.
 
-Totals: 769 functions; maximum 295 lines; 133 over 25, 47 over 50, 14 over 100, 3 over 200, 0 over 300.
-Cognitive mass 12336; trivial wrappers 3. No function exceeds 300 lines.
+Totals: 788 functions; maximum 295 lines; 133 over 25, 47 over 50, 14 over 100, 3 over 200, 0 over 300.
+Cognitive mass 12375; trivial wrappers 3. No function exceeds 300 lines.
+
+The explicit 2026-11-07 baseline refresh adds only the two new classical
+R-contract tooling files measured by `python3 scripts/quality.py --snapshot`.
+The runner adds 15 functions and cognitive mass 37; its longest function is
+19 lines and none exceeds 25. Its tests add 4 functions and mass 2, with a
+10-line maximum. Thus baseline totals move from 769 to 788 functions and
+12336 to 12375 cognitive mass. Every existing file limit stays unchanged:
+`scripts/dialect_check_v02.py` retains maximum 86 lines and mass 555. The
+aggregate over-25 count remains 133 and the trivial-wrapper count remains 3.
+Saved/replayed, cancelled and corrupt tape checks are separate phases; their
+execution order, observations and diagnostics are retained.
 
 The litter scan checks the git index for bytecode, caches, logs, lock files, backups and
 LAST-RUN/PROGRESS files: **0 tracked**. The identifier grep checks non-test Python/C/JSON tooling,
@@ -537,6 +548,17 @@ is 27 lines; production function maxima, wrappers and hygiene counts remain unch
       "over_50": 0,
       "wrappers": 1
     },
+    "scripts/dialect_r_contract.py": {
+      "complexity": 37,
+      "functions": 15,
+      "max_lines": 19,
+      "over_100": 0,
+      "over_200": 0,
+      "over_25": 0,
+      "over_300": 0,
+      "over_50": 0,
+      "wrappers": 0
+    },
     "scripts/dialect_report.py": {
       "complexity": 5,
       "functions": 2,
@@ -687,6 +709,17 @@ is 27 lines; production function maxima, wrappers and hygiene counts remain unch
       "over_100": 0,
       "over_200": 0,
       "over_25": 3,
+      "over_300": 0,
+      "over_50": 0,
+      "wrappers": 0
+    },
+    "scripts/test_dialect_r_contract.py": {
+      "complexity": 2,
+      "functions": 4,
+      "max_lines": 10,
+      "over_100": 0,
+      "over_200": 0,
+      "over_25": 0,
       "over_300": 0,
       "over_50": 0,
       "wrappers": 0

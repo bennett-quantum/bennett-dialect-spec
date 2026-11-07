@@ -37,7 +37,7 @@ SCRATCH = ROOT / 'scripts' / '.tmp'
 ISA_DIR = ROOT / 'scripts' / '.isa-ref'
 ISA_SOURCE = d.sibling('bennett-isa-spec') / 'reference-interpreter'
 CLI_CAPABILITY = 'ISA-CLI'
-AUX_FAMILIES = frozenset({'parse', 'frontend', 'coverage', 'xrefs', 'asm', 'inventory', 'seeds'})
+AUX_FAMILIES = frozenset({'parse', 'frontend', 'coverage', 'xrefs', 'asm', 'inventory', 'seeds', 'r-contract'})
 TAGS = ('markers-ir', 'markers-c', 'example', 'normalise-in', 'normalise-out',
         'native', 'lift', 'linkmap', 'object', 'reference-body', 'hash', 'run',
         'fb', 'step-check', 'inplace', 'semantics', 'events', 'state', 'tdl',
@@ -678,8 +678,8 @@ class Runner:
         check_0212(self)
         from dialect_0213 import check_all as check_0213
         check_0213(self)
-        from dialect_0214 import check_all as check_0214
-        check_0214(self)
+        from dialect_r_contract import check_runtime_contracts
+        check_runtime_contracts(self)
         return self.rows
 
 
@@ -692,6 +692,8 @@ def main(argv=None):
     parser.add_argument('--json', type=Path, help='write structured results')
     args = parser.parse_args(argv)
     selected = {x for f in args.family or [] for x in f.split(',')}
+    from dialect_r_contract import require_legacy_families
+    require_legacy_families(parser, selected)
     known = set(TAG_FAMILY.values()) | AUX_FAMILIES
     if selected - known:
         parser.error('unknown family: ' + ', '.join(sorted(selected-known)))

@@ -1,0 +1,83 @@
+{
+  "id": "r-saved-tape",
+  "kind": "tape",
+  "rule": "\u00a718.6 saved-tape-v1; ISA \u00a7\u00a77.3/10",
+  "requires": [
+    [
+      "18.6",
+      "The R-contract replay profile is `saved-tape-v1`."
+    ],
+    [
+      "18.6",
+      "Mismatch or missing input MUST leave that step's memory, devices, history and journal cursor unchanged;"
+    ],
+    [
+      "18.6",
+      "Whole-run reversal empties the active tape but MUST NOT erase the saved forward journal."
+    ],
+    [
+      "18.6",
+      "It MUST NOT be converted into `FAILED` with a fabricated source fault code."
+    ]
+  ],
+  "functions": [
+    "fn r @main () () () () ()\n^entry():\naddress = const.i64 4096\np = inttoptr address\nlen = const.i64 1\neffect console.write p len\nsecond = const.i64 4097\nq = inttoptr second\neffect console.write q len\nret"
+  ],
+  "signatures": {
+    "main": {
+      "abi": "0.9",
+      "kind": "r",
+      "params": [],
+      "results": [],
+      "tier": "r"
+    }
+  },
+  "data": {
+    "msg": "7879"
+  },
+  "devices": {
+    "models": {
+      "console": {
+        "version": "0.9"
+      }
+    },
+    "services": {}
+  },
+  "expected": {
+    "status": "COMPLETED",
+    "console_hex": "7879",
+    "effect_tape_length": 2
+  },
+  "journal": [
+    {
+      "args": [
+        4096,
+        1
+      ],
+      "bytes": "78",
+      "dev": "console",
+      "op": "write"
+    },
+    {
+      "args": [
+        4097,
+        1
+      ],
+      "bytes": "79",
+      "dev": "console",
+      "op": "write"
+    }
+  ],
+  "corruptions": {
+    "bytes": "79",
+    "args": [
+      4096,
+      2
+    ],
+    "dev": "clock",
+    "op": "read",
+    "missing": null,
+    "trailing": null,
+    "reordered": null
+  }
+}

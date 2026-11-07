@@ -1,0 +1,82 @@
+{
+  "id": "r-typed-faults",
+  "kind": "faults",
+  "rule": "\u00a7\u00a711.5/17.5/17.6; ISA \u00a7\u00a74.9/10",
+  "requires": [
+    [
+      "17.6",
+      "A generic `trap` MUST NOT replace a non-4 fault."
+    ],
+    [
+      "17.6",
+      "Counter instrumentation and its own checks are not themselves recursively counted."
+    ],
+    [
+      "17.6",
+      "A zero source-step budget therefore faults 1 before the first counted instruction;"
+    ],
+    [
+      "17.6",
+      "In particular no fault path silently rolls back forward effects or flushes pending stdio."
+    ],
+    [
+      "17.5",
+      "| `__bennett_nz_fault(C)` | C when nonzero, otherwise 4 (ISA effective cause) |"
+    ]
+  ],
+  "codes": [
+    0,
+    1,
+    2,
+    3,
+    5,
+    6,
+    7,
+    8,
+    10,
+    18446744073709551615
+  ],
+  "functions": [
+    "fn cc @main () () () () ()\n^entry():\ncall @fail\nfault 9",
+    "fn r @fail () () () () ()\n^entry():\naddress = const.i64 4096\np = inttoptr address\none = const.i64 1\neffect console.write p one\nfault 2"
+  ],
+  "signatures": {
+    "main": {
+      "abi": "0.9",
+      "kind": "cc",
+      "params": [],
+      "results": [],
+      "tier": "cc"
+    },
+    "fail": {
+      "abi": "0.9",
+      "kind": "r",
+      "params": [],
+      "results": [],
+      "tier": "r"
+    }
+  },
+  "data": {
+    "msg": "78"
+  },
+  "devices": {
+    "models": {
+      "console": {
+        "version": "0.9"
+      }
+    },
+    "services": {}
+  },
+  "expected": {
+    "status": "FAILED",
+    "results": [],
+    "console_hex": "78",
+    "effect_tape_length": 1
+  },
+  "reset": {
+    "status": "REVERSED",
+    "console_hex": "",
+    "memory_equals_entry": true,
+    "effect_tape_length": 0
+  }
+}
