@@ -26,7 +26,9 @@ import subprocess
 import sys
 import tempfile
 import time
-import tomllib
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / 'scripts'))
+from dialect_toolchains import load_toolchains, require_tool
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 RESULTS = ROOT / 'results'
@@ -678,18 +680,16 @@ def required_command(argv, directory, label, timeout=30):
 
 
 def tools_for(majors):
-    config = tomllib.loads((ROOT / 'toolchains.toml').read_text())
+    config = load_toolchains(ROOT / 'toolchains.toml')
     result = {}
     for major in majors:
         key = f'llvm{major}'
         if key not in config:
             raise ValueError(f'major {major} not configured')
-        bindir = pathlib.Path(config[key]['bin'])
+        bindir = config[key]['bin']
         entry = {'major': major}
         for name in ('opt', 'llc', 'llvm-dis', 'llvm-as', 'llvm-link', 'llvm-nm'):
-            path = bindir / name
-            if not path.is_file() or not os.access(path, os.X_OK):
-                raise ValueError(f'{key}: missing executable {path}')
+            path = require_tool(bindir, name, major)
             entry[name] = str(path)
         stat = pathlib.Path(entry['opt']).stat()
         entry['identity'] = digest(f'{bindir}:{stat.st_size}:{stat.st_mtime_ns}')
@@ -976,7 +976,8 @@ def prepare_case(path, tcs, runtime):
         return case
     ll = snapshot
     if path.suffix == '.c':
-        clang = pathlib.Path(tomllib.loads((ROOT / 'toolchains.toml').read_text())['llvm18']['bin']) / 'clang'
+        config = load_toolchains(ROOT / 'toolchains.toml')
+        clang = require_tool(config['llvm18']['bin'], 'clang', 18)
         ll = source_dir / (path.stem + '.ll')
         # -O1 with LLVM passes disabled: unoptimised IR without the noinline that
         # -O0 puts on every function (which would hide every inlining hazard).
@@ -1240,13 +1241,12 @@ def evaluate_frontend(task):
         result['details']['case-error'] = error
         return result
     bindir = pathlib.Path(tc['opt']).parent
-    clang = bindir / 'clang'
-    config = tomllib.loads((ROOT / 'toolchains.toml').read_text())
-    llds = [bindir / 'ld.lld', pathlib.Path(config['llvm20']['bin']) / 'ld.lld']
-    lld = next((p for p in llds if p.is_file()), None)
-    if not clang.is_file() or lld is None:
-        result['details']['tool-error'] = 'P4 requires clang-18 and ld.lld (18 or 20)'
-        return result
+    clang = require_tool(bindir, 'clang', 18)
+    config = load_toolchains(ROOT / 'toolchains.toml')
+    llds = [bindir / 'ld.lld', config['llvm20']['bin'] / 'ld.lld']
+    lld = next((p for p in llds if p.is_file() and os.access(p, os.X_OK)), None)
+    if lld is None:
+        lld = require_tool(config['llvm20']['bin'], 'ld.lld', 20)
     r = command([clang, '-O3', '-flto', '-c', '-I', ROOT, '-I', (ROOT / case['path']).parent,
                  case['source'], '-o', directory / 'frontend.o'], directory, 'clang-lto')
     result['opt_command'] = r

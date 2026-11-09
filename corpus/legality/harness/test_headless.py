@@ -8,7 +8,6 @@ import os
 import pathlib
 import sys
 import tempfile
-import tomllib
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -28,8 +27,8 @@ b:
 
 class Headless(unittest.TestCase):
     def test_graph_output_stays_local_and_viewers_are_stubs(self):
-        config = tomllib.loads((run.ROOT / 'toolchains.toml').read_text())
-        opt = pathlib.Path(config['llvm18']['bin']) / 'opt'
+        config = run.load_toolchains(run.ROOT / 'toolchains.toml')
+        opt = config['llvm18']['bin'] / 'opt'
         with tempfile.TemporaryDirectory() as cell:
             cell = pathlib.Path(cell)
             (cell / 'm.ll').write_text(MODULE)

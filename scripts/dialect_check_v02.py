@@ -119,9 +119,9 @@ def command(argv, timeout=120, cwd=None):
 
 
 def frontend_bins():
-    import tomllib
-    config = tomllib.loads(d.TOOLCHAINS.read_text())
-    return {k: Path(config['llvm' + k].get('frontend_bin', config['llvm' + k]['bin']))
+    from dialect_toolchains import load_toolchains
+    config = load_toolchains(d.TOOLCHAINS)
+    return {k: config['llvm' + k].get('frontend_bin', config['llvm' + k]['bin'])
             for k in d.MAJORS}
 
 

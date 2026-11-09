@@ -126,12 +126,27 @@ assignment to the v02 module. Its baseline adjustment records the constructor an
 regression tests, including a fresh-process import/scope check. The largest added test
 is 27 lines; production function maxima, wrappers and hygiene counts remain unchanged.
 
+The home-relative toolchain reader adds three functions (maximum 21 lines, cognitive
+mass 30) and eight regression tests plus their subprocess helper (maximum 14 lines,
+mass 14). Only its new file rows and the changed harness/execution-reader rows are
+refreshed below; existing reader complexity falls by six points. The fake-HOME tests
+first failed in both readers, then passed for absent and populated homes, secondary
+tools, nonexecutable tools, frontend paths, invalid variables and unset HOME.
+Fresh legality baselines executed all 69 selected cases across LLVM 18, 20 and 23,
+including native O0/O3 runs, with zero baseline problems before and after. Stable
+observations (module hashes, attributes, traces, exits and issues, excluding command
+timings) were byte-identical: SHA-256
+`c27842879b42e7cb616dea833b5e74023fd1bfbe59ad7978b54e1527e5e9a82e`.
+With the gate's `scripts/.tmp` preparation present, `python3 scripts/run_tests.py`
+passed 168 default tests in 29.427 s. `python3 scripts/quality.py` passed with
+zero tracked litter and the same one existing process-identifier exception.
+
 <!-- quality-baseline -->
 ```json
 {
   "files": {
     "corpus/legality/harness/run.py": {
-      "complexity": 1305,
+      "complexity": 1301,
       "functions": 89,
       "max_lines": 295,
       "over_100": 2,
@@ -406,7 +421,7 @@ is 27 lines; production function maxima, wrappers and hygiene counts remain unch
       "wrappers": 0
     },
     "scripts/dialect_execution.py": {
-      "complexity": 790,
+      "complexity": 788,
       "functions": 31,
       "max_lines": 230,
       "over_100": 1,
@@ -614,6 +629,17 @@ is 27 lines; production function maxima, wrappers and hygiene counts remain unch
       "over_50": 3,
       "wrappers": 0
     },
+    "scripts/dialect_toolchains.py": {
+      "complexity": 30,
+      "functions": 3,
+      "max_lines": 21,
+      "over_100": 0,
+      "over_200": 0,
+      "over_25": 0,
+      "over_300": 0,
+      "over_50": 0,
+      "wrappers": 0
+    },
     "scripts/dialect_wide.py": {
       "complexity": 82,
       "functions": 4,
@@ -793,6 +819,17 @@ is 27 lines; production function maxima, wrappers and hygiene counts remain unch
     "scripts/test_test_runner.py": {
       "complexity": 2,
       "functions": 3,
+      "max_lines": 14,
+      "over_100": 0,
+      "over_200": 0,
+      "over_25": 0,
+      "over_300": 0,
+      "over_50": 0,
+      "wrappers": 0
+    },
+    "scripts/test_toolchains.py": {
+      "complexity": 14,
+      "functions": 9,
       "max_lines": 14,
       "over_100": 0,
       "over_200": 0,
