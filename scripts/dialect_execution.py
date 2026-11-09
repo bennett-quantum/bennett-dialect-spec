@@ -1,5 +1,6 @@
 """Dialect execution: shared definitions extracted without changing checker behavior."""
 from dialect_profile import profile
+from dialect_toolchains import load_toolchains, require_tool
 from pathlib import Path
 import cmath
 import hashlib
@@ -508,18 +509,17 @@ def parse_amp(s):
 
 
 def toolchains():
+    config = load_toolchains(TOOLCHAINS)
     tc = {}
-    cur = None
-    for ln in TOOLCHAINS.read_text().split("\n"):
-        m = re.match(r"\[llvm(\d+)\]", ln.strip())
-        if m:
-            cur = m.group(1)
-        m = re.match(r'bin\s*=\s*"([^"]+)"', ln.strip())
-        if m and cur:
-            tc[cur] = Path(m.group(1))
     for k in MAJORS:
-        if k not in tc or not (tc[k] / "opt").exists():
-            raise Fail(f"toolchain LLVM {k} missing opt (toolchains.toml)")
+        if 'llvm' + k not in config:
+            raise Fail(f'{TOOLCHAINS}: LLVM {k} not configured')
+        tc[k] = config['llvm' + k]['bin']
+        for name in ('opt', 'llc'):
+            try:
+                require_tool(tc[k], name, k)
+            except ValueError as error:
+                raise Fail(str(error)) from error
     return tc
 
 
