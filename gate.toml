@@ -28,6 +28,7 @@ argv = ["python3", "scripts/run_tests.py", "--slow"]
 
 [[check]]
 name = "dialect gate"
+tier = "post-merge"  # heavy: runs on main-health's cadence, not per push
 argv = ["python3", "scripts/dialect_check_v02.py", "--json", "scripts/.tmp/pre-push-gate.json"]
 
 [[check]]
