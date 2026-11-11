@@ -3319,6 +3319,12 @@ classical memory at the call**, with the bound inputs; its writes are discarded 
 workspace"). Constant globals, and mutable globals that only the oracle's own L closure writes,
 equal their initialisers at every call.
 
+The shim-owned Julia entry context of §19.1 is caller memory under this rule.
+The caller initialises it before snapshot construction; its reachable GCStack,
+PTLS and safepoint bytes enter R and G like other mutable shim globals. The
+oracle reads their private copy at the same addresses; its context writes are
+discarded with its other workspace, and snapshot release follows the rules below.
+
 **Realisation on ISA 0.9.** Let R be the abstract objects the oracle closure may load (§5.4),
 minus constant globals and mutable globals written by no function outside the L closure.
 Translate source read-set objects after normalisation to runtime backing allocations. If
@@ -11522,6 +11528,36 @@ in a pre-link phase. **Bitcode sources** (NS §3.3): Rust `std` from the bitcode
 (`.llvmbc`) where present and readable by §19.8, else `-Zbuild-std`; the Julia runtime by the
 runtimes' shim bitcode; every remaining call without bitcode is a `trapped` coverage line (§4.5).
 
+**Julia specialised-entry context v1.** Provider
+`bennett-runtimes/julia-specialised-entry-context`, version `1`, supplies ordinary
+shim bitcode defining `__bennett_rt_julia_entry_context_v1` with LLVM type `ptr ()`.
+It initialises and returns the GCStack base for the standalone stock Julia 1.13.3 /
+LLVM 23 specialised-entry prelude used by the five typed Int8 rung-1 functions.
+The shim owns three ordinary mutable globals, each aligned to 8 bytes, whose
+non-null, disjoint bases Cg, Cp and Cs are fixed by the resolved §19.5 layout:
+
+| Object | Extent | Initialised bytes read by the entry |
+|---|---|---|
+| GCStack at Cg | 24 bytes | the 8-byte pointer at Cg+16 contains Cp |
+| PTLS at Cp | 24 bytes | the 8-byte pointer at Cp+16 contains Cs |
+| Safepoint at Cs | 8 bytes | the i64 polling word is 0 (no pending safepoint) |
+
+Pointers use the target's 64-bit little-endian representation; the other bytes
+of these globals are initialised to zero. The atomic load of the safepoint pointer,
+volatile safepoint read and surrounding fences execute against this populated shim-owned
+state. An arbitrary scalar, null carrier or zero-filled substitute context does
+not implement this profile. The same provider bitcode and initialised bytes,
+including pointer values, are used by the native comparison and device builds;
+the backing globals appear in their common resolved layout. Record the provider
+name/version and bitcode hash in the §19.9 build record.
+
+The context is initialised for each entry before its descriptor and §8.5 snapshot
+are built, and remains live at those addresses through all oracle evaluation,
+uncomputation and snapshot release for that entry. Context writes obey §8.5;
+reversal restores the preceding context state before its lifetime ends. Backing
+storage may be reused after that lifetime. This profile specifies the reads above,
+without defining a general Julia task or GC model.
+
 Before final materialisation the driver MUST complete the runtime
 integer instance-delivery fixed point of §12.8 and the arith requests
 of §13.1, using the same resolved closure in both builds. Whole-program
@@ -11559,6 +11595,15 @@ status caught by the wrapper (§14.7), or the first L bytes of console output
 (`--bennett-payload=return|exit|console:<L>`), and applies the oracle once to registers it
 allocates, as a device entry the host calls with those registers. The normative route is the
 separate translation unit with marker calls naming the unmodified function (rungs 4, 7, 8).
+
+For a specialised entry using §19.1's Julia context profile, the driver calls the
+versioned shim provider and automatically inserts an `ARG` pointer binding to its
+returned GCStack base for the hidden `ptr swiftself` `"gcstack"` parameter. This
+binding occupies that parameter's original slot and counts in `nparam`; explicit
+source-argument bindings retain LLVM parameter order. The user need not supply a
+scalar for the hidden carrier. The original LLVM signature, calling convention
+and Julia prelude remain intact; the context follows §8.5, and runtime symbols
+retain their original names and linked shim definitions.
 
 ### 19.4 Placement: host vs device CC
 
@@ -12236,6 +12281,14 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
+- Maintainer decision h54 (2026-11-11) adds shim-owned Julia specialised-entry
+  context profile v1 (§19.1), automatic hidden GCStack binding (§19.3) and its
+  private caller-memory transfer/lifetime (§8.5). The original entry signature
+  and prelude remain intact. The provider version, bitcode and resolved context
+  layout bind both builds; changed linked bodies require fresh materialisation
+  and dependent object/schedule/certificate identities. Marker ABI, descriptor
+  version and the §16 lifting map are unchanged; this is draft 0.3 text awaiting
+  review, not a change to published 0.2.14 or an acceptance of the full draft.
 - Maintainer decision r1p (2026-11-11) permits an isolated hosted genuine launch provider for
   native comparison (§17.7), with separately bound and audited provider dependencies and program
   lifetime; the selected materialised component and its runtime/arithmetic closure remain
