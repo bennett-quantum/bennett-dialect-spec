@@ -10497,6 +10497,15 @@ division by zero and INT_MIN/−1 trap in the native build: on targets whose div
 not trap it inserts, after materialisation and outside the materialised module, a check that
 calls `__bennett_nz_fault` with code 5 or 6. Results compare by the outcome table of §18.7.
 
+**Isolated launch provider.** For §17.7 native comparison, a genuine launch provider (the ISA
+program loader and qreg implementation called through the public launch API) MAY occupy an
+isolated hosted backend domain. The selected materialised component and its runtime and
+arithmetic closure MUST remain freestanding under §19.5, including the prohibition on host libc
+or libm above. The hosted domain MUST be isolated so that the provider and its transitive
+dependencies, including its libc, allocator, symbol interposition and numerical implementation,
+cannot replace materialised, runtime or arithmetic functions. Comparison receipts MUST separately
+bind and audit the provider, its transitive dependencies and program lifetime.
+
 **Comparison-only support exception.** Only after the materialised device module has been fixed, the native comparison backend MAY define the three `__bennett_nz_` primitives of §3.1 as native support, and the driver MUST emit `__bennett_rt_native_layout` as specified in §19.5; these definitions MUST NOT enter producer inputs, production device bitcode, region identity or the materialised module used by the ISA map.
 
 The native primitive support MUST reproduce the resolved device addresses, zero fill, live allocation sizes, nonreclaiming allocation/free history and fault outcomes of §§17.1/17.5, with capacity for every history admitted by the resolved heap budget (at most one heap record per byte since max(n,1) ≥ 1), without an arbitrary smaller record cap; host setup/resource failure MUST terminate comparison with an explicit infrastructure failure, never silently relocate the heap, choose defaults, use host malloc, or report a successful dialect outcome.
@@ -12227,6 +12236,10 @@ warning never changes a verdict.
 
 ## 23. Versioning
 
+- Maintainer decision r1p (2026-11-11) permits an isolated hosted genuine launch provider for
+  native comparison (§17.7), with separately bound and audited provider dependencies and program
+  lifetime; the selected materialised component and its runtime/arithmetic closure remain
+  freestanding with the unchanged §19.5 layout and prohibition on host libc/libm.
 - The classical R-contract profile (§1.7) has the distinct full compatibility
   string `0.3-r1`; its status is council-accepted for this boundary only
   (2026-11-07; `bennett/docs/council/dialect-r3contract-2026-11-07/round-1/report.md`).
